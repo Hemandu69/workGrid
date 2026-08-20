@@ -5,6 +5,7 @@ import { Task } from '../../types/task';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../ui/Table';
 import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
+import { formatToISTDate } from '../../lib/time-utils';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -99,7 +100,7 @@ export function TaskTable({
 
             {/* Due Date */}
             <TableCell className="font-mono text-xs tabular-nums text-on-surface-variant whitespace-nowrap">
-              {new Date(task.dueDate).toLocaleDateString()}
+              {formatToISTDate(task.dueDate)}
             </TableCell>
 
             {/* Action */}

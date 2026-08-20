@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../../lib/auth-context';
 import { UserRole } from '../../types/auth';
 import { Avatar } from '../ui/Avatar';
+import { formatToISTTime } from '../../lib/time-utils';
 
 interface TopHeaderProps {
   breadcrumbs?: Array<{ label: string; href?: string }>;
@@ -15,6 +16,15 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
   const { user, role, setRole, logout } = useAuth();
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [currentISTClock, setCurrentISTClock] = useState<string>('');
+
+  React.useEffect(() => {
+    setCurrentISTClock(formatToISTTime(new Date()));
+    const timer = setInterval(() => {
+      setCurrentISTClock(formatToISTTime(new Date()));
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   const defaultBreadcrumbs = [
     { label: 'WorkGrid', href: '/' },
@@ -84,6 +94,14 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
             className="w-48 md:w-64 pl-8 pr-3 py-1 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
           />
         </div>
+
+        {/* Live IST Clock */}
+        {currentISTClock && (
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container-low border border-surface-outline text-[11px] font-mono text-primary font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-status-available animate-pulse" />
+            <span>{currentISTClock}</span>
+          </div>
+        )}
 
         {/* Role Switcher Button */}
         <div className="relative">

@@ -11,18 +11,30 @@ import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 import { MOCK_USERS, MOCK_ROOM_B_MEMBERS } from '../../../lib/mock-data';
+import {
+  getCurrentISTDateString,
+  formatToISTTime,
+  formatUtcWindowToIST,
+} from '../../../lib/time-utils';
 
 export default function PeopleAvailabilityPage() {
   const { user, role, token } = useAuth();
 
-  // Time slot selector state
-  const [selectedDate, setSelectedDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
-  const [startHour, setStartHour] = useState<number>(new Date().getUTCHours());
-  const [endHour, setEndHour] = useState<number>(
-    Math.min(24, new Date().getUTCHours() + 1)
-  );
+  // Time slot selector state (default to today in IST)
+  const [selectedDate, setSelectedDate] = useState<string>(() => getCurrentISTDateString());
+  const [startHour, setStartHour] = useState<number>(() => new Date().getUTCHours());
+  const [endHour, setEndHour] = useState<number>(() => Math.min(24, new Date().getUTCHours() + 1));
+
+  // Live dynamic clock state
+  const [currentClock, setCurrentClock] = useState<string>('');
+
+  useEffect(() => {
+    setCurrentClock(formatToISTTime(new Date()));
+    const timer = setInterval(() => {
+      setCurrentClock(formatToISTTime(new Date()));
+    }, 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -191,26 +203,28 @@ export default function PeopleAvailabilityPage() {
     );
   }
 
-  // Time format helper
   const hourOptions = Array.from({ length: 24 }, (_, i) => {
-    const period = i >= 12 ? 'PM' : 'AM';
-    const displayHour = i % 12 === 0 ? 12 : i % 12;
+    const utcDate = new Date(`${selectedDate}T00:00:00.000Z`);
+    utcDate.setUTCHours(i, 0, 0, 0);
+    const istLabel = formatToISTTime(utcDate, true);
     return {
       value: i,
-      label: `${displayHour.toString().padStart(2, '0')}:00 ${period} UTC`,
+      label: istLabel,
     };
   });
 
   const endHourOptions = Array.from({ length: 24 }, (_, i) => {
     const hour = i + 1;
-    if (hour === 24) return { value: 24, label: '12:00 AM (Next Day) UTC' };
-    const period = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+    const utcDate = new Date(`${selectedDate}T00:00:00.000Z`);
+    utcDate.setUTCHours(hour, 0, 0, 0);
+    const istLabel = formatToISTTime(utcDate, true);
     return {
       value: hour,
-      label: `${displayHour.toString().padStart(2, '0')}:00 ${period} UTC`,
+      label: istLabel,
     };
   });
+
+  const activeWindowFormatted = formatUtcWindowToIST(selectedDate, startHour, endHour).activeWindowIST;
 
   return (
     <AppShell
@@ -237,12 +251,18 @@ export default function PeopleAvailabilityPage() {
             </div>
             <p className="text-xs text-on-surface-variant">
               {isServer
-                ? `Overseeing personnel availability and active workload across all 8 subrooms in Sector ${serverRoomLetter}.`
-                : 'Live and scheduled personnel availability across all 8 sectors evaluated in UTC without inspecting individual rooms.'}
+                ? `Overseeing personnel availability across all 8 subrooms in Sector ${serverRoomLetter}. All times in IST (Asia/Kolkata).`
+                : 'Live and scheduled personnel availability across all 8 sectors in IST (Asia/Kolkata, UTC+05:30).'}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
+            {currentClock && (
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-surface-container-low border border-surface-outline rounded text-xs font-mono text-primary font-semibold">
+                <span className="w-2 h-2 rounded-full bg-status-available animate-pulse" />
+                <span>Live IST: {currentClock}</span>
+              </div>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -267,7 +287,7 @@ export default function PeopleAvailabilityPage() {
         <div className="p-4 bg-surface-bright border border-surface-outline rounded grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end shadow-2xs">
           <div className="space-y-1">
             <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block">
-              Evaluation Date
+              Evaluation Date (IST)
             </label>
             <input
               type="date"
@@ -279,7 +299,7 @@ export default function PeopleAvailabilityPage() {
 
           <div className="space-y-1">
             <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block">
-              Start Hour
+              Start Time (IST)
             </label>
             <select
               value={startHour}
@@ -300,7 +320,7 @@ export default function PeopleAvailabilityPage() {
 
           <div className="space-y-1">
             <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block">
-              End Hour
+              End Time (IST)
             </label>
             <select
               value={endHour}
@@ -320,7 +340,7 @@ export default function PeopleAvailabilityPage() {
           <div className="bg-surface-container-low p-2.5 rounded border border-surface-outline text-xs text-on-surface-variant flex items-center justify-between font-mono">
             <span className="text-[11px]">Active Window:</span>
             <span className="font-semibold text-primary">
-              {data?.timeSlot.startFormatted} – {data?.timeSlot.endFormatted}
+              {activeWindowFormatted}
             </span>
           </div>
         </div>

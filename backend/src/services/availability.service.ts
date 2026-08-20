@@ -1,6 +1,15 @@
 import { prisma } from '../db/client.js';
 import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
 import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus } from '@prisma/client';
+import {
+  APP_TIMEZONE,
+  TIMEZONE_LABEL,
+  formatToISTTime,
+  formatToISTDate,
+  formatToISTDateTime,
+  formatUtcWindowToIST,
+  createUtcTimestamp,
+} from '../utils/time.js';
 
 export interface TimeSlotWindow {
   date: string;
@@ -8,7 +17,10 @@ export interface TimeSlotWindow {
   endHour: number;
   startFormatted: string;
   endFormatted: string;
+  activeWindow: string;
+  dateFormatted: string;
   timezone: string;
+  timezoneLabel: string;
 }
 
 export interface PersonAvailabilityItem {
@@ -127,7 +139,8 @@ export class AvailabilityService {
 
     return {
       userId: user.id,
-      timezone: 'UTC',
+      timezone: APP_TIMEZONE,
+      timezoneLabel: TIMEZONE_LABEL,
       allocatedHours,
       totalCapacityHours: totalAvailableHours || user.capacityLimitHours,
       remainingAvailableHours,
@@ -174,7 +187,7 @@ export class AvailabilityService {
   }
 
   /**
-   * Enterprise-wide People Availability Overview for Admin / Super Admin
+   * Enterprise-wide People Availability Overview with IST Time Presentation
    */
   static async getPeopleAvailability(filters: {
     date?: string;
@@ -288,8 +301,12 @@ export class AvailabilityService {
         reason = user.status === UserStatus.OFFLINE ? 'Offline / Non-working hours' : 'Outside scheduled availability';
       }
 
-      const until = this.formatHour(endHour) + ' UTC';
-      const freeWindow = status === 'PARTIALLY_AVAILABLE' ? `${this.formatHour(startHour)} – ${this.formatHour(startHour + availableHours)}` : undefined;
+      const untilDate = createUtcTimestamp(dateStr, endHour);
+      const until = formatToISTTime(untilDate);
+      
+      const freeWindowStart = createUtcTimestamp(dateStr, startHour);
+      const freeWindowEnd = createUtcTimestamp(dateStr, startHour + availableHours);
+      const freeWindow = status === 'PARTIALLY_AVAILABLE' ? `${formatToISTTime(freeWindowStart, false)} – ${formatToISTTime(freeWindowEnd)}` : undefined;
 
       return {
         id: user.id,
@@ -329,14 +346,19 @@ export class AvailabilityService {
       filteredPeople = evaluatedPeople.filter((p) => p.status === filters.status);
     }
 
+    const istWindow = formatUtcWindowToIST(dateStr, startHour, endHour);
+
     return {
       timeSlot: {
         date: dateStr,
         startHour,
         endHour,
-        startFormatted: this.formatHour(startHour),
-        endFormatted: this.formatHour(endHour),
-        timezone: 'UTC',
+        startFormatted: istWindow.startIST,
+        endFormatted: istWindow.endIST,
+        activeWindow: istWindow.activeWindowIST,
+        dateFormatted: istWindow.dateIST,
+        timezone: APP_TIMEZONE,
+        timezoneLabel: TIMEZONE_LABEL,
       },
       summary: {
         totalPeople,
@@ -350,7 +372,7 @@ export class AvailabilityService {
   }
 
   /**
-   * Detailed weekly timeline and commitments for a selected person
+   * Detailed weekly timeline and commitments for a selected person in IST
    */
   static async getPersonDetailedAvailability(userId: string, startDateStr?: string) {
     const user = await prisma.user.findUnique({
@@ -389,7 +411,6 @@ export class AvailabilityService {
       const daySlots = user.availabilitySlots.filter((s) => s.day === curDayOfWeek);
       const windows: DayTimelineWindow[] = [];
 
-      // Group consecutive hours into windows (e.g. 09:00 - 12:00: Free, 12:00 - 15:00: Busy)
       let windowStart = 0;
       let currentHourState: 'FREE' | 'BUSY' | 'UNAVAILABLE' = 'UNAVAILABLE';
 
@@ -413,11 +434,14 @@ export class AvailabilityService {
         const nextState = h < 24 ? getHourState(h) : null;
         if (nextState !== currentHourState || h === 24) {
           if (currentHourState !== 'UNAVAILABLE' || (windowStart >= 8 && h <= 18)) {
+            const startTimestamp = createUtcTimestamp(curDateStr, windowStart);
+            const endTimestamp = createUtcTimestamp(curDateStr, h);
+
             windows.push({
               startHour: windowStart,
               endHour: h,
-              startFormatted: this.formatHour(windowStart),
-              endFormatted: this.formatHour(h),
+              startFormatted: formatToISTTime(startTimestamp, false),
+              endFormatted: formatToISTTime(endTimestamp, true),
               state: currentHourState,
               label: currentHourState === 'FREE' ? 'Free / Available' : currentHourState === 'BUSY' ? 'Busy' : 'Unavailable',
               reason: currentHourState === 'BUSY' && user.assignedTasks[0] ? user.assignedTasks[0].title : undefined,
@@ -446,8 +470,8 @@ export class AvailabilityService {
           {
             startHour: 9,
             endHour: 17,
-            startFormatted: '09:00 AM',
-            endFormatted: '05:00 PM',
+            startFormatted: '02:30 PM',
+            endFormatted: '10:30 PM IST',
             state: 'UNAVAILABLE',
             label: 'Off-schedule',
           },
@@ -455,7 +479,7 @@ export class AvailabilityService {
       });
     }
 
-    // Determine "Next Free" window
+    // Determine "Next Free" window in IST
     let nextFreeInfo: NextFreeInfo = {
       isCurrentlyFree: false,
       statusText: 'No availability found within the next 7 days.',
@@ -468,7 +492,7 @@ export class AvailabilityService {
     if (activeWindowNow && activeWindowNow.state === 'FREE') {
       nextFreeInfo = {
         isCurrentlyFree: true,
-        statusText: `Available until ${activeWindowNow.endFormatted} UTC`,
+        statusText: `Available until ${activeWindowNow.endFormatted}`,
         nextFreeDate: 'Today',
         nextFreeTime: activeWindowNow.endFormatted,
         durationFormatted: `${activeWindowNow.endHour - currentUTCHour}h remaining`,
@@ -482,7 +506,7 @@ export class AvailabilityService {
             if (!day.isToday || window.startHour > currentUTCHour) {
               nextFreeInfo = {
                 isCurrentlyFree: false,
-                statusText: `${day.isToday ? 'Today' : day.dayName} at ${window.startFormatted} UTC`,
+                statusText: `${day.isToday ? 'Today' : day.dayName} at ${window.startFormatted}`,
                 nextFreeDate: day.isToday ? 'Today' : day.dayName,
                 nextFreeTime: window.startFormatted,
                 durationFormatted: `Available for ${window.endHour - window.startHour}h`,
@@ -496,7 +520,7 @@ export class AvailabilityService {
       }
     }
 
-    // Format upcoming commitments
+    // Format upcoming commitments with IST dates
     const upcomingCommitments = user.assignedTasks.map((t) => ({
       id: t.taskIdDisplay || t.id,
       title: t.title,
@@ -506,10 +530,12 @@ export class AvailabilityService {
       estimatedHours: t.estimatedHours,
       allocatedHours: t.allocatedHours,
       dueDate: t.dueDate ? t.dueDate.toISOString() : undefined,
-      dueDateFormatted: t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Flexible',
+      dueDateFormatted: t.dueDate ? formatToISTDateTime(t.dueDate) : 'Flexible',
       room: user.room ? `Sector ${user.room.letter}` : '—',
       subroom: user.subroom?.code || '—',
     }));
+
+    const untilTimestamp = new Date(now.getTime() + 2 * 3600000);
 
     return {
       person: {
@@ -530,7 +556,7 @@ export class AvailabilityService {
         reason: user.assignedTasks[0] ? `Active Task: ${user.assignedTasks[0].taskIdDisplay || user.assignedTasks[0].title}` : (user.subroom ? `Assigned to Subroom ${user.subroom.code}` : 'Ready for work'),
         room: user.room ? `Sector ${user.room.letter}` : undefined,
         subroom: user.subroom?.code,
-        until: this.formatHour(Math.min(24, currentUTCHour + 2)) + ' UTC',
+        until: formatToISTTime(untilTimestamp),
       },
       nextFree: nextFreeInfo,
       weeklyTimeline: daysTimeline,
@@ -549,13 +575,5 @@ export class AvailabilityService {
       DayOfWeek.SATURDAY,
     ];
     return days[date.getUTCDay()];
-  }
-
-  private static formatHour(hour: number): string {
-    const clamped = Math.max(0, Math.min(24, hour));
-    if (clamped === 24) return '12:00 AM (Next Day)';
-    const period = clamped >= 12 ? 'PM' : 'AM';
-    const displayHour = clamped % 12 === 0 ? 12 : clamped % 12;
-    return `${displayHour.toString().padStart(2, '0')}:00 ${period}`;
   }
 }
