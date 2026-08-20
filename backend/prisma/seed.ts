@@ -1,5 +1,6 @@
 import { PrismaClient, UserRole, AccountStatus, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, DayOfWeek, SlotState } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import process from 'node:process';
 
 const prisma = new PrismaClient();
 
@@ -7,6 +8,7 @@ async function main() {
   console.log('🌱 Starting WorkGrid database seed (Development / Demo Environment)...');
 
   // 1. Clean existing records in reverse dependency order
+  await prisma.passwordResetToken.deleteMany();
   await prisma.roleAuditLog.deleteMany();
   await prisma.auditEvent.deleteMany();
   await prisma.availabilitySlot.deleteMany();
@@ -41,8 +43,8 @@ async function main() {
     H: 'Sector H — Global Strategy',
   };
 
-  const createdRooms: Record<string, any> = {};
-  const createdSubrooms: Record<string, any> = {};
+  const createdRooms: Record<string, { id: string }> = {};
+  const createdSubrooms: Record<string, { id: string }> = {};
 
   for (const letter of roomLetters) {
     const room = await prisma.room.create({
@@ -443,8 +445,8 @@ async function main() {
   for (const [dayIndex, day] of days.entries()) {
     const isWeekend = day === DayOfWeek.SATURDAY || day === DayOfWeek.SUNDAY;
     for (let hour = 0; hour < 24; hour++) {
-      let state = SlotState.UNAVAILABLE;
-      let taskId = undefined;
+      let state: SlotState = SlotState.UNAVAILABLE;
+      let taskId: string | undefined = undefined;
 
       if (!isWeekend) {
         if (hour >= 9 && hour < 17) {
