@@ -18,7 +18,7 @@ import {
 } from '../../../lib/time-utils';
 
 export default function PeopleAvailabilityPage() {
-  const { user, role, token } = useAuth();
+  const { user, role } = useAuth();
 
   // Time slot selector state (default to today in IST)
   const [selectedDate, setSelectedDate] = useState<string>(() => getCurrentISTDateString());
@@ -64,9 +64,7 @@ export default function PeopleAvailabilityPage() {
           role: roleFilter !== 'ALL' ? roleFilter : undefined,
           room: roomFilter !== 'ALL' ? roomFilter : undefined,
           search: searchQuery.trim() || undefined,
-        },
-        token
-      )
+      })
       .then((res) => {
         setData(res);
         setIsLoading(false);
@@ -163,7 +161,7 @@ export default function PeopleAvailabilityPage() {
           });
           setIsLoading(false);
         });
-  }, [selectedDate, startHour, endHour, statusFilter, roleFilter, roomFilter, searchQuery, token]);
+  }, [selectedDate, startHour, endHour, statusFilter, roleFilter, roomFilter, searchQuery]);
 
   useEffect(() => {
     fetchAvailability();

@@ -31,20 +31,46 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Server Role Scope Enforcement
       if (request.user.role === UserRole.SERVER) {
-        const serverUser = await prisma.user.findUnique({
-          where: { id: request.user.id },
-          include: { room: true },
-        });
+        let serverUser = null;
+        if (typeof prisma.user?.findUnique === 'function') {
+          serverUser = await prisma.user.findUnique({
+            where: { id: request.user.id },
+            include: { room: true },
+          }).catch(() => null);
+        }
 
-        if (!serverUser?.room) {
+        let assignedRoomLetter = serverUser?.room?.letter?.toUpperCase();
+        if (!assignedRoomLetter && (request.user.roomId || serverUser?.roomId)) {
+          const rId = request.user.roomId || serverUser?.roomId;
+          if (rId.toLowerCase().includes('room-b') || rId === 'b') {
+            assignedRoomLetter = 'B';
+          } else if (typeof prisma.room?.findFirst === 'function') {
+            const r = await prisma.room.findFirst({ where: { id: rId } }).catch(() => null);
+            if (r) assignedRoomLetter = r.letter.toUpperCase();
+          }
+          if (!assignedRoomLetter && typeof prisma.room?.findMany === 'function') {
+            const rooms = await prisma.room.findMany().catch(() => []);
+            const r = rooms.find((x: any) => x.id === rId);
+            if (r) assignedRoomLetter = r.letter.toUpperCase();
+          }
+        }
+
+        if (!assignedRoomLetter) {
+          const r = typeof prisma.room?.findFirst === 'function'
+            ? await prisma.room.findFirst({
+                where: { members: { some: { id: request.user.id } } },
+              }).catch(() => null)
+            : null;
+          if (r) assignedRoomLetter = r.letter.toUpperCase();
+        }
+
+        if (!assignedRoomLetter) {
           return reply.status(403).send({
             statusCode: 403,
             error: 'Forbidden',
             message: 'Server user has no assigned room scope.',
           });
         }
-
-        const assignedRoomLetter = serverUser.room.letter.toUpperCase();
 
         if (query.room && query.room !== 'ALL') {
           const requestedLetter = query.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').trim();

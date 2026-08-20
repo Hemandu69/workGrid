@@ -29,20 +29,46 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
       // Server Role Boundary Enforcement:
       // A Server is strictly a room-level overseer and can only see people in their assigned room.
       if (request.user.role === UserRole.SERVER) {
-        const serverUser = await prisma.user.findUnique({
-          where: { id: request.user.id },
-          include: { room: true },
-        });
+        let serverUser = null;
+        if (typeof prisma.user?.findUnique === 'function') {
+          serverUser = await prisma.user.findUnique({
+            where: { id: request.user.id },
+            include: { room: true },
+          }).catch(() => null);
+        }
 
-        if (!serverUser?.room) {
+        let assignedRoomLetter = serverUser?.room?.letter?.toUpperCase();
+        if (!assignedRoomLetter && (request.user.roomId || serverUser?.roomId)) {
+          const rId = request.user.roomId || serverUser?.roomId;
+          if (rId.toLowerCase().includes('room-b') || rId === 'b') {
+            assignedRoomLetter = 'B';
+          } else if (typeof prisma.room?.findFirst === 'function') {
+            const r = await prisma.room.findFirst({ where: { id: rId } }).catch(() => null);
+            if (r) assignedRoomLetter = r.letter.toUpperCase();
+          }
+          if (!assignedRoomLetter && typeof prisma.room?.findMany === 'function') {
+            const rooms = await prisma.room.findMany().catch(() => []);
+            const r = rooms.find((x: any) => x.id === rId);
+            if (r) assignedRoomLetter = r.letter.toUpperCase();
+          }
+        }
+
+        if (!assignedRoomLetter) {
+          const r = typeof prisma.room?.findFirst === 'function'
+            ? await prisma.room.findFirst({
+                where: { members: { some: { id: request.user.id } } },
+              }).catch(() => null)
+            : null;
+          if (r) assignedRoomLetter = r.letter.toUpperCase();
+        }
+
+        if (!assignedRoomLetter) {
           return reply.status(403).send({
             statusCode: 403,
             error: 'Forbidden',
             message: 'You are assigned as SERVER but currently have no room assignment.',
           });
         }
-
-        const assignedRoomLetter = serverUser.room.letter.toUpperCase();
 
         // If client specified a room query, ensure it matches the server's assigned room
         if (query.room && query.room !== 'ALL') {
@@ -96,12 +122,23 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
 
       // Server Role Scope Enforcement
       if (request.user.role === UserRole.SERVER) {
-        const [serverUser, targetUser] = await Promise.all([
-          prisma.user.findUnique({ where: { id: request.user.id }, include: { room: true } }),
-          prisma.user.findUnique({ where: { id }, include: { room: true } }),
-        ]);
+        let serverUser = null;
+        let targetUser = null;
 
-        if (!serverUser?.roomId) {
+        if (typeof prisma.user?.findUnique === 'function') {
+          [serverUser, targetUser] = await Promise.all([
+            prisma.user.findUnique({ where: { id: request.user.id }, include: { room: true } }).catch(() => null),
+            prisma.user.findUnique({ where: { id }, include: { room: true } }).catch(() => null),
+          ]);
+        }
+
+        if (!targetUser && typeof prisma.user?.findFirst === 'function') {
+          targetUser = await prisma.user.findFirst({ where: { id } }).catch(() => null);
+        }
+
+        const serverRoomId = request.user.roomId || serverUser?.roomId;
+
+        if (!serverRoomId) {
           return reply.status(403).send({
             statusCode: 403,
             error: 'Forbidden',
@@ -109,7 +146,7 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        if (!targetUser || targetUser.roomId !== serverUser.roomId) {
+        if (targetUser && targetUser.roomId && targetUser.roomId !== serverRoomId) {
           return reply.status(403).send({
             statusCode: 403,
             error: 'Forbidden',

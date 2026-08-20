@@ -90,12 +90,20 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['ADMIN', 'SUPER_ADMIN'],
   },
 
-  // Server / Team Lead Links
+  // Server Link (Room & Event Supervision)
   {
-    label: 'Team Dashboard',
+    label: 'Room Supervision',
     href: '/server',
     icon: 'space_dashboard',
-    roles: ['SERVER', 'TEAM_LEAD'],
+    roles: ['SERVER'],
+  },
+
+  // Team Lead Link (Team Coordination)
+  {
+    label: 'Team Workspace',
+    href: '/team-lead',
+    icon: 'hub',
+    roles: ['TEAM_LEAD'],
   },
 
   // Member Links

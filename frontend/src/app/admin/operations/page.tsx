@@ -16,7 +16,7 @@ import { Button } from '../../../components/ui/Button';
 import { formatToISTTime } from '../../../lib/time-utils';
 
 export default function OperationsGridPage() {
-  const { user, role, token } = useAuth();
+  const { user, role } = useAuth();
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,7 +55,7 @@ export default function OperationsGridPage() {
     const targetRoom = isServer ? serverRoomLetter || 'B' : roomFilter;
 
     apiClient
-      .getOperationalGrid({ room: targetRoom !== 'ALL' ? targetRoom : undefined, search: searchQuery.trim() || undefined }, token)
+      .getOperationalGrid({ room: targetRoom !== 'ALL' ? targetRoom : undefined, search: searchQuery.trim() || undefined })
       .then((res) => {
         setGridData(res);
         setIsLoading(false);
@@ -177,7 +177,7 @@ export default function OperationsGridPage() {
         });
         setIsLoading(false);
       });
-  }, [isServer, serverRoomLetter, roomFilter, searchQuery, token]);
+  }, [isServer, serverRoomLetter, roomFilter, searchQuery]);
 
   useEffect(() => {
     fetchGrid();

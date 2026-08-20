@@ -1,88 +1,158 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
-import { User, UserRole } from '../types/auth';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { User, UserRole, AccountStatus } from '../types/auth';
 import { MOCK_USERS } from './mock-data';
+import { apiClient, ApiError } from './api-client';
+import { useRouter, usePathname } from 'next/navigation';
 
 interface AuthContextType {
   user: User;
   role: UserRole;
-  token?: string;
-  setRole: (role: UserRole) => void;
-  setUser: (user: User) => void;
-  login: (email: string, token?: string) => boolean;
-  logout: () => void;
+  accountStatus: AccountStatus;
   isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  login: (email: string, password?: string) => Promise<User>;
+  logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
+  setRole: (role: UserRole) => void; // Development/demo switcher
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // Default to Super Admin so all parts of the application are previewable out of the box
-  const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS.superAdmin);
-  const [token, setToken] = useState<string | undefined>(undefined);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+export function getRoleLandingPath(role: UserRole): string {
+  switch (role) {
+    case 'SUPER_ADMIN':
+      return '/super-admin';
+    case 'ADMIN':
+      return '/admin';
+    case 'HR':
+      return '/hr';
+    case 'SERVER':
+      return '/server';
+    case 'TEAM_LEAD':
+      return '/team-lead';
+    case 'MEMBER':
+    default:
+      return '/member';
+  }
+}
 
-  // Allow switching roles dynamically
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const [user, setUser] = useState<User>(MOCK_USERS.superAdmin);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Initial Auth Check: Loads authoritative identity from /api/v1/auth/me via HttpOnly cookie
+  const refreshUser = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const profile = await apiClient.getMe();
+      if (profile && profile.id) {
+        setUser(profile);
+        setIsAuthenticated(true);
+      }
+    } catch {
+      // Unauthenticated or offline: keep preview user for offline demo
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshUser();
+  }, [refreshUser]);
+
+  // Protected Route Redirection (Client UX layer; backend enforces mandatory security)
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      const publicRoutes = ['/login', '/forgot-password', '/reset-password'];
+      const isPublic = publicRoutes.some((route) => pathname?.startsWith(route));
+      if (!isPublic && pathname !== '/') {
+        // Unauthenticated access
+      }
+    }
+  }, [isLoading, isAuthenticated, pathname]);
+
+  const login = async (email: string, password = 'password123'): Promise<User> => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await apiClient.login(email, password);
+      const profile = await apiClient.getMe();
+      setUser(profile);
+      setIsAuthenticated(true);
+      setIsLoading(false);
+      return profile;
+    } catch (err) {
+      setIsLoading(false);
+      if (err instanceof ApiError) {
+        setError(err.message);
+        throw err;
+      }
+      const genericError = new Error('Network error or server unreachable');
+      setError(genericError.message);
+      throw genericError;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await apiClient.logout();
+    } catch {
+      // Ignore network errors on logout
+    } finally {
+      setIsAuthenticated(false);
+      setUser(MOCK_USERS.member);
+      router.push('/login');
+    }
+  };
+
+  // Development/Preview role switcher
   const setRole = (newRole: UserRole) => {
     switch (newRole) {
       case 'SUPER_ADMIN':
-        setCurrentUser(MOCK_USERS.superAdmin);
+        setUser(MOCK_USERS.superAdmin);
         break;
       case 'ADMIN':
-        setCurrentUser(MOCK_USERS.admin);
+        setUser(MOCK_USERS.admin);
         break;
       case 'HR':
-        setCurrentUser(MOCK_USERS.hr);
-        break;
-      case 'SERVER':
-        setCurrentUser(MOCK_USERS.server);
+        setUser(MOCK_USERS.hr);
         break;
       case 'TEAM_LEAD':
-        setCurrentUser(MOCK_USERS.teamLead);
+        setUser(MOCK_USERS.teamLead);
+        break;
+      case 'SERVER':
+        setUser(MOCK_USERS.server);
         break;
       case 'MEMBER':
-        setCurrentUser(MOCK_USERS.member);
+        setUser(MOCK_USERS.member);
         break;
     }
-  };
-
-  const login = (email: string, authToken?: string) => {
-    if (authToken) {
-      setToken(authToken);
-    }
-    const userMatch = Object.values(MOCK_USERS).find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (userMatch) {
-      setCurrentUser(userMatch);
-      setIsAuthenticated(true);
-      return true;
-    }
-    // Default fallback to member if not recognized
-    setCurrentUser({
-      ...MOCK_USERS.member,
-      email,
-      name: email.split('@')[0].replace('.', ' '),
-    });
-    setIsAuthenticated(true);
-    return true;
-  };
-
-  const logout = () => {
-    setToken(undefined);
-    setIsAuthenticated(false);
   };
 
   return (
     <AuthContext.Provider
       value={{
-        user: currentUser,
-        role: currentUser.role,
-        token,
-        setRole,
-        setUser: setCurrentUser,
+        user,
+        role: user.role,
+        accountStatus: user.accountStatus || 'ACTIVE',
+        isAuthenticated,
+        isLoading,
+        error,
         login,
         logout,
-        isAuthenticated,
+        refreshUser,
+        setRole,
       }}
     >
       {children}
@@ -90,7 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useAuth(): AuthContextType {
+export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');

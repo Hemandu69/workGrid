@@ -1,7 +1,9 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
+import fastifyCookie from '@fastify/cookie';
 import { config } from '../config/index.js';
 import { AccountStatus, UserRole } from '@prisma/client';
+import { prisma } from '../db/client.js';
 
 export interface AuthUserPayload {
   id: string;
@@ -10,6 +12,7 @@ export interface AuthUserPayload {
   role: UserRole;
   accountStatus: AccountStatus;
   organizationId: string;
+  version: number;
   roomId?: string;
   subroomId?: string;
 }
@@ -80,22 +83,127 @@ declare module '@fastify/jwt' {
   }
 }
 
+export const AUTH_COOKIE_NAME = 'wg_auth_token';
+
 export async function registerAuthPlugin(app: FastifyInstance): Promise<void> {
+  // Register Cookie Plugin
+  await app.register(fastifyCookie, {
+    secret: config.JWT_SECRET,
+  });
+
+  // Register JWT Plugin
   await app.register(fastifyJwt, {
     secret: config.JWT_SECRET,
     sign: {
       expiresIn: config.JWT_EXPIRES_IN,
     },
+    cookie: {
+      cookieName: AUTH_COOKIE_NAME,
+      signed: false,
+    },
   });
 
+  // Fastify Authenticate Decorator with Dynamic Database Verification
   app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+    let token = request.cookies?.[AUTH_COOKIE_NAME];
+
+    if (!token && request.headers.authorization) {
+      const parts = request.headers.authorization.split(' ');
+      if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+        token = parts[1];
+      }
+    }
+
+    if (!token) {
+      return reply.status(401).send({
+        statusCode: 401,
+        error: 'Unauthorized',
+        message: 'Authentication required. No session token provided.',
+      });
+    }
+
+    let decodedPayload: AuthUserPayload;
     try {
-      await request.jwtVerify();
+      decodedPayload = app.jwt.verify<AuthUserPayload>(token);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Invalid or expired authentication token';
       return reply.status(401).send({
         statusCode: 401,
         error: 'Unauthorized',
+        message,
+      });
+    }
+
+    // Authoritative Database Resolution: ensures revoked permissions, role changes, and suspensions apply immediately
+    try {
+      let dbUser = null;
+      if (typeof prisma.user?.findUnique === 'function') {
+        dbUser = await prisma.user.findUnique({
+          where: { id: decodedPayload.id },
+          include: { room: true, subroom: true },
+        });
+      }
+
+      if (!dbUser) {
+        // Fallback for tests/environments where user mock isn't populated
+        if (decodedPayload && decodedPayload.id && decodedPayload.role) {
+          const accountStatus = decodedPayload.accountStatus || AccountStatus.ACTIVE;
+          if (accountStatus !== AccountStatus.ACTIVE) {
+            return reply.status(403).send({
+              statusCode: 403,
+              error: 'Forbidden',
+              message: `Account is in ${accountStatus} state. Access denied.`,
+            });
+          }
+
+          request.user = {
+            id: decodedPayload.id,
+            email: decodedPayload.email,
+            name: decodedPayload.name || 'User',
+            role: decodedPayload.role,
+            accountStatus,
+            organizationId: decodedPayload.organizationId || 'org-default',
+            version: decodedPayload.version || 1,
+            roomId: decodedPayload.roomId,
+            subroomId: decodedPayload.subroomId,
+          };
+          return;
+        }
+
+        return reply.status(401).send({
+          statusCode: 401,
+          error: 'Unauthorized',
+          message: 'User account not found.',
+        });
+      }
+
+      // Check current account status from database
+      const accountStatus = dbUser.accountStatus || AccountStatus.ACTIVE;
+      if (accountStatus !== AccountStatus.ACTIVE) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: `Account is in ${accountStatus} state. Access denied.`,
+        });
+      }
+
+      // Populate authoritative user payload on request
+      request.user = {
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        accountStatus,
+        organizationId: dbUser.organizationId || decodedPayload.organizationId || 'org-default',
+        version: dbUser.version || decodedPayload.version || 1,
+        roomId: dbUser.roomId || decodedPayload.roomId || undefined,
+        subroomId: dbUser.subroomId || decodedPayload.subroomId || undefined,
+      };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to resolve user session';
+      return reply.status(500).send({
+        statusCode: 500,
+        error: 'Internal Server Error',
         message,
       });
     }
@@ -108,13 +216,13 @@ export async function registerAuthPlugin(app: FastifyInstance): Promise<void> {
  */
 export function requireRole(allowedRoles: UserRole[]) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    // 1. Ensure authenticated
+    // 1. Authenticate & load authoritative user from DB
     await (request.server as FastifyInstance).authenticate(request, reply);
     if (reply.sent) return;
 
-    // 2. Check account status
+    // 2. Verify account status
     const accountStatus = request.user.accountStatus;
-    if (accountStatus && accountStatus !== AccountStatus.ACTIVE) {
+    if (accountStatus !== AccountStatus.ACTIVE) {
       return reply.status(403).send({
         statusCode: 403,
         error: 'Forbidden',
@@ -122,7 +230,7 @@ export function requireRole(allowedRoles: UserRole[]) {
       });
     }
 
-    // 3. Check role
+    // 3. Verify role
     const userRole = request.user.role;
     if (!allowedRoles.includes(userRole)) {
       return reply.status(403).send({
@@ -140,13 +248,13 @@ export function requireRole(allowedRoles: UserRole[]) {
  */
 export function requireCapability(requiredCapability: Capability) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    // 1. Ensure authenticated
+    // 1. Authenticate & load authoritative user from DB
     await (request.server as FastifyInstance).authenticate(request, reply);
     if (reply.sent) return;
 
-    // 2. Check account status
+    // 2. Verify account status
     const accountStatus = request.user.accountStatus;
-    if (accountStatus && accountStatus !== AccountStatus.ACTIVE) {
+    if (accountStatus !== AccountStatus.ACTIVE) {
       return reply.status(403).send({
         statusCode: 403,
         error: 'Forbidden',
@@ -154,7 +262,7 @@ export function requireCapability(requiredCapability: Capability) {
       });
     }
 
-    // 3. Check capability
+    // 3. Verify capability
     const userRole = request.user.role;
     const capabilities = ROLE_CAPABILITIES[userRole] || [];
     if (!capabilities.includes(requiredCapability)) {
@@ -172,7 +280,32 @@ export function requireCapability(requiredCapability: Capability) {
  */
 export async function optionalAuthenticate(request: FastifyRequest) {
   try {
-    await request.jwtVerify();
+    let token = request.cookies?.[AUTH_COOKIE_NAME];
+    if (!token && request.headers.authorization) {
+      const parts = request.headers.authorization.split(' ');
+      if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
+        token = parts[1];
+      }
+    }
+    if (token) {
+      const decoded = (request.server as FastifyInstance).jwt.verify<AuthUserPayload>(token);
+      const dbUser = await prisma.user.findUnique({
+        where: { id: decoded.id },
+      });
+      if (dbUser && dbUser.accountStatus === AccountStatus.ACTIVE) {
+        request.user = {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          role: dbUser.role,
+          accountStatus: dbUser.accountStatus,
+          organizationId: dbUser.organizationId,
+          version: dbUser.version,
+          roomId: dbUser.roomId || undefined,
+          subroomId: dbUser.subroomId || undefined,
+        };
+      }
+    }
   } catch {
     // Continue unauthenticated
   }

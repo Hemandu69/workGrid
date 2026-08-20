@@ -1,7 +1,7 @@
 import { HealthResponse } from '../types/health';
 import { Room } from '../types/room';
 import { Task, TaskCampaign, TaskComment, TaskPriority } from '../types/task';
-import { User, AuthSession } from '../types/auth';
+import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
 import { WeeklyAvailabilitySchedule } from '../types/availability';
 
@@ -34,6 +34,7 @@ async function request<T>(
   try {
     const res = await fetch(url, {
       ...options,
+      credentials: 'include', // Includes HttpOnly cookies
       headers,
     });
 
@@ -65,15 +66,38 @@ export const apiClient = {
     return request<{ status: string }>('/health/live');
   },
 
-  // Auth
-  login: async (email: string, password = 'password123'): Promise<AuthSession> => {
-    return request<AuthSession>('/api/v1/auth/login', {
+  // Auth (Cookie-based session)
+  login: async (email: string, password = 'password123'): Promise<{ message: string; user: User; token?: string }> => {
+    return request<{ message: string; user: User; token?: string }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
   },
-  getMe: async (token: string): Promise<User> => {
-    return request<User>('/api/v1/auth/me', {}, token);
+  getMe: async (): Promise<User> => {
+    return request<User>('/api/v1/auth/me');
+  },
+  logout: async (): Promise<{ message: string }> => {
+    return request<{ message: string }>('/api/v1/auth/logout', {
+      method: 'POST',
+    });
+  },
+  register: async (data: { name: string; email: string; password: string; title?: string }): Promise<{ message: string; user: User }> => {
+    return request<{ message: string; user: User }>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  forgotPassword: async (email: string): Promise<{ message: string; resetToken?: string }> => {
+    return request<{ message: string; resetToken?: string }>('/api/v1/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+  resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
+    return request<{ message: string }>('/api/v1/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
   },
 
   // Dashboard

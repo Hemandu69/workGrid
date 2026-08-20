@@ -2,30 +2,22 @@
 
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '../lib/auth-context';
+import { useAuth, getRoleLandingPath } from '../lib/auth-context';
 
 export default function RootPage() {
   const router = useRouter();
-  const { role } = useAuth();
+  const { role, isAuthenticated, isLoading } = useAuth();
 
   useEffect(() => {
-    switch (role) {
-      case 'SUPER_ADMIN':
-        router.replace('/super-admin');
-        break;
-      case 'ADMIN':
-        router.replace('/admin');
-        break;
-      case 'SERVER':
-        router.replace('/server');
-        break;
-      case 'MEMBER':
-        router.replace('/member');
-        break;
-      default:
+    if (!isLoading) {
+      if (isAuthenticated) {
+        const path = getRoleLandingPath(role);
+        router.replace(path);
+      } else {
         router.replace('/login');
+      }
     }
-  }, [role, router]);
+  }, [role, isAuthenticated, isLoading, router]);
 
   return (
     <div className="min-h-screen bg-surface flex items-center justify-center">

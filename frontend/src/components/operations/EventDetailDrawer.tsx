@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { EventDetailResponse, apiClient, SupervisionState } from '../../lib/api-client';
-import { useAuth } from '../../lib/auth-context';
 import { Avatar } from '../ui/Avatar';
 
 interface EventDetailDrawerProps {
@@ -12,7 +11,6 @@ interface EventDetailDrawerProps {
 }
 
 export function EventDetailDrawer({ eventId, onClose, onSelectPerson }: EventDetailDrawerProps) {
-  const { token } = useAuth();
   const [event, setEvent] = useState<EventDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -26,7 +24,7 @@ export function EventDetailDrawer({ eventId, onClose, onSelectPerson }: EventDet
     setIsLoading(true);
 
     apiClient
-      .getEventDetail(eventId, token)
+      .getEventDetail(eventId)
       .then((res) => {
         if (isMounted) {
           setEvent(res);
@@ -107,7 +105,7 @@ export function EventDetailDrawer({ eventId, onClose, onSelectPerson }: EventDet
     return () => {
       isMounted = false;
     };
-  }, [eventId, token]);
+  }, [eventId]);
 
   if (!eventId) return null;
 
