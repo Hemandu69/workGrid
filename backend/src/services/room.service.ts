@@ -1,4 +1,5 @@
 import { prisma } from '../db/client.js';
+import { UserRole } from '@prisma/client';
 
 export class RoomService {
   static async getAllRooms(organizationId?: string) {
@@ -14,6 +15,18 @@ export class RoomService {
             avatarUrl: true,
             role: true,
             status: true,
+          },
+        },
+        members: {
+          where: { role: UserRole.SERVER },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+            role: true,
+            status: true,
+            title: true,
           },
         },
         subrooms: {
@@ -39,6 +52,11 @@ export class RoomService {
 
     // Format response matching frontend expectations
     return rooms.map((room) => {
+      // Servers assigned to this room (up to 3)
+      const servers = room.members || [];
+      const serverCount = servers.length;
+      const serverSlotSummary = `${serverCount} / 3 server positions assigned`;
+
       const subrooms = room.subrooms.map((s) => {
         const membersCount = s.members.length;
         let status: 'OPTIMAL' | 'NEAR_CAPACITY' | 'FULL' | 'UNDERUTILIZED' = 'OPTIMAL';
@@ -59,8 +77,9 @@ export class RoomService {
           memberCapacity: s.memberCapacity,
           membersCount,
           serverSeatCount: s.serverSeatCount,
-          serverPresent: room.leadServerId !== null,
-          serverUser: room.leadServer || undefined,
+          serverPresent: serverCount > 0,
+          serverUser: servers[0] || room.leadServer || undefined,
+          servers,
           members: s.members,
           status,
         };
@@ -75,7 +94,11 @@ export class RoomService {
         dbId: room.id,
         letter: room.letter,
         name: room.name,
-        leadServer: room.leadServer || undefined,
+        leadServer: servers[0] || room.leadServer || undefined,
+        servers,
+        serverCount,
+        serverCapacity: 3,
+        serverSlotSummary,
         subrooms,
         totalMembers,
         totalCapacity,
@@ -121,6 +144,52 @@ export class RoomService {
       data: {
         memberCapacity: newCapacity,
       },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Assign a SERVER to a room with maximum 3 servers per room constraint
+   */
+  static async assignServerToRoom(roomId: string, userId: string) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new Error(`User ${userId} not found`);
+    }
+
+    if (user.role !== UserRole.SERVER) {
+      throw new Error(`User ${user.name} does not have the SERVER role (current role: ${user.role})`);
+    }
+
+    const room = await prisma.room.findUnique({
+      where: { id: roomId },
+    });
+
+    if (!room) {
+      throw new Error(`Room ${roomId} not found`);
+    }
+
+    // Check existing servers count
+    const existingServerCount = await prisma.user.count({
+      where: {
+        roomId,
+        role: UserRole.SERVER,
+        id: { not: userId },
+      },
+    });
+
+    if (existingServerCount >= 3) {
+      throw new Error(`Room Sector ${room.letter} already has the maximum of 3 assigned Servers.`);
+    }
+
+    // Update user roomId
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { roomId },
     });
 
     return updated;

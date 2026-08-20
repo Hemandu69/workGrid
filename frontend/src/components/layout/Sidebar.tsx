@@ -57,7 +57,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'People Availability',
     href: '/admin/availability',
     icon: 'event_available',
-    roles: ['ADMIN', 'SUPER_ADMIN'],
+    roles: ['ADMIN', 'SUPER_ADMIN', 'SERVER'],
   },
   {
     label: 'Reports & Analytics',

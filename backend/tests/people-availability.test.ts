@@ -18,7 +18,8 @@ const { mockPrisma } = vi.hoisted(() => ({
           avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330',
           capacityLimitHours: 35,
           currentAllocatedHours: 28,
-          room: { letter: 'B', name: 'Sector B — Infrastructure & Security' },
+          roomId: 'room-b-id',
+          room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
           subroom: { code: 'B3' },
           availabilitySlots: [
             { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
@@ -48,7 +49,8 @@ const { mockPrisma } = vi.hoisted(() => ({
           avatarUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61',
           capacityLimitHours: 40,
           currentAllocatedHours: 36,
-          room: { letter: 'B', name: 'Sector B — Infrastructure & Security' },
+          roomId: 'room-b-id',
+          room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
           subroom: { code: 'B3' },
           availabilitySlots: [
             { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
@@ -57,40 +59,66 @@ const { mockPrisma } = vi.hoisted(() => ({
           assignedTasks: [],
         },
       ]),
-      findUnique: vi.fn().mockResolvedValue({
-        id: 'member-1-id',
-        name: 'Sarah Connor',
-        email: 'sarah.connor@workgrid.corp',
-        role: 'MEMBER',
-        status: 'ONLINE',
-        title: 'Senior Systems Engineer',
-        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330',
-        capacityLimitHours: 35,
-        currentAllocatedHours: 28,
-        room: { letter: 'B', name: 'Sector B — Infrastructure & Security' },
-        subroom: { code: 'B3' },
-        availabilitySlots: [
-          { day: 'MONDAY', hour: 10, state: 'AVAILABLE' },
-          { day: 'MONDAY', hour: 11, state: 'AVAILABLE' },
-          { day: 'MONDAY', hour: 12, state: 'BUSY' },
-          { day: 'TUESDAY', hour: 9, state: 'AVAILABLE' },
-          { day: 'WEDNESDAY', hour: 14, state: 'AVAILABLE' },
-          { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
-          { day: 'FRIDAY', hour: 10, state: 'AVAILABLE' },
-        ],
-        assignedTasks: [
-          {
-            id: 'task-1-id',
-            taskIdDisplay: 'TSK-8421',
-            title: 'Design System Migration & Audit',
-            description: 'Audit legacy color codes and update typography',
-            status: 'IN_PROGRESS',
-            priority: 'HIGH',
-            estimatedHours: 12,
-            allocatedHours: 8,
-            dueDate: new Date('2026-08-21T00:00:00.000Z'),
-          },
-        ],
+      findUnique: vi.fn().mockImplementation(({ where }) => {
+        if (where.id === 'server-1-id') {
+          return Promise.resolve({
+            id: 'server-1-id',
+            name: 'David Chen',
+            email: 'david.chen@workgrid.corp',
+            role: 'SERVER',
+            roomId: 'room-b-id',
+            room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
+          });
+        }
+        if (where.id === 'member-1-id') {
+          return Promise.resolve({
+            id: 'member-1-id',
+            name: 'Sarah Connor',
+            email: 'sarah.connor@workgrid.corp',
+            role: 'MEMBER',
+            status: 'ONLINE',
+            title: 'Senior Systems Engineer',
+            avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330',
+            capacityLimitHours: 35,
+            currentAllocatedHours: 28,
+            roomId: 'room-b-id',
+            room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
+            subroom: { code: 'B3' },
+            availabilitySlots: [
+              { day: 'MONDAY', hour: 10, state: 'AVAILABLE' },
+              { day: 'MONDAY', hour: 11, state: 'AVAILABLE' },
+              { day: 'MONDAY', hour: 12, state: 'BUSY' },
+              { day: 'TUESDAY', hour: 9, state: 'AVAILABLE' },
+              { day: 'WEDNESDAY', hour: 14, state: 'AVAILABLE' },
+              { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
+              { day: 'FRIDAY', hour: 10, state: 'AVAILABLE' },
+            ],
+            assignedTasks: [
+              {
+                id: 'task-1-id',
+                taskIdDisplay: 'TSK-8421',
+                title: 'Design System Migration & Audit',
+                description: 'Audit legacy color codes and update typography',
+                status: 'IN_PROGRESS',
+                priority: 'HIGH',
+                estimatedHours: 12,
+                allocatedHours: 8,
+                dueDate: new Date('2026-08-21T00:00:00.000Z'),
+              },
+            ],
+          });
+        }
+        if (where.id === 'member-other-room-id') {
+          return Promise.resolve({
+            id: 'member-other-room-id',
+            name: 'External Person',
+            email: 'ext@workgrid.corp',
+            role: 'MEMBER',
+            roomId: 'room-a-id',
+            room: { id: 'room-a-id', letter: 'A', name: 'Sector A' },
+          });
+        }
+        return Promise.resolve(null);
       }),
     },
   },
@@ -133,6 +161,7 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
       email: 'david.chen@workgrid.corp',
       name: 'David Chen',
       role: UserRole.SERVER,
+      roomId: 'room-b-id',
       organizationId: 'org-1',
     });
 
@@ -171,9 +200,18 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(res.status).toBe(200);
   });
 
-  it('GET /api/v1/availability/people should reject SERVER with 403 Forbidden', async () => {
+  it('GET /api/v1/availability/people should allow SERVER for their assigned room (Room B)', async () => {
     const res = await supertest(app.server)
       .get('/api/v1/availability/people')
+      .set('Authorization', `Bearer ${serverToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('people');
+  });
+
+  it('GET /api/v1/availability/people should reject SERVER attempting to access another room (Room A) with 403', async () => {
+    const res = await supertest(app.server)
+      .get('/api/v1/availability/people?room=A')
       .set('Authorization', `Bearer ${serverToken}`);
 
     expect(res.status).toBe(403);
@@ -208,6 +246,24 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(res.body).toHaveProperty('upcomingCommitments');
     expect(Array.isArray(res.body.weeklyTimeline)).toBe(true);
     expect(res.body.weeklyTimeline.length).toBe(7);
+  });
+
+  it('GET /api/v1/availability/people/:id should allow SERVER to access person in their own room', async () => {
+    const res = await supertest(app.server)
+      .get('/api/v1/availability/people/member-1-id')
+      .set('Authorization', `Bearer ${serverToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.person.id).toBe('member-1-id');
+  });
+
+  it('GET /api/v1/availability/people/:id should reject SERVER accessing person in another room with 403', async () => {
+    const res = await supertest(app.server)
+      .get('/api/v1/availability/people/member-other-room-id')
+      .set('Authorization', `Bearer ${serverToken}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Forbidden');
   });
 
   it('GET /api/v1/availability/people/:id should reject MEMBER with 403 Forbidden', async () => {

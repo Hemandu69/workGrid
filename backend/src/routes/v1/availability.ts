@@ -3,14 +3,15 @@ import { AvailabilityService } from '../../services/availability.service.js';
 import { updateWeeklyScheduleSchema } from '../../schemas/availability.schema.js';
 import { requireRole } from '../../plugins/auth.js';
 import { UserRole } from '@prisma/client';
+import { prisma } from '../../db/client.js';
 
 export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
-  // GET /api/v1/availability/people (or /api/v1/users/availability/people)
-  // Protected: Only SUPER_ADMIN and ADMIN can access organization-wide people availability overview
+  // GET /api/v1/availability/people
+  // Protected: SUPER_ADMIN and ADMIN have global scope; SERVER is strictly scoped to their assigned room.
   fastify.get(
     '/availability/people',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER])],
     },
     async (request, reply) => {
       const query = request.query as {
@@ -23,6 +24,42 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
         search?: string;
       };
 
+      let targetRoomFilter = query.room;
+
+      // Server Role Boundary Enforcement:
+      // A Server is strictly a room-level overseer and can only see people in their assigned room.
+      if (request.user.role === UserRole.SERVER) {
+        const serverUser = await prisma.user.findUnique({
+          where: { id: request.user.id },
+          include: { room: true },
+        });
+
+        if (!serverUser?.room) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'You are assigned as SERVER but currently have no room assignment.',
+          });
+        }
+
+        const assignedRoomLetter = serverUser.room.letter.toUpperCase();
+
+        // If client specified a room query, ensure it matches the server's assigned room
+        if (query.room && query.room !== 'ALL') {
+          const requestedLetter = query.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').trim();
+          if (requestedLetter !== assignedRoomLetter) {
+            return reply.status(403).send({
+              statusCode: 403,
+              error: 'Forbidden',
+              message: `As a Server for Sector ${assignedRoomLetter}, you cannot access availability for Sector ${requestedLetter}.`,
+            });
+          }
+        }
+
+        // Lock query strictly to server's assigned room
+        targetRoomFilter = assignedRoomLetter;
+      }
+
       try {
         const result = await AvailabilityService.getPeopleAvailability({
           date: query.date,
@@ -30,7 +67,7 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
           endHour: query.endHour ? parseInt(query.endHour, 10) : undefined,
           status: query.status,
           role: query.role,
-          room: query.room,
+          room: targetRoomFilter,
           search: query.search,
         });
 
@@ -47,15 +84,39 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // GET /api/v1/availability/people/:id
-  // Protected: Only SUPER_ADMIN and ADMIN can access detailed weekly person availability
+  // Protected: SUPER_ADMIN and ADMIN have global scope; SERVER can only inspect people in their assigned room.
   fastify.get(
     '/availability/people/:id',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER])],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const query = request.query as { startDate?: string };
+
+      // Server Role Scope Enforcement
+      if (request.user.role === UserRole.SERVER) {
+        const [serverUser, targetUser] = await Promise.all([
+          prisma.user.findUnique({ where: { id: request.user.id }, include: { room: true } }),
+          prisma.user.findUnique({ where: { id }, include: { room: true } }),
+        ]);
+
+        if (!serverUser?.roomId) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'Server has no room assignment.',
+          });
+        }
+
+        if (!targetUser || targetUser.roomId !== serverUser.roomId) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'Servers can only access availability details for people assigned to their room.',
+          });
+        }
+      }
 
       try {
         const result = await AvailabilityService.getPersonDetailedAvailability(id, query.startDate);
