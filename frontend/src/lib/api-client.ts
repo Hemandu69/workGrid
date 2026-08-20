@@ -248,6 +248,39 @@ export const apiClient = {
     const query = startDate ? `?startDate=${startDate}` : '';
     return request<PersonAvailabilityDetailResponse>(`/api/v1/availability/people/${userId}${query}`, {}, token);
   },
+
+  // Operations Grid & Server Tracking
+  getOperationalGrid: async (
+    params: { room?: string; search?: string } = {},
+    token?: string
+  ): Promise<OperationalGridResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params.room && params.room !== 'ALL') searchParams.append('room', params.room);
+    if (params.search) searchParams.append('search', params.search);
+
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return request<OperationalGridResponse>(`/api/v1/operations/grid${query}`, {}, token);
+  },
+
+  getEventDetail: async (eventId: string, token?: string): Promise<EventDetailResponse> => {
+    return request<EventDetailResponse>(`/api/v1/operations/events/${eventId}`, {}, token);
+  },
+
+  updatePresence: async (
+    data: {
+      userId?: string;
+      presenceState?: 'IN' | 'OUT' | 'UNKNOWN';
+      currentLocationName?: string | null;
+      currentLocationRoomId?: string | null;
+      currentLocationSubroomId?: string | null;
+    },
+    token?: string
+  ): Promise<{ userId: string; presenceState: string; currentLocation: string; arrivedAtIST?: string; lastSeenIST: string }> => {
+    return request('/api/v1/operations/presence', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, token);
+  },
 };
 
 export interface PeopleAvailabilityResponse {
@@ -346,4 +379,144 @@ export interface PersonAvailabilityDetailResponse {
     room: string;
     subroom: string;
   }>;
+}
+
+export type SupervisionState =
+  | 'PRESENT_IN_EVENT'
+  | 'IN_ROOM_DIFFERENT_SUBROOM'
+  | 'OUTSIDE_ROOM'
+  | 'UNKNOWN'
+  | 'NOT_REQUIRED';
+
+export interface GridMemberItem {
+  id: string;
+  name: string;
+  role: 'SUPER_ADMIN' | 'ADMIN' | 'SERVER' | 'MEMBER';
+  title?: string;
+  avatarUrl?: string;
+  presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+  presenceLabel: string;
+  currentLocation: string;
+  arrivedAt?: string;
+  arrivedAtIST?: string;
+  leftAt?: string;
+  leftAtIST?: string;
+  durationInWorkGrid?: string;
+  lastSeenIST: string;
+  activeTaskId?: string;
+  activeTaskTitle?: string;
+}
+
+export interface GridServerItem {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  assignedRoomLetter: string;
+  presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+  currentLocation: string;
+  isCurrentlyInSubroom: boolean;
+  arrivedAtIST?: string;
+  lastSeenIST: string;
+}
+
+export interface GridSubroomCell {
+  id: string;
+  code: string;
+  number: number;
+  roomLetter: string;
+  memberCapacity: number;
+  serverSeatCount: number;
+  occupancyCount: number;
+  members: GridMemberItem[];
+  serversPresent: GridServerItem[];
+  activeRoomEvent?: {
+    id: string;
+    title: string;
+    startTimeIST: string;
+    endTimeIST: string;
+    serverCoverageSummary: string;
+  };
+}
+
+export interface GridRoomColumn {
+  id: string;
+  letter: string;
+  name: string;
+  assignedServers: Array<{
+    id: string;
+    name: string;
+    presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+    currentLocation: string;
+  }>;
+  serverPresenceCount: number;
+  serverTotalCount: number;
+  serverCoverageSummary: string;
+  subrooms: GridSubroomCell[];
+}
+
+export interface OperationalGridResponse {
+  currentTimeIST: string;
+  activeCompanyEvent?: {
+    id: string;
+    title: string;
+    description?: string;
+    scope: 'COMPANY' | 'ROOM';
+    locations: string[];
+    startTimeIST: string;
+    endTimeIST: string;
+    requiredServersCount?: number;
+    serversPresentCount: number;
+    serverCoverageSummary: string;
+  };
+  totalRooms: number;
+  totalSubrooms: number;
+  totalPeoplePresent: number;
+  totalServersPresent: number;
+  rooms: GridRoomColumn[];
+}
+
+export interface EventDetailResponse {
+  id: string;
+  title: string;
+  description?: string;
+  scope: 'COMPANY' | 'ROOM';
+  status: string;
+  room?: string;
+  subroom?: string;
+  locations: string[];
+  startTimeIST: string;
+  endTimeIST: string;
+  dateFormatted: string;
+  participantCount: number;
+  participants: Array<{
+    id: string;
+    name: string;
+    role: string;
+    avatarUrl?: string;
+    room: string;
+    subroom: string;
+    currentLocation: string;
+    presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+  }>;
+  serverCoverage: {
+    totalServers: number;
+    present: number;
+    inDifferentSubroom: number;
+    outside: number;
+    unknown: number;
+    notRequired: number;
+    coveragePercentage: number;
+    servers: Array<{
+      id: string;
+      name: string;
+      email: string;
+      avatarUrl?: string;
+      assignedRoom: string;
+      currentLocation: string;
+      presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+      supervisionState: SupervisionState;
+      lastSeenIST: string;
+    }>;
+  };
 }

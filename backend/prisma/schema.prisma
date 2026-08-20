@@ -24,6 +24,24 @@ enum UserStatus {
   AWAY
 }
 
+enum PresenceState {
+  IN
+  OUT
+  UNKNOWN
+}
+
+enum EventScope {
+  COMPANY
+  ROOM
+}
+
+enum EventStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 enum TaskStatus {
   DRAFT
   ASSIGNED
@@ -88,6 +106,7 @@ model Organization {
   tasks         Task[]
   campaigns     TaskCampaign[]
   announcements Announcement[]
+  events        Event[]
   auditEvents   AuditEvent[]
 
   @@map("organizations")
@@ -107,6 +126,16 @@ model User {
   currentAllocatedHours Int           @default(0)
   roomId                String?
   subroomId             String?
+  
+  // Real Presence & Current Location Tracking (Separate from Permanent Room Assignment)
+  presenceState         PresenceState @default(UNKNOWN)
+  arrivedAt             DateTime?
+  leftAt                DateTime?
+  lastSeenAt            DateTime?     @default(now())
+  currentLocationRoomId    String?
+  currentLocationSubroomId String?
+  currentLocationName      String?    // e.g. "B4", "Main Hall", "Cafeteria", "Outside"
+
   version               Int           @default(1)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
@@ -122,6 +151,8 @@ model User {
   taskComments          TaskComment[] @relation("CommentAuthor")
   announcements         Announcement[] @relation("AnnouncementAuthor")
   availabilitySlots     AvailabilitySlot[]
+  eventsRequired        EventRequiredServer[]
+  eventParticipations   EventParticipant[]
   auditEvents           AuditEvent[]
 
   @@index([organizationId, role])
@@ -145,6 +176,7 @@ model Room {
   leadServer     User?        @relation("RoomLeadServer", fields: [leadServerId], references: [id], onDelete: SetNull)
   subrooms       Subroom[]
   members        User[]       @relation("RoomMembers")
+  events         Event[]
 
   @@unique([organizationId, letter])
   @@map("rooms")
@@ -164,10 +196,75 @@ model Subroom {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
   members        User[]       @relation("SubroomMembers")
+  events         Event[]
 
   @@unique([roomId, number])
   @@unique([organizationId, code])
   @@map("subrooms")
+}
+
+// -----------------------------------------------------------------------------
+// Multi-Scope Events (Company-Wide & Room-Specific)
+// -----------------------------------------------------------------------------
+model Event {
+  id                   String                @id @default(uuid())
+  organizationId       String
+  title                String
+  description          String?
+  scope                EventScope            @default(ROOM)
+  roomId               String?               // Nullable for COMPANY events
+  subroomId            String?               // Nullable for COMPANY events
+  status               EventStatus           @default(ACTIVE)
+  startTime            DateTime
+  endTime              DateTime
+  requiredServersCount Int?                  // Required supervisory servers
+
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room                 Room?                 @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  subroom              Subroom?              @relation(fields: [subroomId], references: [id], onDelete: SetNull)
+  locations            EventLocation[]
+  requiredServers      EventRequiredServer[]
+  participants         EventParticipant[]
+
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  @@index([organizationId, status, startTime])
+  @@map("events")
+}
+
+model EventLocation {
+  id        String   @id @default(uuid())
+  eventId   String
+  name      String   // e.g. "Main Auditorium", "Room A", "Room B", "Remote"
+  roomId    String?
+  subroomId String?
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_locations")
+}
+
+model EventRequiredServer {
+  id       String @id @default(uuid())
+  eventId  String
+  serverId String
+  event    Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  server   User   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, serverId])
+  @@map("event_required_servers")
+}
+
+model EventParticipant {
+  id        String   @id @default(uuid())
+  eventId   String
+  userId    String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@map("event_participants")
 }
 
 // -----------------------------------------------------------------------------

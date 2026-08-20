@@ -7,6 +7,7 @@ import { campaignRoutes } from './campaigns.js';
 import { announcementRoutes } from './announcements.js';
 import { availabilityRoutes } from './availability.js';
 import { dashboardRoutes } from './dashboard.js';
+import { operationsRoutes } from './operations.js';
 
 export const v1Routes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(authRoutes, { prefix: '/auth' });
@@ -17,4 +18,5 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(announcementRoutes, { prefix: '/announcements' });
   await fastify.register(availabilityRoutes);
   await fastify.register(dashboardRoutes, { prefix: '/dashboard' });
+  await fastify.register(operationsRoutes, { prefix: '/operations' });
 };

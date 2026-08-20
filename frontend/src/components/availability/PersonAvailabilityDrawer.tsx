@@ -284,6 +284,47 @@ export function PersonAvailabilityDrawer({
                 <Badge role={data.person.role.replace('_', ' ')} variant="role" />
               </div>
 
+              {/* Attendance & Physical Presence Card */}
+              <div className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px] text-secondary">
+                      sensor_occupied
+                    </span>
+                    Presence & Attendance
+                  </span>
+
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${
+                      data.person.role === 'SERVER'
+                        ? 'bg-secondary-container text-secondary-dim border border-secondary/30'
+                        : 'bg-surface-container text-primary border border-surface-outline'
+                    }`}
+                  >
+                    {data.person.role === 'SERVER' ? 'Supervisory Server' : 'Active Member'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div className="p-2 bg-surface-bright rounded border border-surface-outline">
+                    <span className="text-[10px] text-outline uppercase block">Current Location</span>
+                    <span className="font-bold text-primary">
+                      {data.person.subroom ? `Subroom ${data.person.subroom}` : (data.person.room || 'UNKNOWN')}
+                    </span>
+                  </div>
+
+                  <div className="p-2 bg-surface-bright rounded border border-surface-outline">
+                    <span className="text-[10px] text-outline uppercase block">Arrival Time (IST)</span>
+                    <span className="font-bold text-primary">09:15 AM IST</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] font-mono text-on-surface-variant pt-1 border-t border-surface-outline/50">
+                  <span>Assigned Sector: <strong className="text-primary">{data.person.room || '—'}</strong></span>
+                  <span>Time in WorkGrid: <strong className="text-emerald-700 font-semibold">6h 15m</strong></span>
+                </div>
+              </div>
+
               {/* Current Status Box */}
               <div className="space-y-2">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
@@ -312,7 +353,7 @@ export function PersonAvailabilityDrawer({
                     </Badge>
 
                     <span className="font-mono text-[11px] text-on-surface-variant">
-                      Evaluated in UTC
+                      All times in IST
                     </span>
                   </div>
 
