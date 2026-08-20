@@ -1,8 +1,10 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import { config } from './config/index.js';
 import { registerSecurityPlugins } from './plugins/security.js';
+import { registerAuthPlugin } from './plugins/auth.js';
 import { setupErrorHandler } from './plugins/error-handler.js';
 import { healthRoutes } from './routes/health.js';
+import { v1Routes } from './routes/v1/index.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -30,8 +32,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Security Plugins (Helmet, CORS, Rate Limit, Sensible)
   await registerSecurityPlugins(app);
 
+  // JWT & Authentication Plugin
+  await registerAuthPlugin(app);
+
   // Route Registrations
   await app.register(healthRoutes);
+  await app.register(v1Routes, { prefix: '/api/v1' });
 
   return app;
 }

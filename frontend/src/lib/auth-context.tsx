@@ -7,9 +7,10 @@ import { MOCK_USERS } from './mock-data';
 interface AuthContextType {
   user: User;
   role: UserRole;
+  token?: string;
   setRole: (role: UserRole) => void;
   setUser: (user: User) => void;
-  login: (email: string) => boolean;
+  login: (email: string, token?: string) => boolean;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Default to Super Admin so all parts of the application are previewable out of the box
   const [currentUser, setCurrentUser] = useState<User>(MOCK_USERS.superAdmin);
+  const [token, setToken] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
 
   // Allow switching roles dynamically
@@ -39,7 +41,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const login = (email: string) => {
+  const login = (email: string, authToken?: string) => {
+    if (authToken) {
+      setToken(authToken);
+    }
     const userMatch = Object.values(MOCK_USERS).find((u) => u.email.toLowerCase() === email.toLowerCase());
     if (userMatch) {
       setCurrentUser(userMatch);
@@ -57,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    setToken(undefined);
     setIsAuthenticated(false);
   };
 
@@ -65,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user: currentUser,
         role: currentUser.role,
+        token,
         setRole,
         setUser: setCurrentUser,
         login,

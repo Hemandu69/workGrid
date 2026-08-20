@@ -13,6 +13,8 @@ const envSchema = z.object({
     .default('postgresql://worktracker:worktracker_secure_pass@localhost:5432/worktracker_db?schema=public'),
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  JWT_SECRET: z.string().default('workgrid-dev-super-secret-key-min32chars-2026!'),
+  JWT_EXPIRES_IN: z.string().default('7d'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   RATE_LIMIT_MAX: z.coerce.number().default(100),
   RATE_LIMIT_TIME_WINDOW: z.coerce.number().default(60000),
