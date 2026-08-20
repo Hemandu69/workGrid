@@ -1,0 +1,39 @@
+{
+  "name": "work-trackor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hierarchical Office Task Tracker Monorepo",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace=backend run dev",
+    "dev:frontend": "npm --workspace=frontend run dev",
+    "build:backend": "npm --workspace=backend run build",
+    "build:frontend": "npm --workspace=frontend run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "lint:backend": "npm --workspace=backend run lint",
+    "lint:frontend": "npm --workspace=frontend run lint",
+    "lint": "npm run lint:backend && npm run lint:frontend",
+    "test:backend": "npm --workspace=backend run test",
+    "test": "npm run test:backend",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "keywords": [
+    "task-tracker",
+    "monorepo",
+    "fastify",
+    "nextjs",
+    "postgresql",
+    "redis"
+  ],
+  "author": "",
+  "license": "UNLICENSED"
+}

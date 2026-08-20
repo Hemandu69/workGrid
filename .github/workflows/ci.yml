@@ -1,0 +1,110 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate-and-test:
+    name: Lint, Type Check & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: worktracker
+          POSTGRES_PASSWORD: worktracker_secure_pass
+          POSTGRES_DB: worktracker_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      # --- Backend Validation ---
+      - name: Generate Prisma Client
+        run: cd backend && npx prisma generate
+        env:
+          DATABASE_URL: "postgresql://worktracker:worktracker_secure_pass@localhost:5432/worktracker_db?schema=public"
+
+      - name: Lint Backend
+        run: cd backend && npm run lint
+
+      - name: Run Backend Tests
+        run: cd backend && npm run test
+        env:
+          NODE_ENV: test
+          PORT: 4000
+          DATABASE_URL: "postgresql://worktracker:worktracker_secure_pass@localhost:5432/worktracker_db?schema=public"
+          REDIS_URL: "redis://localhost:6379"
+
+      - name: Build Backend
+        run: cd backend && npm run build
+
+      # --- Frontend Validation ---
+      - name: Lint Frontend
+        run: cd frontend && npm run lint
+
+      - name: Type-Check Frontend
+        run: cd frontend && npm run type-check
+
+      - name: Build Frontend
+        run: cd frontend && npm run build
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:4000"
+
+  docker-build:
+    name: Validate Docker Builds
+    runs-on: ubuntu-latest
+    needs: validate-and-test
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: false
+          tags: worktracker-backend:test
+
+      - name: Build Frontend Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          tags: worktracker-frontend:test
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:4000

@@ -1,0 +1,36 @@
+{
+  "name": "work-trackor-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frontend for Hierarchical Office Task Tracker",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "0.475.0",
+    "next": "15.5.23",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "tailwind-merge": "3.0.1"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.2.0",
+    "@types/node": "22.13.5",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.23",
+    "postcss": "8.5.3",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
