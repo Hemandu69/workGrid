@@ -40,8 +40,8 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         let assignedRoomLetter = serverUser?.room?.letter?.toUpperCase();
-        if (!assignedRoomLetter && (request.user.roomId || serverUser?.roomId)) {
-          const rId = request.user.roomId || serverUser?.roomId;
+        const rId = request.user.roomId || serverUser?.roomId;
+        if (!assignedRoomLetter && rId) {
           if (rId.toLowerCase().includes('room-b') || rId === 'b') {
             assignedRoomLetter = 'B';
           } else if (typeof prisma.room?.findFirst === 'function') {
