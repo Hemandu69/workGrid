@@ -1,6 +1,6 @@
 import { HealthResponse } from '../types/health';
 import { Room } from '../types/room';
-import { Task, TaskCampaign, TaskComment } from '../types/task';
+import { Task, TaskCampaign, TaskComment, TaskPriority } from '../types/task';
 import { User, AuthSession } from '../types/auth';
 import { Announcement } from '../types/announcement';
 import { WeeklyAvailabilitySchedule } from '../types/availability';
@@ -217,4 +217,133 @@ export const apiClient = {
       token
     );
   },
+  getPeopleAvailability: async (
+    params: {
+      date?: string;
+      startHour?: number;
+      endHour?: number;
+      status?: string;
+      role?: string;
+      room?: string;
+      search?: string;
+    } = {},
+    token?: string
+  ): Promise<PeopleAvailabilityResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params.date) searchParams.append('date', params.date);
+    if (params.startHour !== undefined) searchParams.append('startHour', params.startHour.toString());
+    if (params.endHour !== undefined) searchParams.append('endHour', params.endHour.toString());
+    if (params.status && params.status !== 'ALL') searchParams.append('status', params.status);
+    if (params.role && params.role !== 'ALL') searchParams.append('role', params.role);
+    if (params.room && params.room !== 'ALL') searchParams.append('room', params.room);
+    if (params.search) searchParams.append('search', params.search);
+
+    return request<PeopleAvailabilityResponse>(`/api/v1/availability/people?${searchParams.toString()}`, {}, token);
+  },
+  getPersonAvailabilityDetail: async (
+    userId: string,
+    startDate?: string,
+    token?: string
+  ): Promise<PersonAvailabilityDetailResponse> => {
+    const query = startDate ? `?startDate=${startDate}` : '';
+    return request<PersonAvailabilityDetailResponse>(`/api/v1/availability/people/${userId}${query}`, {}, token);
+  },
 };
+
+export interface PeopleAvailabilityResponse {
+  timeSlot: {
+    date: string;
+    startHour: number;
+    endHour: number;
+    startFormatted: string;
+    endFormatted: string;
+    timezone: string;
+  };
+  summary: {
+    totalPeople: number;
+    freeCount: number;
+    busyCount: number;
+    partialCount: number;
+    unavailableCount: number;
+  };
+  people: Array<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    avatarUrl?: string;
+    title?: string;
+    room?: string;
+    subroom?: string;
+    status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+    statusLabel: string;
+    reason: string;
+    until?: string;
+    freeWindow?: string;
+    activeTask?: {
+      id: string;
+      title: string;
+      priority: string;
+      dueDate?: string;
+    };
+  }>;
+}
+
+export interface PersonAvailabilityDetailResponse {
+  person: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    avatarUrl?: string;
+    title?: string;
+    room?: string;
+    subroom?: string;
+    capacityLimitHours: number;
+    currentAllocatedHours: number;
+  };
+  currentStatus: {
+    state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+    reason: string;
+    room?: string;
+    subroom?: string;
+    until?: string;
+  };
+  nextFree: {
+    isCurrentlyFree: boolean;
+    statusText: string;
+    nextFreeDate?: string;
+    nextFreeTime?: string;
+    durationFormatted?: string;
+  };
+  weeklyTimeline: Array<{
+    date: string;
+    dayName: string;
+    dayOfWeek: string;
+    isToday: boolean;
+    status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+    windows: Array<{
+      startHour: number;
+      endHour: number;
+      startFormatted: string;
+      endFormatted: string;
+      state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+      label: string;
+      reason?: string;
+    }>;
+  }>;
+  upcomingCommitments: Array<{
+    id: string;
+    title: string;
+    description?: string;
+    status: string;
+    priority: TaskPriority;
+    estimatedHours: number;
+    allocatedHours: number;
+    dueDate?: string;
+    dueDateFormatted: string;
+    room: string;
+    subroom: string;
+  }>;
+}
