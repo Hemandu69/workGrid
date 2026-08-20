@@ -44,7 +44,6 @@ ENV HOST=0.0.0.0
 # from the repository's pinned workspace lockfile.
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/package.json
-COPY backend/prisma ./backend/prisma/
 
 RUN npm ci --omit=dev --workspace=backend
 
