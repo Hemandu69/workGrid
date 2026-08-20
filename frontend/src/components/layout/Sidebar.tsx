@@ -7,16 +7,18 @@ import { useAuth } from '../../lib/auth-context';
 import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
 
+import { UserRole } from '../../types/auth';
+
 interface NavItem {
   label: string;
   href: string;
   icon: string;
-  roles: Array<'SUPER_ADMIN' | 'ADMIN' | 'SERVER' | 'MEMBER'>;
+  roles: UserRole[];
   badge?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  // Super Admin & Admin Links
+  // Super Admin Links
   {
     label: 'Global Overview',
     href: '/super-admin',
@@ -29,6 +31,22 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'campaign',
     roles: ['SUPER_ADMIN'],
   },
+
+  // HR Dedicated Links (People Management)
+  {
+    label: 'People Directory',
+    href: '/hr',
+    icon: 'badge',
+    roles: ['HR', 'SUPER_ADMIN'],
+  },
+  {
+    label: 'Role Audit Trail',
+    href: '/hr/audit',
+    icon: 'history_edu',
+    roles: ['HR', 'SUPER_ADMIN'],
+  },
+
+  // Admin Operational Links
   {
     label: 'Admin Dashboard',
     href: '/admin',
@@ -72,12 +90,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['ADMIN', 'SUPER_ADMIN'],
   },
 
-  // Server (Team Lead) Links
+  // Server / Team Lead Links
   {
     label: 'Team Dashboard',
     href: '/server',
     icon: 'space_dashboard',
-    roles: ['SERVER'],
+    roles: ['SERVER', 'TEAM_LEAD'],
   },
 
   // Member Links
@@ -91,20 +109,20 @@ const NAV_ITEMS: NavItem[] = [
     label: 'My Tasks',
     href: '/member/tasks',
     icon: 'assignment',
-    roles: ['MEMBER', 'SERVER'],
+    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD'],
     badge: '3',
   },
   {
     label: 'Weekly Availability',
     href: '/member/availability',
     icon: 'calendar_month',
-    roles: ['MEMBER', 'SERVER', 'ADMIN', 'SUPER_ADMIN'],
+    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'ADMIN', 'SUPER_ADMIN'],
   },
   {
     label: 'Notifications',
     href: '/notifications',
     icon: 'notifications',
-    roles: ['MEMBER', 'SERVER', 'ADMIN', 'SUPER_ADMIN'],
+    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'HR', 'ADMIN', 'SUPER_ADMIN'],
     badge: '2',
   },
 ];
@@ -121,12 +139,14 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
 
   const filteredNavItems = NAV_ITEMS.filter((item) => item.roles.includes(role));
 
-  const roleLabel = {
+  const roleLabel: Record<UserRole, string> = {
     SUPER_ADMIN: 'Super Admin',
     ADMIN: 'Admin',
-    SERVER: 'Server / Lead',
+    HR: 'HR',
+    TEAM_LEAD: 'Team Lead',
+    SERVER: 'Server',
     MEMBER: 'Member',
-  }[role];
+  };
 
   return (
     <>
@@ -157,7 +177,7 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
             </div>
           </div>
 
-          <Badge role={roleLabel} variant="role" />
+          <Badge role={roleLabel[role]} variant="role" />
         </div>
 
         {/* User Card */}
@@ -178,9 +198,15 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
             className="w-full bg-primary text-on-primary py-2 px-3 rounded text-xs font-medium hover:bg-primary-container transition-colors flex items-center justify-center gap-2 shadow-xs"
           >
             <span className="material-symbols-outlined text-[16px]">
-              {role === 'MEMBER' ? 'edit_calendar' : 'add'}
+              {role === 'MEMBER' ? 'edit_calendar' : role === 'HR' ? 'person_add' : 'add'}
             </span>
-            <span>{role === 'MEMBER' ? 'Edit Availability' : 'Create Task'}</span>
+            <span>
+              {role === 'MEMBER'
+                ? 'Edit Availability'
+                : role === 'HR'
+                ? 'Onboard Person'
+                : 'Create Task'}
+            </span>
           </button>
         </div>
 

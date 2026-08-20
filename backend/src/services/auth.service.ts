@@ -27,6 +27,7 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role,
+      accountStatus: user.accountStatus,
       organizationId: user.organizationId,
       roomId: user.roomId || undefined,
       subroomId: user.subroomId || undefined,

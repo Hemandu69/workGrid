@@ -8,17 +8,26 @@ import { CreateTaskModal } from '../tasks/CreateTaskModal';
 interface AppShellProps {
   children: React.ReactNode;
   breadcrumbs?: Array<{ label: string; href?: string }>;
+  onQuickAction?: () => void;
 }
 
-export function AppShell({ children, breadcrumbs }: AppShellProps) {
+export function AppShell({ children, breadcrumbs, onQuickAction }: AppShellProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+
+  const handleQuickAction = () => {
+    if (onQuickAction) {
+      onQuickAction();
+    } else {
+      setIsCreateTaskOpen(true);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-surface flex">
       {/* Persistent Left Sidebar */}
       <Sidebar
-        onQuickAction={() => setIsCreateTaskOpen(true)}
+        onQuickAction={handleQuickAction}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
       />

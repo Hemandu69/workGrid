@@ -13,8 +13,17 @@ datasource db {
 enum UserRole {
   SUPER_ADMIN
   ADMIN
+  HR
+  TEAM_LEAD
   SERVER
   MEMBER
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
 }
 
 enum UserStatus {
@@ -108,6 +117,7 @@ model Organization {
   announcements Announcement[]
   events        Event[]
   auditEvents   AuditEvent[]
+  roleAuditLogs RoleAuditLog[]
 
   @@map("organizations")
 }
@@ -119,6 +129,7 @@ model User {
   passwordHash          String
   name                  String
   role                  UserRole      @default(MEMBER)
+  accountStatus         AccountStatus @default(PENDING)
   status                UserStatus    @default(OFFLINE)
   title                 String?
   avatarUrl             String?
@@ -154,8 +165,11 @@ model User {
   eventsRequired        EventRequiredServer[]
   eventParticipations   EventParticipant[]
   auditEvents           AuditEvent[]
+  roleAuditLogsTarget   RoleAuditLog[] @relation("TargetUserAudit")
+  roleAuditLogsChanged  RoleAuditLog[] @relation("ActorAudit")
 
   @@index([organizationId, role])
+  @@index([organizationId, accountStatus])
   @@index([roomId, subroomId])
   @@map("users")
 }
@@ -398,6 +412,28 @@ model AuditEvent {
 
   @@index([organizationId, createdAt])
   @@map("audit_events")
+}
+
+// -----------------------------------------------------------------------------
+// Role Audit Logs
+// -----------------------------------------------------------------------------
+model RoleAuditLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  targetUserId   String
+  changedById    String
+  previousRole   UserRole
+  newRole        UserRole
+  reason         String?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  targetUser     User         @relation("TargetUserAudit", fields: [targetUserId], references: [id], onDelete: Cascade)
+  changedBy      User         @relation("ActorAudit", fields: [changedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, targetUserId])
+  @@index([createdAt])
+  @@map("role_audit_logs")
 }
 
 // -----------------------------------------------------------------------------

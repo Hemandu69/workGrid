@@ -32,8 +32,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       case 'ADMIN':
         setCurrentUser(MOCK_USERS.admin);
         break;
+      case 'HR':
+        setCurrentUser(MOCK_USERS.hr);
+        break;
       case 'SERVER':
         setCurrentUser(MOCK_USERS.server);
+        break;
+      case 'TEAM_LEAD':
+        setCurrentUser(MOCK_USERS.teamLead);
         break;
       case 'MEMBER':
         setCurrentUser(MOCK_USERS.member);
