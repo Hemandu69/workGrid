@@ -236,7 +236,6 @@ async function main() {
       email: 'john.doe@workgrid.corp',
       passwordHash: defaultPasswordHash,
       name: 'John Doe',
-      role: UserRole.MEMBER,
       accountStatus: AccountStatus.PENDING,
       status: UserStatus.OFFLINE,
       title: 'Junior DevOps Engineer (Onboarding)',

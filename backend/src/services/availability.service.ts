@@ -1,6 +1,6 @@
 import { prisma } from '../db/client.js';
 import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
-import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus } from '@prisma/client';
+import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, PresenceState } from '@prisma/client';
 import {
   APP_TIMEZONE,
   TIMEZONE_LABEL,
@@ -32,6 +32,16 @@ export interface PersonAvailabilityItem {
   title?: string;
   room?: string;
   subroom?: string;
+  currentLocation?: string;
+  attendanceState: 'IN' | 'OUT' | 'UNKNOWN';
+  presenceState: PresenceState;
+  arrivedAt?: string;
+  arrivedAtIST?: string;
+  leftAt?: string;
+  leftAtIST?: string;
+  currentDurationFormatted?: string;
+  lastSeenAt?: string;
+  lastSeenAtIST?: string;
   status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
   statusLabel: string;
   reason: string;
@@ -308,15 +318,33 @@ export class AvailabilityService {
       const freeWindowEnd = createUtcTimestamp(dateStr, startHour + availableHours);
       const freeWindow = status === 'PARTIALLY_AVAILABLE' ? `${formatToISTTime(freeWindowStart, false)} – ${formatToISTTime(freeWindowEnd)}` : undefined;
 
+      let currentDurationFormatted: string | undefined;
+      if (user.arrivedAt && user.presenceState === 'IN') {
+        const diffMs = now.getTime() - user.arrivedAt.getTime();
+        const hours = Math.floor(diffMs / 3600000);
+        const mins = Math.floor((diffMs % 3600000) / 60000);
+        currentDurationFormatted = `${hours}h ${mins}m`;
+      }
+
       return {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: user.role || UserRole.MEMBER,
         avatarUrl: user.avatarUrl || undefined,
         title: user.title || undefined,
         room: user.room ? `Sector ${user.room.letter}` : undefined,
         subroom: user.subroom?.code,
+        currentLocation: user.currentLocationName || (user.subroom ? user.subroom.code : (user.room ? `Sector ${user.room.letter}` : 'UNKNOWN')),
+        attendanceState: user.presenceState === 'IN' ? 'IN' : user.presenceState === 'OUT' ? 'OUT' : 'UNKNOWN',
+        presenceState: user.presenceState || PresenceState.UNKNOWN,
+        arrivedAt: user.arrivedAt ? user.arrivedAt.toISOString() : undefined,
+        arrivedAtIST: user.arrivedAt ? formatToISTTime(user.arrivedAt) : undefined,
+        leftAt: user.leftAt ? user.leftAt.toISOString() : undefined,
+        leftAtIST: user.leftAt ? formatToISTTime(user.leftAt) : undefined,
+        currentDurationFormatted,
+        lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : undefined,
+        lastSeenAtIST: user.lastSeenAt ? formatToISTTime(user.lastSeenAt) : formatToISTTime(now),
         status,
         statusLabel,
         reason,
@@ -537,6 +565,14 @@ export class AvailabilityService {
 
     const untilTimestamp = new Date(now.getTime() + 2 * 3600000);
 
+    let currentDurationFormatted: string | undefined;
+    if (user.arrivedAt && user.presenceState === 'IN') {
+      const diffMs = now.getTime() - user.arrivedAt.getTime();
+      const hours = Math.floor(diffMs / 3600000);
+      const mins = Math.floor((diffMs % 3600000) / 60000);
+      currentDurationFormatted = `${hours}h ${mins}m`;
+    }
+
     return {
       person: {
         id: user.id,
@@ -548,6 +584,16 @@ export class AvailabilityService {
         title: user.title || undefined,
         room: user.room ? `Sector ${user.room.letter} (${user.room.name})` : undefined,
         subroom: user.subroom?.code,
+        currentLocation: user.currentLocationName || (user.subroom ? user.subroom.code : (user.room ? `Sector ${user.room.letter}` : 'UNKNOWN')),
+        attendanceState: user.presenceState === 'IN' ? 'IN' : user.presenceState === 'OUT' ? 'OUT' : 'UNKNOWN',
+        presenceState: user.presenceState || PresenceState.UNKNOWN,
+        arrivedAt: user.arrivedAt ? user.arrivedAt.toISOString() : undefined,
+        arrivedAtIST: user.arrivedAt ? formatToISTTime(user.arrivedAt) : undefined,
+        leftAt: user.leftAt ? user.leftAt.toISOString() : undefined,
+        leftAtIST: user.leftAt ? formatToISTTime(user.leftAt) : undefined,
+        currentDurationFormatted,
+        lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : undefined,
+        lastSeenAtIST: user.lastSeenAt ? formatToISTTime(user.lastSeenAt) : formatToISTTime(now),
         capacityLimitHours: user.capacityLimitHours,
         currentAllocatedHours: user.currentAllocatedHours,
       },

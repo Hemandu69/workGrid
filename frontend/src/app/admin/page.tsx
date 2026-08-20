@@ -12,6 +12,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import Link from 'next/link';
 import { Task } from '../../types/task';
+import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function AdminDashboard() {
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
@@ -31,6 +32,9 @@ export default function AdminDashboard() {
       ]}
     >
       <div className="space-y-6">
+        {/* Global Attendance IN / OUT Tracker */}
+        <AttendanceCard />
+
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-surface-outline pb-4">
           <div>

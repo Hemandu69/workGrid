@@ -29,7 +29,7 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
   const defaultBreadcrumbs = [
     { label: 'WorkGrid', href: '/' },
     { label: user.room || 'Sector Operations', href: '#' },
-    { label: user.subroom ? `Subroom ${user.subroom}` : role.replace('_', ' ') },
+    { label: user.subroom ? `Subroom ${user.subroom}` : (role ? role.replace('_', ' ') : 'Pending Review') },
   ];
 
   const activeBreadcrumbs = breadcrumbs || defaultBreadcrumbs;
@@ -113,7 +113,7 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
           >
             <span className="material-symbols-outlined text-[15px] text-secondary">admin_panel_settings</span>
             <span className="hidden md:inline">Role:</span>
-            <span>{role.replace('_', ' ')}</span>
+            <span>{role ? role.replace('_', ' ') : 'Unassigned'}</span>
             <span className="material-symbols-outlined text-[14px]">arrow_drop_down</span>
           </button>
 

@@ -38,7 +38,7 @@ export function ManagePersonModal({
 
   React.useEffect(() => {
     if (targetUser) {
-      setSelectedRole(targetUser.role);
+      setSelectedRole(targetUser.role || 'MEMBER');
       setSelectedStatus(targetUser.accountStatus || 'ACTIVE');
       setRoleReason('');
       setStatusReason('');
@@ -128,7 +128,7 @@ export function ManagePersonModal({
           </div>
 
           <div className="flex flex-col items-end gap-1.5 shrink-0">
-            <Badge role={targetUser.role.replace('_', ' ')} variant="role" />
+            <Badge role={targetUser.role ? targetUser.role.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
             <Badge accountStatus={targetUser.accountStatus || 'ACTIVE'} variant="accountStatus" />
           </div>
         </div>
@@ -251,8 +251,8 @@ export function ManagePersonModal({
               />
             </div>
 
-            <div className="pt-2 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={onClose} size="sm">
+            <div className="flex justify-end gap-2 pt-3 border-t border-surface-outline">
+              <Button type="button" variant="outline" size="sm" onClick={onClose}>
                 Cancel
               </Button>
               <Button
@@ -262,10 +262,12 @@ export function ManagePersonModal({
                 disabled={
                   isSelf ||
                   (isTargetSuperAdmin && currentCallerRole !== 'SUPER_ADMIN') ||
-                  selectedRole === targetUser.role
+                  (selectedRole === targetUser.role && targetUser.accountStatus === 'ACTIVE')
                 }
               >
-                Save Role Assignment
+                {targetUser.accountStatus === 'PENDING' || !targetUser.role
+                  ? 'Approve & Activate Account'
+                  : 'Save Role Assignment'}
               </Button>
             </div>
           </form>
@@ -378,11 +380,11 @@ export function ManagePersonModal({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-primary">Role Transition:</span>
-                        <Badge role={log.previousRole.replace('_', ' ')} variant="role" />
+                        <Badge role={log.previousRole ? log.previousRole.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
                         <span className="material-symbols-outlined text-[14px] text-outline">
                           arrow_forward
                         </span>
-                        <Badge role={log.newRole.replace('_', ' ')} variant="role" />
+                        <Badge role={log.newRole ? log.newRole.replace('_', ' ') : 'MEMBER'} variant="role" />
                       </div>
                       <span className="text-[10px] text-on-surface-variant font-mono">
                         {new Date(log.createdAt).toLocaleString()}

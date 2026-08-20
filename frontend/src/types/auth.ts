@@ -6,15 +6,15 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  role?: UserRole | null;
   accountStatus?: AccountStatus;
   avatarUrl?: string;
   room?: string; // e.g. 'Room B'
   subroom?: string; // e.g. 'B3'
   title?: string; // e.g. 'Frontend Engineer', 'Head of People'
-  status: 'ONLINE' | 'OFFLINE' | 'BUSY' | 'AWAY';
-  capacityLimitHours: number;
-  currentAllocatedHours: number;
+  status?: 'ONLINE' | 'OFFLINE' | 'BUSY' | 'AWAY';
+  capacityLimitHours?: number;
+  currentAllocatedHours?: number;
   createdAt?: string;
 }
 
@@ -33,7 +33,7 @@ export interface RoleAuditLog {
   changedById: string;
   changedByName: string;
   changedByRole: UserRole;
-  previousRole: UserRole;
+  previousRole?: UserRole | null;
   newRole: UserRole;
   reason?: string;
   createdAt: string;

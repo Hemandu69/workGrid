@@ -44,7 +44,7 @@ export default function LoginPage() {
       setIsLoading(false);
 
       // 2. Authoritative role-based landing redirection
-      const destination = getRoleLandingPath(user.role);
+      const destination = getRoleLandingPath(user.role, user.accountStatus);
       router.push(destination);
     } catch (err: unknown) {
       setIsLoading(false);
@@ -226,6 +226,15 @@ export default function LoginPage() {
               <span>{isLoading ? 'Authenticating...' : 'Sign In to Workspace'}</span>
               <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
             </button>
+
+            <div className="text-center pt-2">
+              <span className="text-xs text-on-surface-variant">
+                New employee?{' '}
+                <a href="/register" className="text-primary font-semibold hover:underline cursor-pointer">
+                  Self-register for an account
+                </a>
+              </span>
+            </div>
           </form>
 
           {/* Development / Demo Quick Logins */}

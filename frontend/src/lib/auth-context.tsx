@@ -8,20 +8,24 @@ import { useRouter, usePathname } from 'next/navigation';
 
 interface AuthContextType {
   user: User;
-  role: UserRole;
+  role?: UserRole | null;
   accountStatus: AccountStatus;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
   login: (email: string, password?: string) => Promise<User>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
   setRole: (role: UserRole) => void; // Development/demo switcher
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function getRoleLandingPath(role: UserRole): string {
+export function getRoleLandingPath(role?: UserRole | null, status?: AccountStatus): string {
+  if (status === 'PENDING' || !role) {
+    return '/pending';
+  }
+
   switch (role) {
     case 'SUPER_ADMIN':
       return '/super-admin';
@@ -34,8 +38,9 @@ export function getRoleLandingPath(role: UserRole): string {
     case 'TEAM_LEAD':
       return '/team-lead';
     case 'MEMBER':
-    default:
       return '/member';
+    default:
+      return '/pending';
   }
 }
 
@@ -48,8 +53,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Initial Auth Check: Loads authoritative identity from /api/v1/auth/me via HttpOnly cookie
-  const refreshUser = useCallback(async () => {
+  // Authoritative identity refresh from /api/v1/auth/me via HttpOnly cookie
+  const refreshUser = useCallback(async (): Promise<User | null> => {
     try {
       setIsLoading(true);
       setError(null);
@@ -57,12 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profile && profile.id) {
         setUser(profile);
         setIsAuthenticated(true);
+        setIsLoading(false);
+        return profile;
       }
-    } catch {
-      // Unauthenticated or offline: keep preview user for offline demo
       setIsAuthenticated(false);
-    } finally {
       setIsLoading(false);
+      return null;
+    } catch {
+      setIsAuthenticated(false);
+      setIsLoading(false);
+      return null;
     }
   }, []);
 
@@ -70,16 +79,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshUser();
   }, [refreshUser]);
 
-  // Protected Route Redirection (Client UX layer; backend enforces mandatory security)
+  // Protected Route & Status Redirection
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      const publicRoutes = ['/login', '/forgot-password', '/reset-password'];
+    if (!isLoading && isAuthenticated && user) {
+      const isPending = user.accountStatus === 'PENDING' || !user.role;
+      const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password'];
       const isPublic = publicRoutes.some((route) => pathname?.startsWith(route));
-      if (!isPublic && pathname !== '/') {
-        // Unauthenticated access
+
+      if (isPending) {
+        // Pending users are restricted to /pending (and public pages)
+        if (pathname !== '/pending' && !isPublic) {
+          router.replace('/pending');
+        }
+      } else if (user.accountStatus === 'ACTIVE' && user.role) {
+        // Active role-bearing users on /pending or /login/register are routed to their workspace
+        if (pathname === '/pending' || pathname === '/login' || pathname === '/register') {
+          router.replace(getRoleLandingPath(user.role, user.accountStatus));
+        }
       }
     }
-  }, [isLoading, isAuthenticated, pathname]);
+  }, [isLoading, isAuthenticated, user, pathname, router]);
 
   const login = async (email: string, password = 'password123'): Promise<User> => {
     setIsLoading(true);

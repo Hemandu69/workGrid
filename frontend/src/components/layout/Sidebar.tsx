@@ -145,7 +145,7 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
   const pathname = usePathname();
   const { user, role } = useAuth();
 
-  const filteredNavItems = NAV_ITEMS.filter((item) => item.roles.includes(role));
+  const filteredNavItems = role ? NAV_ITEMS.filter((item) => item.roles.includes(role)) : [];
 
   const roleLabel: Record<UserRole, string> = {
     SUPER_ADMIN: 'Super Admin',
@@ -185,7 +185,7 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
             </div>
           </div>
 
-          <Badge role={roleLabel[role]} variant="role" />
+          <Badge role={role ? roleLabel[role] : 'UNASSIGNED'} variant="role" />
         </div>
 
         {/* User Card */}

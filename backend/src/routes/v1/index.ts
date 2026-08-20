@@ -9,6 +9,7 @@ import { availabilityRoutes } from './availability.js';
 import { dashboardRoutes } from './dashboard.js';
 import { operationsRoutes } from './operations.js';
 import { hrRoutes } from './hr.js';
+import { attendanceRoutes } from './attendance.js';
 
 export const v1Routes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(authRoutes, { prefix: '/auth' });
@@ -21,4 +22,5 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(dashboardRoutes, { prefix: '/dashboard' });
   await fastify.register(operationsRoutes, { prefix: '/operations' });
   await fastify.register(hrRoutes, { prefix: '/hr' });
+  await fastify.register(attendanceRoutes, { prefix: '/attendance' });
 };

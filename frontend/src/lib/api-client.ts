@@ -305,6 +305,74 @@ export const apiClient = {
       body: JSON.stringify(data),
     }, token);
   },
+
+  // ---------------------------------------------------------------------------
+  // Global IN / OUT Attendance & Presence System
+  // ---------------------------------------------------------------------------
+  checkInAttendance: async (token?: string) => {
+    return request<{
+      state: 'IN';
+      presenceState: string;
+      arrivedAt: string;
+      arrivedAtIST: string;
+      durationSeconds: number;
+      durationFormatted: string;
+      isExistingSession: boolean;
+      message: string;
+    }>('/api/v1/attendance/in', {
+      method: 'POST',
+    }, token);
+  },
+
+  checkOutAttendance: async (token?: string) => {
+    return request<{
+      state: 'OUT';
+      presenceState: string;
+      arrivedAt?: string;
+      arrivedAtIST?: string;
+      leftAt: string;
+      leftAtIST: string;
+      durationSeconds: number;
+      durationFormatted: string;
+      isAlreadyOut?: boolean;
+      message: string;
+    }>('/api/v1/attendance/out', {
+      method: 'POST',
+    }, token);
+  },
+
+  getAttendanceMe: async (token?: string) => {
+    return request<import('../types/attendance').AttendanceMeResponse>(
+      '/api/v1/attendance/me',
+      {},
+      token
+    );
+  },
+
+  getAttendanceHistory: async (days = 30, token?: string) => {
+    return request<import('../types/attendance').AttendanceHistoryResponse>(
+      `/api/v1/attendance/history?days=${days}`,
+      {},
+      token
+    );
+  },
+
+  getAttendanceOverview: async (
+    params: { role?: string; state?: string; search?: string } = {},
+    token?: string
+  ) => {
+    const searchParams = new URLSearchParams();
+    if (params.role && params.role !== 'ALL') searchParams.append('role', params.role);
+    if (params.state && params.state !== 'ALL') searchParams.append('state', params.state);
+    if (params.search) searchParams.append('search', params.search);
+
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return request<import('../types/attendance').AttendanceOverviewResponse>(
+      `/api/v1/attendance/overview${query}`,
+      {},
+      token
+    );
+  },
 };
 
 export interface PeopleAvailabilityResponse {
@@ -332,6 +400,16 @@ export interface PeopleAvailabilityResponse {
     title?: string;
     room?: string;
     subroom?: string;
+    currentLocation?: string;
+    attendanceState: 'IN' | 'OUT' | 'UNKNOWN';
+    presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+    arrivedAt?: string;
+    arrivedAtIST?: string;
+    leftAt?: string;
+    leftAtIST?: string;
+    currentDurationFormatted?: string;
+    lastSeenAt?: string;
+    lastSeenAtIST?: string;
     status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
     statusLabel: string;
     reason: string;
@@ -357,6 +435,16 @@ export interface PersonAvailabilityDetailResponse {
     title?: string;
     room?: string;
     subroom?: string;
+    currentLocation?: string;
+    attendanceState: 'IN' | 'OUT' | 'UNKNOWN';
+    presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+    arrivedAt?: string;
+    arrivedAtIST?: string;
+    leftAt?: string;
+    leftAtIST?: string;
+    currentDurationFormatted?: string;
+    lastSeenAt?: string;
+    lastSeenAtIST?: string;
     capacityLimitHours: number;
     currentAllocatedHours: number;
   };

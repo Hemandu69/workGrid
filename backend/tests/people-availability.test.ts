@@ -190,6 +190,11 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(res.body.summary).toHaveProperty('freeCount');
     expect(res.body.summary).toHaveProperty('busyCount');
     expect(Array.isArray(res.body.people)).toBe(true);
+
+    const firstPerson = res.body.people[0];
+    expect(firstPerson).toHaveProperty('attendanceState');
+    expect(firstPerson).toHaveProperty('presenceState');
+    expect(firstPerson).toHaveProperty('currentLocation');
   });
 
   it('GET /api/v1/availability/people should allow SUPER_ADMIN with 200', async () => {
@@ -240,6 +245,9 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('person');
+    expect(res.body.person).toHaveProperty('attendanceState');
+    expect(res.body.person).toHaveProperty('presenceState');
+    expect(res.body.person).toHaveProperty('currentLocation');
     expect(res.body).toHaveProperty('currentStatus');
     expect(res.body).toHaveProperty('nextFree');
     expect(res.body).toHaveProperty('weeklyTimeline');

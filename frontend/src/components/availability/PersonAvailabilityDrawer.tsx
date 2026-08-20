@@ -55,12 +55,18 @@ export function PersonAvailabilityDrawer({
                 id: matchedUser.id,
                 name: matchedUser.name,
                 email: matchedUser.email,
-                role: matchedUser.role,
-                status: matchedUser.status,
+                role: matchedUser.role || 'MEMBER',
+                status: matchedUser.status || 'ONLINE',
                 avatarUrl: matchedUser.avatarUrl,
                 title: matchedUser.title,
                 room: matchedUser.room ? `Sector ${matchedUser.room}` : undefined,
                 subroom: matchedUser.subroom,
+                currentLocation: matchedUser.subroom ? `Subroom ${matchedUser.subroom}` : (matchedUser.room || 'Sector B'),
+                attendanceState: 'IN',
+                presenceState: 'IN',
+                arrivedAtIST: '09:12 AM IST',
+                lastSeenAtIST: '02:45 PM IST',
+                currentDurationFormatted: '4h 15m',
                 capacityLimitHours: 40,
                 currentAllocatedHours: 24,
               },
@@ -279,47 +285,64 @@ export function PersonAvailabilityDrawer({
                   </div>
                 </div>
 
-                <Badge role={data.person.role.replace('_', ' ')} variant="role" />
+                <Badge role={data.person.role ? data.person.role.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
               </div>
 
               {/* Attendance & Physical Presence Card */}
-              <div className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2.5">
+              <div className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
                     <span className="material-symbols-outlined text-[14px] text-secondary">
                       sensor_occupied
                     </span>
-                    Presence & Attendance
+                    Real-time Presence & Attendance
                   </span>
 
+                  {/* Attendance State Badge */}
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${
-                      data.person.role === 'SERVER'
-                        ? 'bg-secondary-container text-secondary-dim border border-secondary/30'
-                        : 'bg-surface-container text-primary border border-surface-outline'
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${
+                      data.person.attendanceState === 'IN'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                        : 'bg-slate-100 text-slate-700 border-slate-300'
                     }`}
                   >
-                    {data.person.role === 'SERVER' ? 'Supervisory Server' : 'Active Member'}
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        data.person.attendanceState === 'IN' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                      }`}
+                    />
+                    {data.person.attendanceState === 'IN' ? 'IN WORKGRID' : 'OUT OF WORKGRID'}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
                   <div className="p-2 bg-surface-bright rounded border border-surface-outline">
                     <span className="text-[10px] text-outline uppercase block">Current Location</span>
-                    <span className="font-bold text-primary">
-                      {data.person.subroom ? `Subroom ${data.person.subroom}` : (data.person.room || 'UNKNOWN')}
+                    <span className="font-bold text-primary flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-secondary">location_on</span>
+                      {data.person.currentLocation || (data.person.subroom ? `Subroom ${data.person.subroom}` : (data.person.room || 'UNKNOWN'))}
                     </span>
                   </div>
 
                   <div className="p-2 bg-surface-bright rounded border border-surface-outline">
-                    <span className="text-[10px] text-outline uppercase block">Arrival Time (IST)</span>
-                    <span className="font-bold text-primary">09:15 AM IST</span>
+                    <span className="text-[10px] text-outline uppercase block">
+                      {data.person.attendanceState === 'IN' ? 'Arrived At (IST)' : 'Last Check-out / Seen'}
+                    </span>
+                    <span className="font-bold text-primary">
+                      {data.person.attendanceState === 'IN'
+                        ? (data.person.arrivedAtIST || '09:15 AM IST')
+                        : (data.person.leftAtIST || data.person.lastSeenAtIST || '—')}
+                    </span>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] font-mono text-on-surface-variant pt-1 border-t border-surface-outline/50">
-                  <span>Assigned Sector: <strong className="text-primary">{data.person.room || '—'}</strong></span>
-                  <span>Time in WorkGrid: <strong className="text-emerald-700 font-semibold">6h 15m</strong></span>
+                  <span>Assigned Scope: <strong className="text-primary">{data.person.room || '—'}</strong></span>
+                  {data.person.attendanceState === 'IN' ? (
+                    <span>Current Duration: <strong className="text-emerald-700 font-semibold">{data.person.currentDurationFormatted || 'Active'}</strong></span>
+                  ) : (
+                    <span>Last Seen: <strong className="text-primary">{data.person.lastSeenAtIST || 'Earlier Today'}</strong></span>
+                  )}
                 </div>
               </div>
 

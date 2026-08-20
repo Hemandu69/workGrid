@@ -222,7 +222,7 @@ export class OperationsService {
           return {
             id: m.id,
             name: m.name,
-            role: m.role,
+            role: m.role || UserRole.MEMBER,
             title: m.title || undefined,
             avatarUrl: m.avatarUrl || undefined,
             presenceState: m.presenceState,

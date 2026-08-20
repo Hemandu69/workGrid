@@ -134,6 +134,9 @@ const { mockPrisma } = vi.hoisted(() => ({
         return entry;
       }),
     },
+    auditEvent: {
+      create: vi.fn().mockResolvedValue({ id: 'mock-ae-1' }),
+    },
     $transaction: vi.fn().mockImplementation(async (callback) => {
       return callback(mockPrisma);
     }),
