@@ -147,6 +147,7 @@ model User {
   currentLocationSubroomId String?
   currentLocationName      String?    // e.g. "B4", "Main Hall", "Cafeteria", "Outside"
 
+  lastLoginAt           DateTime?
   version               Int           @default(1)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
@@ -167,6 +168,7 @@ model User {
   auditEvents           AuditEvent[]
   roleAuditLogsTarget   RoleAuditLog[] @relation("TargetUserAudit")
   roleAuditLogsChanged  RoleAuditLog[] @relation("ActorAudit")
+  passwordResetTokens   PasswordResetToken[]
 
   @@index([organizationId, role])
   @@index([organizationId, accountStatus])
@@ -434,6 +436,24 @@ model RoleAuditLog {
   @@index([organizationId, targetUserId])
   @@index([createdAt])
   @@map("role_audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// Password Reset Tokens
+// -----------------------------------------------------------------------------
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId, expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // -----------------------------------------------------------------------------

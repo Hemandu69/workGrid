@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { PersonAvailabilityDetailResponse, apiClient } from '../../lib/api-client';
-import { useAuth } from '../../lib/auth-context';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -19,7 +18,6 @@ export function PersonAvailabilityDrawer({
   onClose,
   onSelectTask,
 }: PersonAvailabilityDrawerProps) {
-  const { token } = useAuth();
   const [data, setData] = useState<PersonAvailabilityDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +33,7 @@ export function PersonAvailabilityDrawer({
     setError(null);
 
     apiClient
-      .getPersonAvailabilityDetail(userId, undefined, token)
+      .getPersonAvailabilityDetail(userId)
       .then((res) => {
         if (isMounted) {
           setData(res);
@@ -176,7 +174,7 @@ export function PersonAvailabilityDrawer({
     return () => {
       isMounted = false;
     };
-  }, [userId, token]);
+  }, [userId]);
 
   if (!userId) return null;
 
@@ -232,7 +230,7 @@ export function PersonAvailabilityDrawer({
                 onClick={() => {
                   setIsLoading(true);
                   apiClient
-                    .getPersonAvailabilityDetail(userId, undefined, token)
+                    .getPersonAvailabilityDetail(userId)
                     .then(setData)
                     .catch((e) => setError(e.message))
                     .finally(() => setIsLoading(false));
