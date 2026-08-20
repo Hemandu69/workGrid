@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth-context';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
+import { MOCK_USERS, MOCK_ROOM_B_MEMBERS } from '../../lib/mock-data';
 
 interface PersonAvailabilityDrawerProps {
   userId: string | null;
@@ -43,17 +44,16 @@ export function PersonAvailabilityDrawer({
       })
       .catch(() => {
         if (isMounted) {
-          import('../../lib/mock-data').then(({ MOCK_USERS, MOCK_ROOM_B_MEMBERS }) => {
-            const all = [
-              MOCK_USERS.superAdmin,
-              MOCK_USERS.admin,
-              MOCK_USERS.server,
-              ...MOCK_ROOM_B_MEMBERS,
-            ];
-            const matchedUser = all.find((u) => u.id === userId) || all[0];
+          const all = [
+            MOCK_USERS.superAdmin,
+            MOCK_USERS.admin,
+            MOCK_USERS.server,
+            ...MOCK_ROOM_B_MEMBERS,
+          ];
+          const matchedUser = all.find((u) => u.id === userId) || all[0];
 
-            setData({
-              person: {
+          setData({
+            person: {
                 id: matchedUser.id,
                 name: matchedUser.name,
                 email: matchedUser.email,
@@ -170,7 +170,6 @@ export function PersonAvailabilityDrawer({
               ],
             });
             setIsLoading(false);
-          });
         }
       });
 

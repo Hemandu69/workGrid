@@ -10,9 +10,10 @@ import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
+import { MOCK_USERS, MOCK_ROOM_B_MEMBERS } from '../../../lib/mock-data';
 
 export default function PeopleAvailabilityPage() {
-  const { role, token } = useAuth();
+  const { user, role, token } = useAuth();
 
   // Time slot selector state
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -60,13 +61,12 @@ export default function PeopleAvailabilityPage() {
       })
       .catch(() => {
         // Seamless fallback when backend is offline
-        import('../../../lib/mock-data').then(({ MOCK_USERS, MOCK_ROOM_B_MEMBERS }) => {
-          const all = [
-            MOCK_USERS.superAdmin,
-            MOCK_USERS.admin,
-            MOCK_USERS.server,
-            ...MOCK_ROOM_B_MEMBERS,
-          ];
+        const all = [
+          MOCK_USERS.superAdmin,
+          MOCK_USERS.admin,
+          MOCK_USERS.server,
+          ...MOCK_ROOM_B_MEMBERS,
+        ];
 
           let mockList = all.map((u, i) => {
             const st = (
@@ -151,7 +151,6 @@ export default function PeopleAvailabilityPage() {
           });
           setIsLoading(false);
         });
-      });
   }, [selectedDate, startHour, endHour, statusFilter, roleFilter, roomFilter, searchQuery, token]);
 
   useEffect(() => {
@@ -166,7 +165,11 @@ export default function PeopleAvailabilityPage() {
     setEndHour(Math.min(24, curHour + 1));
   };
 
-  const isAuthorized = role === 'SUPER_ADMIN' || role === 'ADMIN';
+  const isAuthorized = role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'SERVER';
+  const isServer = role === 'SERVER';
+  const serverRoomLetter = isServer
+    ? (user.room ? user.room.replace('Sector', '').replace('Room', '').trim() : 'B')
+    : null;
 
   if (!isAuthorized) {
     return (
@@ -181,7 +184,7 @@ export default function PeopleAvailabilityPage() {
           <span className="material-symbols-outlined text-[36px] text-rose-600">lock</span>
           <h2 className="text-base font-bold text-primary">Access Restricted</h2>
           <p className="text-xs text-on-surface-variant leading-relaxed">
-            The enterprise-wide People Availability overview is strictly reserved for Administrators and Super Administrators.
+            The People Availability overview is strictly reserved for Administrators and Room Servers.
           </p>
         </div>
       </AppShell>
@@ -213,8 +216,8 @@ export default function PeopleAvailabilityPage() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: 'Admin Operations', href: '/admin' },
-        { label: 'People Availability' },
+        { label: isServer ? `Sector ${serverRoomLetter} Operations` : 'Admin Operations', href: isServer ? '/server' : '/admin' },
+        { label: isServer ? `Sector ${serverRoomLetter} Availability` : 'People Availability' },
       ]}
     >
       <div className="space-y-6">
@@ -223,12 +226,19 @@ export default function PeopleAvailabilityPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-primary tracking-tight">
-                Enterprise People Availability Matrix
+                {isServer
+                  ? `Sector ${serverRoomLetter} People Availability & Oversight`
+                  : 'Enterprise People Availability Matrix'}
               </h1>
-              <Badge role="Admin Overview" variant="role" />
+              <Badge
+                role={isServer ? `Server Oversight (Room ${serverRoomLetter})` : 'Admin Overview'}
+                variant="role"
+              />
             </div>
             <p className="text-xs text-on-surface-variant">
-              Live and scheduled personnel availability across all 8 sectors evaluated in UTC without inspecting individual rooms.
+              {isServer
+                ? `Overseeing personnel availability and active workload across all 8 subrooms in Sector ${serverRoomLetter}.`
+                : 'Live and scheduled personnel availability across all 8 sectors evaluated in UTC without inspecting individual rooms.'}
             </p>
           </div>
 
@@ -395,21 +405,28 @@ export default function PeopleAvailabilityPage() {
             </div>
 
             {/* Sector / Room Filter */}
-            <select
-              value={roomFilter}
-              onChange={(e) => setRoomFilter(e.target.value)}
-              className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface focus:outline-none focus:border-primary"
-            >
-              <option value="ALL">All Sectors (A–H)</option>
-              <option value="A">Sector A</option>
-              <option value="B">Sector B</option>
-              <option value="C">Sector C</option>
-              <option value="D">Sector D</option>
-              <option value="E">Sector E</option>
-              <option value="F">Sector F</option>
-              <option value="G">Sector G</option>
-              <option value="H">Sector H</option>
-            </select>
+            {isServer ? (
+              <div className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs font-semibold text-primary flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[15px] text-secondary">meeting_room</span>
+                <span>Sector {serverRoomLetter} (Assigned Scope)</span>
+              </div>
+            ) : (
+              <select
+                value={roomFilter}
+                onChange={(e) => setRoomFilter(e.target.value)}
+                className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface focus:outline-none focus:border-primary"
+              >
+                <option value="ALL">All Sectors (A–H)</option>
+                <option value="A">Sector A</option>
+                <option value="B">Sector B</option>
+                <option value="C">Sector C</option>
+                <option value="D">Sector D</option>
+                <option value="E">Sector E</option>
+                <option value="F">Sector F</option>
+                <option value="G">Sector G</option>
+                <option value="H">Sector H</option>
+              </select>
+            )}
 
             {/* Role Filter */}
             <select
