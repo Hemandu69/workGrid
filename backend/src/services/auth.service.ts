@@ -49,13 +49,7 @@ export class AuthService {
       throw new Error('Invalid email or password');
     }
 
-    // Account Status Governance Checks
-    if (user.accountStatus === AccountStatus.PENDING) {
-      const error = new Error('Account is pending review. Please wait for HR or Administrator approval.');
-      (error as any).statusCode = 403;
-      throw error;
-    }
-
+    // Account Status Governance Checks: SUSPENDED and DEACTIVATED are blocked from logging in
     if (user.accountStatus === AccountStatus.SUSPENDED) {
       const error = new Error('Account is suspended. Please contact IT or HR.');
       (error as any).statusCode = 403;
@@ -68,6 +62,7 @@ export class AuthService {
       throw error;
     }
 
+    // PENDING and ACTIVE are allowed to authenticate
     // Update lastLoginAt
     await prisma.user.update({
       where: { id: user.id },
@@ -82,7 +77,7 @@ export class AuthService {
         action: 'LOGIN_SUCCESS',
         entityType: 'User',
         entityId: user.id,
-        details: { email: normalizedEmail, role: user.role },
+        details: { email: normalizedEmail, role: user.role || 'UNASSIGNED', accountStatus: user.accountStatus },
         ipAddress: ipAddress || null,
       },
     }).catch(() => null);
@@ -91,7 +86,7 @@ export class AuthService {
       id: user.id,
       email: user.email,
       name: user.name,
-      role: user.role,
+      role: user.role || undefined,
       accountStatus: user.accountStatus,
       organizationId: user.organizationId,
       version: user.version,
@@ -101,7 +96,7 @@ export class AuthService {
   }
 
   /**
-   * Public Self-Registration (Strictly defaults to MEMBER role and PENDING status)
+   * Public Self-Registration (Strictly creates PENDING account with UNASSIGNED/null role)
    */
   static async register(
     input: RegisterInput,
@@ -115,11 +110,11 @@ export class AuthService {
 
     if (existingUser) {
       const error = new Error(`User with email ${input.email} already exists.`);
-      (error as any).statusCode = 409;
+      (error as any).statusCode = 400;
       throw error;
     }
 
-    // Resolve default organization
+    // Resolve default organization safely
     const org = await prisma.organization.findFirst({
       orderBy: { createdAt: 'asc' },
     });
@@ -138,7 +133,6 @@ export class AuthService {
         email: normalizedEmail,
         name: input.name.trim(),
         title: input.title?.trim() || 'New Employee',
-        role: UserRole.MEMBER,
         accountStatus: AccountStatus.PENDING,
         passwordHash,
       },
@@ -161,12 +155,20 @@ export class AuthService {
         action: 'ACCOUNT_REGISTERED',
         entityType: 'User',
         entityId: newUser.id,
-        details: { email: normalizedEmail, accountStatus: AccountStatus.PENDING },
+        details: { email: normalizedEmail, accountStatus: AccountStatus.PENDING, role: 'UNASSIGNED' },
         ipAddress: ipAddress || null,
       },
     }).catch(() => null);
 
-    return newUser;
+    return {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+      role: newUser.role ?? null,
+      accountStatus: newUser.accountStatus,
+      title: newUser.title,
+      createdAt: newUser.createdAt,
+    };
   }
 
   /**

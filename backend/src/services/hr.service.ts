@@ -224,11 +224,16 @@ export class HRService {
       throw error;
     }
 
-    // 4. Atomic Transaction: Update Role + Create Audit Log
+    // 4. Atomic Transaction: Update Role + Auto-activate if PENDING + Increment Version + Create Audit Log
     const result = await prisma.$transaction(async (tx) => {
+      const willActivate = targetUser.accountStatus === AccountStatus.PENDING;
       const updated = await tx.user.update({
         where: { id: targetUserId },
-        data: { role: newRole },
+        data: {
+          role: newRole,
+          accountStatus: willActivate ? AccountStatus.ACTIVE : targetUser.accountStatus,
+          version: { increment: 1 },
+        },
         select: {
           id: true,
           name: true,
@@ -245,9 +250,9 @@ export class HRService {
           organizationId,
           targetUserId,
           changedById: actor.id,
-          previousRole: targetUser.role,
+          previousRole: targetUser.role || null,
           newRole,
-          reason: reason || 'Role updated via People Management',
+          reason: reason || (willActivate ? 'Account approved and role assigned' : 'Role updated via People Management'),
         },
       });
 
@@ -317,7 +322,10 @@ export class HRService {
 
     const updated = await prisma.user.update({
       where: { id: targetUserId },
-      data: { accountStatus: newStatus },
+      data: {
+        accountStatus: newStatus,
+        version: { increment: 1 },
+      },
       select: {
         id: true,
         name: true,
@@ -328,6 +336,18 @@ export class HRService {
         updatedAt: true,
       },
     });
+
+    // Record audit event
+    await prisma.auditEvent.create({
+      data: {
+        organizationId,
+        userId: actor.id,
+        action: 'STATUS_CHANGED',
+        entityType: 'User',
+        entityId: targetUserId,
+        details: { previousStatus: targetUser.accountStatus, newStatus, reason },
+      },
+    }).catch(() => null);
 
     return updated;
   }

@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { ManagePersonModal } from '../../components/hr/ManagePersonModal';
 import { ProvisionPersonModal } from '../../components/hr/ProvisionPersonModal';
+import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function HRDashboardPage() {
   const { user: currentLoggedUser, role: currentLoggedRole } = useAuth();
@@ -40,7 +41,9 @@ export default function HRDashboardPage() {
       u.email.toLowerCase().includes(search.toLowerCase()) ||
       (u.title && u.title.toLowerCase().includes(search.toLowerCase()));
 
-    const matchesRole = roleFilter === 'ALL' || u.role === roleFilter;
+    const matchesRole =
+      roleFilter === 'ALL' ||
+      (roleFilter === 'UNASSIGNED' ? !u.role : u.role === roleFilter);
     const currentStatus = u.accountStatus || 'ACTIVE';
     const matchesStatus = statusFilter === 'ALL' || currentStatus === statusFilter;
 
@@ -52,7 +55,10 @@ export default function HRDashboardPage() {
     if (!target) return;
 
     const oldRole = target.role;
-    if (oldRole === newRole) return;
+    if (oldRole === newRole && target.accountStatus === 'ACTIVE') return;
+
+    const willActivate = target.accountStatus === 'PENDING';
+    const updatedStatus = willActivate ? 'ACTIVE' : target.accountStatus;
 
     const newAudit: RoleAuditLog = {
       id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
@@ -62,20 +68,24 @@ export default function HRDashboardPage() {
       targetUserAvatar: target.avatarUrl,
       changedById: currentLoggedUser.id,
       changedByName: currentLoggedUser.name,
-      changedByRole: currentLoggedRole,
+      changedByRole: currentLoggedRole || 'HR',
       previousRole: oldRole,
       newRole: newRole,
-      reason: reason || 'Role updated via People Management',
+      reason: reason || (willActivate ? 'Account approved & role assigned' : 'Role updated via People Management'),
       createdAt: new Date().toISOString(),
     };
 
     setAuditLogs((prevLogs) => [newAudit, ...prevLogs]);
     setPeople((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      prev.map((u) =>
+        u.id === userId ? { ...u, role: newRole, accountStatus: updatedStatus } : u
+      )
     );
 
     if (selectedUser && selectedUser.id === userId) {
-      setSelectedUser((prev) => (prev ? { ...prev, role: newRole } : null));
+      setSelectedUser((prev) =>
+        prev ? { ...prev, role: newRole, accountStatus: updatedStatus } : null
+      );
     }
   };
 
@@ -121,6 +131,9 @@ export default function HRDashboardPage() {
       onQuickAction={() => setIsProvisionModalOpen(true)}
     >
       <div className="space-y-6">
+        {/* Global Attendance IN / OUT Tracker */}
+        <AttendanceCard />
+
         {/* Header */}
         <div className="border-b border-surface-outline pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
@@ -210,6 +223,7 @@ export default function HRDashboardPage() {
               className="px-2.5 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface focus:outline-none focus:border-primary"
             >
               <option value="ALL">All Roles</option>
+              <option value="UNASSIGNED">Unassigned / Pending</option>
               <option value="SUPER_ADMIN">Super Admin</option>
               <option value="ADMIN">Admin</option>
               <option value="HR">HR</option>
@@ -274,7 +288,7 @@ export default function HRDashboardPage() {
                   </TableCell>
 
                   <TableCell>
-                    <Badge role={user.role.replace('_', ' ')} variant="role" />
+                    <Badge role={user.role ? user.role.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
                   </TableCell>
 
                   <TableCell>

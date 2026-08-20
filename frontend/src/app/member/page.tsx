@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
 import Link from 'next/link';
 import { Task } from '../../types/task';
+import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function MemberDashboard() {
   const { user } = useAuth();
@@ -37,6 +38,9 @@ export default function MemberDashboard() {
       ]}
     >
       <div className="space-y-6">
+        {/* Global Attendance IN / OUT Tracker */}
+        <AttendanceCard />
+
         {/* Pinned Global Announcement Banner if available */}
         {MOCK_ANNOUNCEMENTS[0] && (
           <div className="p-3 bg-blue-50 border border-blue-200 rounded flex items-center justify-between text-xs text-blue-900">

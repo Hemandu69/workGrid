@@ -84,7 +84,7 @@ export default function AdminTeamsPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge role={user.role.replace('_', ' ')} variant="role" />
+                  <Badge role={user.role ? user.role.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
                 </TableCell>
                 <TableCell>
                   <span className="font-mono text-xs text-on-surface-variant font-medium">
@@ -93,11 +93,11 @@ export default function AdminTeamsPage() {
                 </TableCell>
                 <TableCell>
                   <Badge status={user.status === 'ONLINE' ? 'AVAILABLE' : user.status === 'BUSY' ? 'BUSY' : 'UNAVAILABLE'}>
-                    {user.status}
+                    {user.status || 'OFFLINE'}
                   </Badge>
                 </TableCell>
                 <TableCell className="font-mono text-xs tabular-nums text-primary font-semibold">
-                  {user.currentAllocatedHours} / {user.capacityLimitHours}h
+                  {user.currentAllocatedHours ?? 0} / {user.capacityLimitHours ?? 40}h
                 </TableCell>
               </TableRow>
             ))}

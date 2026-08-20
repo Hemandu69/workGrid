@@ -93,6 +93,18 @@ export const MOCK_USERS: Record<string, User> = {
     createdAt: '2026-03-15T10:00:00Z',
     avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
   },
+  pending: {
+    id: 'usr-pending-01',
+    name: 'John Doe',
+    email: 'john.doe@workgrid.corp',
+    role: null,
+    accountStatus: 'PENDING',
+    title: 'Junior DevOps Engineer (Onboarding)',
+    status: 'OFFLINE',
+    capacityLimitHours: 40,
+    currentAllocatedHours: 0,
+    createdAt: '2026-03-20T08:00:00Z',
+  },
 };
 
 // Additional Team Members for Room B

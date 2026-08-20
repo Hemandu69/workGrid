@@ -136,7 +136,7 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
         email: 'pending.user@workgrid.corp',
         passwordHash: defaultHash,
         name: 'Pending User',
-        role: UserRole.MEMBER,
+        role: null,
         accountStatus: AccountStatus.PENDING,
         version: 1,
         createdAt: new Date(),
@@ -201,7 +201,7 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
       activeUserCookie = cookies[0].split(';')[0];
     });
 
-    it('POST /login should REJECT user with PENDING account status with 403 Forbidden', async () => {
+    it('POST /login should ALLOW user with PENDING account status to log in (200)', async () => {
       const res = await supertest(app.server)
         .post('/api/v1/auth/login')
         .send({
@@ -209,9 +209,14 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
           password: 'password123',
         });
 
-      expect(res.status).toBe(403);
-      expect(res.body.error).toBe('Forbidden');
-      expect(res.body.message).toContain('Account is pending review');
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body.user).toHaveProperty('accountStatus', 'PENDING');
+      expect(res.body.user.role).toBeUndefined();
+
+      const cookies = res.headers['set-cookie'];
+      expect(cookies).toBeDefined();
+      expect(cookies[0]).toContain('wg_auth_token=');
     });
 
     it('POST /login should REJECT user with SUSPENDED account status with 403 Forbidden', async () => {
@@ -269,7 +274,7 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
   // 2. POST /api/v1/auth/register (Safe Onboarding)
   // ---------------------------------------------------------------------------
   describe('Public Registration Safety', () => {
-    it('POST /register should create account with MEMBER role and PENDING status (201)', async () => {
+    it('POST /register should create account with null/UNASSIGNED role and PENDING status (201)', async () => {
       const res = await supertest(app.server)
         .post('/api/v1/auth/register')
         .send({
@@ -280,11 +285,11 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
         });
 
       expect(res.status).toBe(201);
-      expect(res.body.user).toHaveProperty('role', UserRole.MEMBER);
+      expect(res.body.user.role).toBeNull();
       expect(res.body.user).toHaveProperty('accountStatus', AccountStatus.PENDING);
     });
 
-    it('POST /register should IGNORE client-provided role elevation (e.g. SUPER_ADMIN)', async () => {
+    it('POST /register should IGNORE client-provided role and organization elevation (e.g. SUPER_ADMIN)', async () => {
       const res = await supertest(app.server)
         .post('/api/v1/auth/register')
         .send({
@@ -293,11 +298,25 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
           password: 'password123',
           role: 'SUPER_ADMIN',
           accountStatus: 'ACTIVE',
+          organizationId: 'malicious-org',
         });
 
       expect(res.status).toBe(201);
-      expect(res.body.user.role).toBe(UserRole.MEMBER);
+      expect(res.body.user.role).toBeNull();
       expect(res.body.user.accountStatus).toBe(AccountStatus.PENDING);
+    });
+
+    it('POST /register should reject duplicate email with 400', async () => {
+      const res = await supertest(app.server)
+        .post('/api/v1/auth/register')
+        .send({
+          name: 'Duplicate Sarah',
+          email: 'sarah.connor@workgrid.corp',
+          password: 'password123',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('already exists');
     });
   });
 

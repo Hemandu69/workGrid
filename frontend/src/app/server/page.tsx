@@ -15,6 +15,7 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
 import { Task } from '../../types/task';
 import { formatToISTTime, formatUtcWindowToIST, getCurrentISTDateString } from '../../lib/time-utils';
+import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function ServerDashboard() {
   const { user } = useAuth();
@@ -46,10 +47,13 @@ export default function ServerDashboard() {
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
         { label: 'Sector B (Room B)', href: '#' },
-        { label: 'Team Lead Workspace' },
+        { label: 'Server & Room Command' },
       ]}
     >
       <div className="space-y-6">
+        {/* Global Attendance IN / OUT Tracker */}
+        <AttendanceCard />
+
         {/* Header with Hierarchy Context */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-surface-outline pb-4">
           <div>
@@ -132,8 +136,10 @@ export default function ServerDashboard() {
 
               <div className="space-y-3">
                 {MOCK_ROOM_B_MEMBERS.map((member) => {
+                  const currentHours = member.currentAllocatedHours ?? 0;
+                  const capHours = member.capacityLimitHours ?? 40;
                   const workloadPercentage = Math.round(
-                    (member.currentAllocatedHours / member.capacityLimitHours) * 100
+                    (currentHours / (capHours || 1)) * 100
                   );
 
                   return (
@@ -152,7 +158,7 @@ export default function ServerDashboard() {
                           </div>
                         </div>
                         <span className="font-mono font-semibold text-primary">
-                          {member.currentAllocatedHours} / {member.capacityLimitHours}h
+                          {currentHours} / {capHours}h
                         </span>
                       </div>
 

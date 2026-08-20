@@ -98,7 +98,7 @@ export function OperationsGridCell({
                           ? 'bg-status-blocked'
                           : 'bg-slate-400'
                       }`}
-                      title={`Presence: ${member.presenceLabel}`}
+                      title={`Attendance: ${member.presenceState === 'IN' ? '🟢 IN' : member.presenceState === 'OUT' ? '⚪ OUT' : 'UNKNOWN'} | Location: ${member.currentLocation}`}
                     />
                   </div>
                   <span className="truncate text-[11px] font-medium text-on-surface group-hover:text-primary">

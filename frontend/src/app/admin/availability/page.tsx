@@ -92,11 +92,17 @@ export default function PeopleAvailabilityPage() {
               id: u.id,
               name: u.name,
               email: u.email,
-              role: u.role,
+              role: u.role || 'MEMBER',
               avatarUrl: u.avatarUrl,
               title: u.title,
               room: u.room ? (u.room.startsWith('Sector') ? u.room : `Sector ${u.room}`) : undefined,
               subroom: u.subroom,
+              currentLocation: u.subroom ? `Subroom ${u.subroom}` : (u.room || 'Sector B'),
+              attendanceState: (i % 2 === 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
+              presenceState: (i % 2 === 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
+              arrivedAtIST: i % 2 === 0 ? '09:12 AM IST' : undefined,
+              lastSeenAtIST: '02:45 PM IST',
+              currentDurationFormatted: i % 2 === 0 ? '4h 15m' : undefined,
               status: st,
               statusLabel:
                 st === 'FREE'
@@ -478,33 +484,34 @@ export default function PeopleAvailabilityPage() {
           </div>
         )}
 
-        {/* High-Density Availability Data Table */}
+        {/* High-Density Availability Data Table with Multi-Dimensional Attendance & Presence */}
         <div className="bg-surface-bright rounded border border-surface-outline overflow-hidden shadow-2xs">
           <Table>
             <TableHeader>
               <TableRow isHeader>
                 <TableHead>Person / User</TableHead>
-                <TableHead>System Role</TableHead>
-                <TableHead>Calculated Status</TableHead>
-                <TableHead>Room / Subroom</TableHead>
-                <TableHead>Availability Reason & Context</TableHead>
-                <TableHead>Until / Window</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Attendance</TableHead>
+                <TableHead>Availability</TableHead>
+                <TableHead>Location</TableHead>
+                <TableHead>Context / Task</TableHead>
+                <TableHead>Window</TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <tbody>
               {isLoading && !data ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-xs text-on-surface-variant">
+                  <TableCell colSpan={8} className="text-center py-12 text-xs text-on-surface-variant">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <span className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                      <span>Evaluating live personnel availability matrix...</span>
+                      <span>Evaluating live personnel availability & attendance matrix...</span>
                     </div>
                   </TableCell>
                 </TableRow>
               ) : data?.people.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-12 text-xs text-on-surface-variant">
+                  <TableCell colSpan={8} className="text-center py-12 text-xs text-on-surface-variant">
                     No people match the selected time slot, room, or search filter.
                   </TableCell>
                 </TableRow>
@@ -546,7 +553,32 @@ export default function PeopleAvailabilityPage() {
                       <Badge role={person.role.replace('_', ' ')} variant="role" />
                     </TableCell>
 
-                    {/* Status */}
+                    {/* Attendance State (Dimension 1) */}
+                    <TableCell>
+                      {person.attendanceState === 'IN' ? (
+                        <div className="space-y-0.5 font-mono">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            IN
+                          </span>
+                          <span className="text-[10px] text-on-surface-variant block">
+                            {person.arrivedAtIST ? `Arr: ${person.arrivedAtIST.replace(' IST', '')}` : 'Checked IN'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5 font-mono">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                            OUT
+                          </span>
+                          <span className="text-[10px] text-on-surface-variant block">
+                            {person.lastSeenAtIST ? `Seen: ${person.lastSeenAtIST.replace(' IST', '')}` : 'Offline'}
+                          </span>
+                        </div>
+                      )}
+                    </TableCell>
+
+                    {/* Availability Status (Dimension 2) */}
                     <TableCell>
                       <Badge
                         status={
@@ -563,11 +595,16 @@ export default function PeopleAvailabilityPage() {
                       </Badge>
                     </TableCell>
 
-                    {/* Room */}
+                    {/* Physical Location (Dimension 3) */}
                     <TableCell>
-                      <span className="font-mono text-xs text-on-surface-variant font-medium">
-                        {person.subroom ? `${person.subroom} (${person.room})` : person.room || '—'}
-                      </span>
+                      <div className="flex items-center gap-1 font-mono text-xs text-on-surface font-medium">
+                        <span className="material-symbols-outlined text-[13px] text-secondary">
+                          location_on
+                        </span>
+                        <span>
+                          {person.currentLocation || (person.subroom ? `${person.subroom}` : (person.room || 'UNKNOWN'))}
+                        </span>
+                      </div>
                     </TableCell>
 
                     {/* Reason / Context */}
@@ -577,8 +614,8 @@ export default function PeopleAvailabilityPage() {
                           {person.reason}
                         </span>
                         {person.activeTask && (
-                          <span className="text-[10px] text-secondary font-mono block">
-                            Priority: {person.activeTask.priority}
+                          <span className="text-[10px] text-secondary font-mono block truncate">
+                            Task: {person.activeTask.title}
                           </span>
                         )}
                       </div>
@@ -598,7 +635,7 @@ export default function PeopleAvailabilityPage() {
                         }}
                         className="text-xs text-secondary hover:text-primary font-semibold flex items-center gap-1 ml-auto"
                       >
-                        <span>Schedule</span>
+                        <span>Details</span>
                         <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                       </button>
                     </TableCell>

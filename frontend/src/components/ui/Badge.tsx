@@ -183,6 +183,7 @@ export function Badge({
   if (role || variant === 'role') {
     const rawRole = (role || '').toUpperCase().replace(/[\s/_-]+/g, '_');
     let roleStyle = 'bg-slate-100 text-slate-800 border-slate-200';
+    let defaultLabel = role || 'Unassigned';
 
     if (rawRole.includes('SUPER_ADMIN')) {
       roleStyle = 'bg-purple-50 text-purple-800 border-purple-200 font-semibold';
@@ -196,6 +197,9 @@ export function Badge({
       roleStyle = 'bg-amber-50 text-amber-800 border-amber-200 font-semibold';
     } else if (rawRole.includes('MEMBER')) {
       roleStyle = 'bg-slate-50 text-slate-700 border-slate-200';
+    } else if (rawRole.includes('UNASSIGNED') || !rawRole) {
+      roleStyle = 'bg-slate-100 text-slate-500 border-slate-300 font-normal';
+      defaultLabel = 'Unassigned';
     }
 
     return (
@@ -209,7 +213,7 @@ export function Badge({
         )}
         {...props}
       >
-        {children || role}
+        {children || defaultLabel}
       </span>
     );
   }

@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { MOCK_USERS, MOCK_TASKS } from '../../lib/mock-data';
+import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function TeamLeadPage() {
   const [tasks] = useState(MOCK_TASKS);
@@ -47,6 +48,9 @@ export default function TeamLeadPage() {
       ]}
     >
       <div className="space-y-6">
+        {/* Global Attendance IN / OUT Tracker */}
+        <AttendanceCard />
+
         {/* Header */}
         <div className="border-b border-surface-outline pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
