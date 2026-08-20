@@ -7,7 +7,305 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// System metadata / healthcheck probe model for initial verification
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  SERVER
+  MEMBER
+}
+
+enum UserStatus {
+  ONLINE
+  OFFLINE
+  BUSY
+  AWAY
+}
+
+enum TaskStatus {
+  DRAFT
+  ASSIGNED
+  IN_PROGRESS
+  BLOCKED
+  SUBMITTED
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum AudienceScope {
+  GLOBAL
+  ADMINS_ONLY
+  SERVERS_AND_MEMBERS
+  ROOM_SPECIFIC
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum SlotState {
+  AVAILABLE
+  UNAVAILABLE
+  PREFERRED
+  BUSY
+}
+
+// -----------------------------------------------------------------------------
+// Organization & Hierarchy
+// -----------------------------------------------------------------------------
+model Organization {
+  id            String         @id @default(uuid())
+  name          String
+  slug          String         @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  users         User[]
+  rooms         Room[]
+  subrooms      Subroom[]
+  tasks         Task[]
+  campaigns     TaskCampaign[]
+  announcements Announcement[]
+  auditEvents   AuditEvent[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                    String        @id @default(uuid())
+  organizationId        String
+  email                 String        @unique
+  passwordHash          String
+  name                  String
+  role                  UserRole      @default(MEMBER)
+  status                UserStatus    @default(OFFLINE)
+  title                 String?
+  avatarUrl             String?
+  capacityLimitHours    Int           @default(40)
+  currentAllocatedHours Int           @default(0)
+  roomId                String?
+  subroomId             String?
+  version               Int           @default(1)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room                  Room?         @relation("RoomMembers", fields: [roomId], references: [id], onDelete: SetNull)
+  subroom               Subroom?      @relation("SubroomMembers", fields: [subroomId], references: [id], onDelete: SetNull)
+  ledRooms              Room[]        @relation("RoomLeadServer")
+
+  assignedTasks         Task[]        @relation("TaskAssignee")
+  createdTasks          Task[]        @relation("TaskCreator")
+  createdCampaigns      TaskCampaign[] @relation("CampaignCreator")
+  taskComments          TaskComment[] @relation("CommentAuthor")
+  announcements         Announcement[] @relation("AnnouncementAuthor")
+  availabilitySlots     AvailabilitySlot[]
+  auditEvents           AuditEvent[]
+
+  @@index([organizationId, role])
+  @@index([roomId, subroomId])
+  @@map("users")
+}
+
+// -----------------------------------------------------------------------------
+// Rooms & Subrooms (Topology A-H, 1-8)
+// -----------------------------------------------------------------------------
+model Room {
+  id             String       @id @default(uuid())
+  organizationId String
+  letter         String       // 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'
+  name           String       // e.g. "Sector B — Core Operations"
+  leadServerId   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadServer     User?        @relation("RoomLeadServer", fields: [leadServerId], references: [id], onDelete: SetNull)
+  subrooms       Subroom[]
+  members        User[]       @relation("RoomMembers")
+
+  @@unique([organizationId, letter])
+  @@map("rooms")
+}
+
+model Subroom {
+  id             String       @id @default(uuid())
+  organizationId String
+  roomId         String
+  code           String       // e.g. "B3"
+  number         Int          // 1 to 8
+  memberCapacity Int          @default(2)
+  serverSeatCount Int         @default(1)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  members        User[]       @relation("SubroomMembers")
+
+  @@unique([roomId, number])
+  @@unique([organizationId, code])
+  @@map("subrooms")
+}
+
+// -----------------------------------------------------------------------------
+// Tasks, Campaigns & Comments
+// -----------------------------------------------------------------------------
+model TaskCampaign {
+  id             String       @id @default(uuid())
+  organizationId String
+  title          String
+  description    String?
+  priority       TaskPriority @default(MEDIUM)
+  targetRoom     String?
+  dueDate        DateTime?
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator        User?        @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  tasks          Task[]
+
+  @@map("task_campaigns")
+}
+
+model Task {
+  id             String        @id @default(uuid())
+  taskIdDisplay  String?       @unique // e.g. "TSK-8421"
+  organizationId String
+  title          String
+  description    String?
+  status         TaskStatus    @default(DRAFT)
+  priority       TaskPriority  @default(MEDIUM)
+  estimatedHours Float         @default(8.0)
+  allocatedHours Float         @default(0.0)
+  dueDate        DateTime?
+  assigneeId     String?
+  creatorId      String?
+  campaignId     String?
+  tags           String[]      @default([])
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee       User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator        User?         @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  campaign       TaskCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  comments       TaskComment[]
+
+  @@index([organizationId, status, dueDate])
+  @@index([assigneeId, status])
+  @@map("tasks")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@map("task_comments")
+}
+
+// -----------------------------------------------------------------------------
+// Announcements
+// -----------------------------------------------------------------------------
+model Announcement {
+  id             String             @id @default(uuid())
+  organizationId String
+  title          String
+  content        String
+  status         AnnouncementStatus @default(PUBLISHED)
+  scope          AudienceScope      @default(GLOBAL)
+  targetRoom     String?
+  authorId       String?
+  pinned         Boolean            @default(false)
+  publishedAt    DateTime?
+  scheduledFor   DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author         User?              @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status, publishedAt])
+  @@map("announcements")
+}
+
+// -----------------------------------------------------------------------------
+// Availability (7-Day Weekly Matrix)
+// -----------------------------------------------------------------------------
+model AvailabilitySlot {
+  id        String    @id @default(uuid())
+  userId    String
+  day       DayOfWeek
+  hour      Int       // 0 to 23
+  state     SlotState @default(AVAILABLE)
+  taskId    String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day, hour])
+  @@index([userId, day])
+  @@map("availability_slots")
+}
+
+// -----------------------------------------------------------------------------
+// Audit Events
+// -----------------------------------------------------------------------------
+model AuditEvent {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  details        Json?
+  ipAddress      String?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_events")
+}
+
+// -----------------------------------------------------------------------------
+// System Metadata
+// -----------------------------------------------------------------------------
 model SystemHealth {
   id        String   @id @default(uuid())
   key       String   @unique

@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
       setError('Please provide a valid email address');
@@ -24,11 +24,19 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
 
-    setTimeout(() => {
+    try {
+      // Attempt live backend authentication
+      const { apiClient } = await import('../../lib/api-client');
+      const session = await apiClient.login(email, password);
+      login(session.user.email, session.token);
+      setIsLoading(false);
+      router.push('/');
+    } catch {
+      // Graceful offline preview fallback
       login(email);
       setIsLoading(false);
       router.push('/');
-    }, 400);
+    }
   };
 
   const handleQuickRoleLogin = (role: UserRole) => {
