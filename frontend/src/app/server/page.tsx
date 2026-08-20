@@ -14,12 +14,29 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
 import { Task } from '../../types/task';
+import { formatToISTTime, formatUtcWindowToIST, getCurrentISTDateString } from '../../lib/time-utils';
 
 export default function ServerDashboard() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+
+  const [currentClock, setCurrentClock] = useState<string>('');
+  const [activeWindow, setActiveWindow] = useState<string>('');
+
+  React.useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentClock(formatToISTTime(now));
+      const curUtcHour = now.getUTCHours();
+      const dateStr = getCurrentISTDateString();
+      setActiveWindow(formatUtcWindowToIST(dateStr, curUtcHour, curUtcHour + 1).activeWindowIST);
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const roomB = MOCK_ROOMS.find((r) => r.letter === 'B') || MOCK_ROOMS[1];
   const roomTasks = tasks.filter((t) => t.assigneeRoom === 'Room B');
@@ -47,14 +64,23 @@ export default function ServerDashboard() {
             </p>
           </div>
 
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => setIsAssignModalOpen(true)}
-            leftIcon={<span className="material-symbols-outlined text-[16px]">add</span>}
-          >
-            Assign Team Task
-          </Button>
+          <div className="flex items-center gap-3">
+            {currentClock && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs font-mono">
+                <span className="text-on-surface-variant text-[11px]">Active Window:</span>
+                <span className="font-semibold text-primary">{activeWindow}</span>
+              </div>
+            )}
+
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setIsAssignModalOpen(true)}
+              leftIcon={<span className="material-symbols-outlined text-[16px]">add</span>}
+            >
+              Assign Team Task
+            </Button>
+          </div>
         </div>
 
         {/* Operational Scope Metrics */}

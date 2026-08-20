@@ -1,6 +1,13 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
+
+const inter = Inter({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+});
 
 export const metadata: Metadata = {
   title: 'WorkGrid — Hierarchical Office Task Tracker',
@@ -13,12 +20,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="light">
+    <html lang="en" className={`light ${inter.variable}`}>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        />
       </head>
-      <body className="bg-surface text-on-surface antialiased min-h-screen">
+      <body className="bg-surface text-on-surface antialiased min-h-screen font-sans">
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

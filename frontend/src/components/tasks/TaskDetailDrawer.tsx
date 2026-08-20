@@ -6,6 +6,7 @@ import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { Avatar } from '../ui/Avatar';
 import { useAuth } from '../../lib/auth-context';
+import { formatToISTTime, formatToISTDate, formatToISTDateTime } from '../../lib/time-utils';
 
 interface TaskDetailDrawerProps {
   task: Task | null;
@@ -131,7 +132,7 @@ export function TaskDetailDrawer({ task, onClose, onStatusChange }: TaskDetailDr
               <span className="text-on-surface-variant block mb-1">Assigned By</span>
               <p className="font-semibold text-primary">{task.creatorName}</p>
               <p className="text-[10px] text-on-surface-variant">
-                Created on {new Date(task.createdAt).toLocaleDateString()}
+                Created on {formatToISTDate(task.createdAt)}
               </p>
             </div>
 
@@ -145,7 +146,7 @@ export function TaskDetailDrawer({ task, onClose, onStatusChange }: TaskDetailDr
             <div>
               <span className="text-on-surface-variant block mb-1">Due Date</span>
               <p className="font-mono text-primary font-semibold">
-                {new Date(task.dueDate).toLocaleDateString()} (18:00 UTC)
+                {formatToISTDateTime(task.dueDate)}
               </p>
             </div>
           </div>
@@ -167,7 +168,7 @@ export function TaskDetailDrawer({ task, onClose, onStatusChange }: TaskDetailDr
                       <span className="font-semibold text-primary">{cm.authorName}</span>
                     </div>
                     <span className="text-[10px] font-mono text-on-surface-variant">
-                      {new Date(cm.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatToISTTime(cm.createdAt)}
                     </span>
                   </div>
                   <p className="text-on-surface pl-7">{cm.content}</p>

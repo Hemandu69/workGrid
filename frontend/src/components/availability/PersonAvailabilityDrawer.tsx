@@ -355,7 +355,7 @@ export function PersonAvailabilityDrawer({
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
                     7-Day Availability Timeline
                   </span>
-                  <span className="text-[10px] font-mono text-outline">Hourly UTC Windows</span>
+                  <span className="text-[10px] font-mono text-outline">All times in IST (Asia/Kolkata)</span>
                 </div>
 
                 <div className="space-y-2">
