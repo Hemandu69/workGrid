@@ -54,6 +54,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['ADMIN', 'SUPER_ADMIN'],
   },
   {
+    label: 'Operations Grid',
+    href: '/admin/operations',
+    icon: 'grid_view',
+    roles: ['ADMIN', 'SUPER_ADMIN', 'SERVER'],
+  },
+  {
     label: 'People Availability',
     href: '/admin/availability',
     icon: 'event_available',
