@@ -32,6 +32,20 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Security Plugins (Helmet, CORS, Rate Limit, Sensible)
   await registerSecurityPlugins(app);
 
+  // Gracefully parse empty body with application/json content-type
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    if (!body || body === '') {
+      done(null, {});
+      return;
+    }
+    try {
+      const json = JSON.parse(body as string);
+      done(null, json);
+    } catch (err) {
+      done(err as Error, undefined);
+    }
+  });
+
   // JWT & Authentication Plugin
   await registerAuthPlugin(app);
 

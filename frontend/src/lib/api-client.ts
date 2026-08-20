@@ -26,7 +26,7 @@ async function request<T>(
   const url = `${API_BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...((options.headers as Record<string, string>) || {}),
   };
@@ -321,6 +321,7 @@ export const apiClient = {
       message: string;
     }>('/api/v1/attendance/in', {
       method: 'POST',
+      body: JSON.stringify({}),
     }, token);
   },
 
@@ -338,6 +339,7 @@ export const apiClient = {
       message: string;
     }>('/api/v1/attendance/out', {
       method: 'POST',
+      body: JSON.stringify({}),
     }, token);
   },
 
