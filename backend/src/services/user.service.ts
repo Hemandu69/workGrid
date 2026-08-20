@@ -1,9 +1,10 @@
 import { prisma } from '../db/client.js';
-import { UserRole, UserStatus } from '@prisma/client';
+import { AccountStatus, UserRole, UserStatus } from '@prisma/client';
 
 export class UserService {
   static async getUsers(filters: {
     role?: UserRole;
+    accountStatus?: AccountStatus;
     status?: UserStatus;
     roomId?: string;
     subroomId?: string;
@@ -14,6 +15,7 @@ export class UserService {
 
     if (filters.organizationId) where.organizationId = filters.organizationId;
     if (filters.role) where.role = filters.role;
+    if (filters.accountStatus) where.accountStatus = filters.accountStatus;
     if (filters.status) where.status = filters.status;
     if (filters.roomId) where.roomId = filters.roomId;
     if (filters.subroomId) where.subroomId = filters.subroomId;
@@ -40,6 +42,7 @@ export class UserService {
       name: u.name,
       email: u.email,
       role: u.role,
+      accountStatus: u.accountStatus,
       status: u.status,
       title: u.title,
       avatarUrl: u.avatarUrl,
@@ -51,9 +54,12 @@ export class UserService {
     }));
   }
 
-  static async getUserById(id: string) {
-    const user = await prisma.user.findUnique({
-      where: { id },
+  static async getUserById(id: string, organizationId?: string) {
+    const where: any = { id };
+    if (organizationId) where.organizationId = organizationId;
+
+    const user = await prisma.user.findFirst({
+      where,
       include: {
         room: true,
         subroom: true,
@@ -69,6 +75,7 @@ export class UserService {
       name: user.name,
       email: user.email,
       role: user.role,
+      accountStatus: user.accountStatus,
       status: user.status,
       title: user.title,
       avatarUrl: user.avatarUrl,

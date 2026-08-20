@@ -1,12 +1,13 @@
-import { PrismaClient, UserRole, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, DayOfWeek, SlotState } from '@prisma/client';
+import { PrismaClient, UserRole, AccountStatus, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, DayOfWeek, SlotState } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting WorkGrid database seed...');
+  console.log('🌱 Starting WorkGrid database seed (Development / Demo Environment)...');
 
   // 1. Clean existing records in reverse dependency order
+  await prisma.roleAuditLog.deleteMany();
   await prisma.auditEvent.deleteMany();
   await prisma.availabilitySlot.deleteMany();
   await prisma.taskComment.deleteMany();
@@ -71,10 +72,10 @@ async function main() {
   }
   console.log(`✓ Created 8 Rooms and 64 Subrooms (A1 through H8)`);
 
-  // 4. Create Demo Users with Hashed Passwords
+  // 4. Create Development/Demo Users with Hashed Passwords
   const defaultPasswordHash = await bcrypt.hash('password123', 10);
 
-  // Super Admin
+  // Super Admin (Global Administrative Authority)
   const superAdmin = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -82,6 +83,7 @@ async function main() {
       passwordHash: defaultPasswordHash,
       name: 'Elena Vance',
       role: UserRole.SUPER_ADMIN,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.ONLINE,
       title: 'Global Operations Director',
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
@@ -90,7 +92,7 @@ async function main() {
     },
   });
 
-  // Admin
+  // Admin (Operational Administration)
   const admin = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -98,6 +100,7 @@ async function main() {
       passwordHash: defaultPasswordHash,
       name: 'Marcus Sterling',
       role: UserRole.ADMIN,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.ONLINE,
       title: 'Operations & Resource Admin',
       avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
@@ -106,7 +109,24 @@ async function main() {
     },
   });
 
-  // Server (Team Lead for Room B)
+  // HR (People Management Authority)
+  const hrUser = await prisma.user.create({
+    data: {
+      organizationId: org.id,
+      email: 'sarah.jenkins@workgrid.corp',
+      passwordHash: defaultPasswordHash,
+      name: 'Sarah Jenkins',
+      role: UserRole.HR,
+      accountStatus: AccountStatus.ACTIVE,
+      status: UserStatus.ONLINE,
+      title: 'Head of People & Talent Operations',
+      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+      capacityLimitHours: 40,
+      currentAllocatedHours: 8,
+    },
+  });
+
+  // Server (Room/Event Supervisor for Room B)
   const server = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -114,8 +134,9 @@ async function main() {
       passwordHash: defaultPasswordHash,
       name: 'David Chen',
       role: UserRole.SERVER,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.BUSY,
-      title: 'Team Lead (Sector B)',
+      title: 'Supervisor (Sector B)',
       roomId: createdRooms['B'].id,
       subroomId: createdSubrooms['B1'].id,
       avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
@@ -138,6 +159,7 @@ async function main() {
       passwordHash: defaultPasswordHash,
       name: 'Sarah Connor',
       role: UserRole.MEMBER,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.ONLINE,
       title: 'Senior Systems Engineer',
       roomId: createdRooms['B'].id,
@@ -148,16 +170,17 @@ async function main() {
     },
   });
 
-  // Member 2 (Alex Rivera - Subroom B3)
+  // Member 2 / Team Lead (Alex Rivera - Subroom B3)
   const member2 = await prisma.user.create({
     data: {
       organizationId: org.id,
       email: 'alex.rivera@workgrid.corp',
       passwordHash: defaultPasswordHash,
       name: 'Alex Rivera',
-      role: UserRole.MEMBER,
+      role: UserRole.TEAM_LEAD,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.ONLINE,
-      title: 'Infrastructure Specialist',
+      title: 'Infrastructure Specialist & Team Lead',
       roomId: createdRooms['B'].id,
       subroomId: createdSubrooms['B3'].id,
       avatarUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=150&auto=format&fit=crop&q=80',
@@ -174,11 +197,12 @@ async function main() {
       passwordHash: defaultPasswordHash,
       name: 'Maya Patel',
       role: UserRole.MEMBER,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.BUSY,
       title: 'Security Analyst',
       roomId: createdRooms['B'].id,
       subroomId: createdSubrooms['B2'].id,
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
       capacityLimitHours: 40,
       currentAllocatedHours: 38,
     },
@@ -192,6 +216,7 @@ async function main() {
       passwordHash: defaultPasswordHash,
       name: 'Liam Vance',
       role: UserRole.MEMBER,
+      accountStatus: AccountStatus.ACTIVE,
       status: UserStatus.OFFLINE,
       title: 'QA Engineer',
       roomId: createdRooms['B'].id,
@@ -202,7 +227,35 @@ async function main() {
     },
   });
 
-  console.log(`✓ Created 6 core demo users with bcrypt hashed credentials`);
+  // Pending Onboarding User (John Doe - Awaiting HR Role Assignment & Activation)
+  const pendingUser = await prisma.user.create({
+    data: {
+      organizationId: org.id,
+      email: 'john.doe@workgrid.corp',
+      passwordHash: defaultPasswordHash,
+      name: 'John Doe',
+      role: UserRole.MEMBER,
+      accountStatus: AccountStatus.PENDING,
+      status: UserStatus.OFFLINE,
+      title: 'Junior DevOps Engineer (Onboarding)',
+      capacityLimitHours: 40,
+      currentAllocatedHours: 0,
+    },
+  });
+
+  // Demo Role Audit Log Entry (Super Admin provisioned HR user)
+  await prisma.roleAuditLog.create({
+    data: {
+      organizationId: org.id,
+      targetUserId: hrUser.id,
+      changedById: superAdmin.id,
+      previousRole: UserRole.MEMBER,
+      newRole: UserRole.HR,
+      reason: 'Provisioned as Head of People & Talent Operations',
+    },
+  });
+
+  console.log(`✓ Created demo users (Super Admin, Admin, HR, Team Lead, Server, Members, Pending User)`);
 
   // 5. Create Task Campaigns
   const campaign1 = await prisma.taskCampaign.create({

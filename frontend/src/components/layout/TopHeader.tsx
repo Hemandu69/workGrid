@@ -36,9 +36,11 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
 
   const roleOptions: Array<{ role: UserRole; label: string; desc: string }> = [
     { role: 'SUPER_ADMIN', label: 'Super Admin', desc: 'Global monitoring, announcements & org health' },
-    { role: 'ADMIN', label: 'Admin', desc: 'Assign & monitor work for all servers & members' },
-    { role: 'SERVER', label: 'Server / Team Lead', desc: 'Manage & assign only inside own room (Room B)' },
-    { role: 'MEMBER', label: 'Member', desc: 'Manage availability, subroom B3 tasks' },
+    { role: 'ADMIN', label: 'Admin', desc: 'Operational administration & sector oversight' },
+    { role: 'HR', label: 'HR', desc: 'People management, onboarding & role governance' },
+    { role: 'TEAM_LEAD', label: 'Team Lead', desc: 'Team-level task and workload coordination' },
+    { role: 'SERVER', label: 'Server', desc: 'Room & event supervision (Sector B)' },
+    { role: 'MEMBER', label: 'Member', desc: 'Task execution & weekly availability' },
   ];
 
   return (
