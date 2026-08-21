@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { User, UserRole, AccountStatus, RoleAuditLog } from '../../types/auth';
-import { MOCK_PEOPLE_DIRECTORY, MOCK_ROLE_AUDIT_LOGS } from '../../lib/mock-data';
 import { apiClient } from '../../lib/api-client';
 import { useHREvents, HREvent } from '../../lib/useHREvents';
 import { Avatar } from '../../components/ui/Avatar';
@@ -43,26 +42,21 @@ export default function HRDashboardPage() {
           role: roleFilter !== 'ALL' ? roleFilter : undefined,
           accountStatus: statusFilter !== 'ALL' ? statusFilter : undefined,
           search: search.trim() || undefined,
-        }).catch(() => null),
-        apiClient.getRoleAuditLogs().catch(() => null),
+        }).catch(() => []),
+        apiClient.getRoleAuditLogs().catch(() => []),
       ]);
 
       if (statsData) {
         setStats(statsData);
       }
-      if (directoryData) {
+      if (Array.isArray(directoryData)) {
         setPeople(directoryData);
-      } else {
-        setPeople(MOCK_PEOPLE_DIRECTORY);
       }
-      if (logsData) {
+      if (Array.isArray(logsData)) {
         setAuditLogs(logsData);
-      } else {
-        setAuditLogs(MOCK_ROLE_AUDIT_LOGS);
       }
     } catch {
-      setPeople(MOCK_PEOPLE_DIRECTORY);
-      setAuditLogs(MOCK_ROLE_AUDIT_LOGS);
+      // Handled
     } finally {
       setIsLoading(false);
     }

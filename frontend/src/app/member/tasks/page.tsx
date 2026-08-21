@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { TaskTable } from '../../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../../components/tasks/TaskDetailDrawer';
-import { MOCK_TASKS } from '../../../lib/mock-data';
 import { Task } from '../../../types/task';
 import { useAuth } from '../../../lib/auth-context';
 import { apiClient } from '../../../lib/api-client';
@@ -12,7 +11,7 @@ import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function MemberTasksPage() {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');

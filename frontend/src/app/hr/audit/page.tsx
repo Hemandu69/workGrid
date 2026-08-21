@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { RoleAuditLog } from '../../../types/auth';
-import { MOCK_ROLE_AUDIT_LOGS } from '../../../lib/mock-data';
 import { apiClient } from '../../../lib/api-client';
 import { useHREvents, HREvent } from '../../../lib/useHREvents';
 import { Avatar } from '../../../components/ui/Avatar';
@@ -21,11 +20,9 @@ export default function HRAuditPage() {
       const data = await apiClient.getRoleAuditLogs();
       if (data && Array.isArray(data)) {
         setLogs(data);
-      } else {
-        setLogs(MOCK_ROLE_AUDIT_LOGS);
       }
     } catch {
-      setLogs(MOCK_ROLE_AUDIT_LOGS);
+      // Handled
     } finally {
       setIsLoading(false);
     }

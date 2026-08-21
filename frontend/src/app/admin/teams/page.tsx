@@ -1,29 +1,40 @@
-'use client';
+﻿'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
-import { MOCK_ROOM_B_MEMBERS, MOCK_USERS } from '../../../lib/mock-data';
 import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
+import { User } from '../../../types/auth';
+import { apiClient } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function AdminTeamsPage() {
-  const allUsers = [
-    MOCK_USERS.superAdmin,
-    MOCK_USERS.admin,
-    MOCK_USERS.server,
-    ...MOCK_ROOM_B_MEMBERS,
-  ];
-
+  const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const filtered = allUsers.filter(
-    (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      (u.room && u.room.toLowerCase().includes(search.toLowerCase())) ||
-      (u.subroom && u.subroom.toLowerCase().includes(search.toLowerCase()))
-  );
+  const fetchUsers = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await apiClient.getUsers({ search: search.trim() || undefined });
+      if (Array.isArray(data)) {
+        setUsers(data);
+      }
+    } catch {
+      // Clean fallback
+    } finally {
+      setIsLoading(false);
+    }
+  }, [search]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  useDomainEvent(['EMPLOYEE_REGISTERED', 'EMPLOYEE_APPROVED', 'ROLE_CHANGED', 'EMPLOYEE_UPDATED', 'ACCOUNT_STATUS_CHANGED'], () => {
+    fetchUsers();
+  });
 
   return (
     <AppShell
@@ -41,7 +52,7 @@ export default function AdminTeamsPage() {
               Personnel & Sector Membership Directory
             </h1>
             <p className="text-xs text-on-surface-variant mt-1">
-              Global directory of administrators, servers, and members across the 2,000-user hierarchy.
+              Global directory of administrators, servers, and members across the hierarchy.
             </p>
           </div>
         </div>
@@ -56,7 +67,7 @@ export default function AdminTeamsPage() {
             className="w-72 px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
           />
           <span className="text-xs font-mono text-on-surface-variant tabular-nums">
-            {filtered.length} Active Records Listed
+            {users.length} Active Records Listed
           </span>
         </div>
 
@@ -72,35 +83,49 @@ export default function AdminTeamsPage() {
             </TableRow>
           </TableHeader>
           <tbody>
-            {filtered.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>
-                  <div className="flex items-center gap-2.5">
-                    <Avatar src={user.avatarUrl} name={user.name} size="sm" status={user.status} />
-                    <div>
-                      <span className="font-semibold text-primary block">{user.name}</span>
-                      <span className="text-[10px] text-on-surface-variant font-mono">{user.email}</span>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge role={user.role ? user.role.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
-                </TableCell>
-                <TableCell>
-                  <span className="font-mono text-xs text-on-surface-variant font-medium">
-                    {user.subroom ? `${user.subroom} (${user.room})` : user.room || 'Global Organization'}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <Badge status={user.status === 'ONLINE' ? 'AVAILABLE' : user.status === 'BUSY' ? 'BUSY' : 'UNAVAILABLE'}>
-                    {user.status || 'OFFLINE'}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono text-xs tabular-nums text-primary font-semibold">
-                  {user.currentAllocatedHours ?? 0} / {user.capacityLimitHours ?? 40}h
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-xs text-on-surface-variant">
+                  Loading personnel directory...
                 </TableCell>
               </TableRow>
-            ))}
+            ) : users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-xs text-on-surface-variant">
+                  No personnel records found.
+                </TableCell>
+              </TableRow>
+            ) : (
+              users.map((user) => (
+                <TableRow key={user.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      <Avatar src={user.avatarUrl} name={user.name} size="sm" status={user.status} />
+                      <div>
+                        <span className="font-semibold text-primary block">{user.name}</span>
+                        <span className="text-[10px] text-on-surface-variant font-mono">{user.email}</span>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge role={user.role ? user.role.replace('_', ' ') : 'UNASSIGNED'} variant="role" />
+                  </TableCell>
+                  <TableCell>
+                    <span className="font-mono text-xs text-on-surface-variant font-medium">
+                      {user.subroom ? `${user.subroom} (${user.room})` : user.room || 'Global Organization'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Badge status={user.status === 'ONLINE' ? 'AVAILABLE' : user.status === 'BUSY' ? 'BUSY' : 'UNAVAILABLE'}>
+                      {user.status || 'OFFLINE'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums text-primary font-semibold">
+                    {user.currentAllocatedHours ?? 0} / {user.capacityLimitHours ?? 40}h
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </tbody>
         </Table>
       </div>

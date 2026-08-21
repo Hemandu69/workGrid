@@ -1,12 +1,11 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { TaskTable } from '../../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../../components/tasks/TaskDetailDrawer';
 import { CreateTaskModal } from '../../../components/tasks/CreateTaskModal';
-import { MOCK_TASKS, MOCK_CAMPAIGNS } from '../../../lib/mock-data';
-import { Task } from '../../../types/task';
+import { Task, TaskCampaign } from '../../../types/task';
 import { apiClient } from '../../../lib/api-client';
 import { useDomainEvent } from '../../../lib/realtime-context';
 import { Button } from '../../../components/ui/Button';
@@ -14,7 +13,8 @@ import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
 
 export default function AdminTasksPage() {
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [campaigns, setCampaigns] = useState<TaskCampaign[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,16 +23,23 @@ export default function AdminTasksPage() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const data = await apiClient.getTasks({
-        roomLetter: roomFilter !== 'ALL' ? roomFilter.replace('Room', '').trim() : undefined,
-        status: statusFilter !== 'ALL' ? statusFilter : undefined,
-        search: searchQuery.trim() || undefined,
-      });
-      if (data && Array.isArray(data)) {
-        setTasks(data);
+      const [tasksData, campaignsData] = await Promise.all([
+        apiClient.getTasks({
+          roomLetter: roomFilter !== 'ALL' ? roomFilter.replace('Room', '').trim() : undefined,
+          status: statusFilter !== 'ALL' ? statusFilter : undefined,
+          search: searchQuery.trim() || undefined,
+        }),
+        apiClient.getCampaigns().catch(() => []),
+      ]);
+
+      if (Array.isArray(tasksData)) {
+        setTasks(tasksData);
+      }
+      if (Array.isArray(campaignsData)) {
+        setCampaigns(campaignsData);
       }
     } catch {
-      // Fallback
+      // Clean fallback
     }
   }, [roomFilter, statusFilter, searchQuery]);
 
@@ -41,17 +48,8 @@ export default function AdminTasksPage() {
   }, [fetchTasks]);
 
   // Real-Time Task Domain Events
-  useDomainEvent(['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED'], (event) => {
-    if (event.type === 'TASK_CREATED' && event.payload) {
-      setTasks((prev) => {
-        const payloadId = (event.payload as { id?: string }).id;
-        const exists = prev.some((t) => t.id === payloadId);
-        if (exists) return prev;
-        return [event.payload as Task, ...prev];
-      });
-    } else {
-      fetchTasks();
-    }
+  useDomainEvent(['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED'], () => {
+    fetchTasks();
   });
 
   const filteredTasks = tasks.filter((t) => {
@@ -97,26 +95,28 @@ export default function AdminTasksPage() {
         </div>
 
         {/* Active Campaigns Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {MOCK_CAMPAIGNS.map((c) => (
-            <Card key={c.id}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <Badge priority={c.priority} />
-                  <h3 className="text-sm font-bold text-primary mt-1.5">{c.title}</h3>
-                  <p className="text-xs text-on-surface-variant mt-1">{c.description}</p>
+        {campaigns.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {campaigns.map((c) => (
+              <Card key={c.id}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <Badge priority={c.priority} />
+                    <h3 className="text-sm font-bold text-primary mt-1.5">{c.title}</h3>
+                    <p className="text-xs text-on-surface-variant mt-1">{c.description}</p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-4 pt-3 border-t border-surface-outline flex items-center justify-between text-xs tabular-nums">
-                <span className="text-on-surface-variant">Due {new Date(c.dueDate).toLocaleDateString()}</span>
-                <span className="font-mono font-semibold text-primary">
-                  {c.completedCount} / {c.tasksCount} Subtasks Done
-                </span>
-              </div>
-            </Card>
-          ))}
-        </div>
+                <div className="mt-4 pt-3 border-t border-surface-outline flex items-center justify-between text-xs tabular-nums">
+                  <span className="text-on-surface-variant">Due {new Date(c.dueDate).toLocaleDateString()}</span>
+                  <span className="font-mono font-semibold text-primary">
+                    {c.completedCount} / {c.tasksCount} Subtasks Done
+                  </span>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-bright border border-surface-outline rounded">
@@ -182,6 +182,7 @@ export default function AdminTasksPage() {
       <CreateTaskModal
         isOpen={isCreateTaskOpen}
         onClose={() => setIsCreateTaskOpen(false)}
+        onTaskCreated={() => fetchTasks()}
       />
     </AppShell>
   );

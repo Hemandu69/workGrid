@@ -1,27 +1,71 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
 import { TaskTable } from '../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../components/tasks/TaskDetailDrawer';
 import { CreateTaskModal } from '../../components/tasks/CreateTaskModal';
-import { MOCK_TASKS, MOCK_CAMPAIGNS, MOCK_ROOMS } from '../../lib/mock-data';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import Link from 'next/link';
-import { Task } from '../../types/task';
+import { Task, TaskCampaign } from '../../types/task';
+import { Room } from '../../types/room';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
+import { apiClient } from '../../lib/api-client';
+import { useDomainEvent } from '../../lib/realtime-context';
 
 export default function AdminDashboard() {
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [campaigns, setCampaigns] = useState<TaskCampaign[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [stats, setStats] = useState<{
+    organizationScale?: number;
+    totalMembers?: number;
+    totalCapacity?: number;
+    globalSaturationPercentage?: number;
+    activeCampaigns?: number;
+    overdueRiskPercentage?: number;
+  } | null>(null);
+
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
 
-  const totalMembers = MOCK_ROOMS.reduce((acc, r) => acc + r.totalMembers, 0);
-  const totalCapacity = MOCK_ROOMS.reduce((acc, r) => acc + r.totalCapacity, 0);
-  const overallOccupancy = Math.round((totalMembers / totalCapacity) * 100);
+  const loadData = useCallback(async () => {
+    try {
+      const [statsData, tasksData, campaignsData, roomsData] = await Promise.all([
+        apiClient.getDashboardSummary().catch(() => null),
+        apiClient.getTasks().catch(() => []),
+        apiClient.getCampaigns().catch(() => []),
+        apiClient.getRooms().catch(() => []),
+      ]);
+
+      if (statsData) setStats(statsData as typeof stats);
+      if (Array.isArray(tasksData)) setTasks(tasksData);
+      if (Array.isArray(campaignsData)) setCampaigns(campaignsData);
+      if (Array.isArray(roomsData)) setRooms(roomsData);
+    } catch {
+      // Clean fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Real-Time Domain Event Subscriptions
+  useDomainEvent(
+    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED', 'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED'],
+    () => {
+      loadData();
+    }
+  );
+
+  const totalMembers = stats?.totalMembers ?? rooms.reduce((acc, r) => acc + r.totalMembers, 0);
+  const totalCapacity = stats?.totalCapacity ?? rooms.reduce((acc, r) => acc + r.totalCapacity, 0);
+  const overallOccupancy = stats?.globalSaturationPercentage ?? (totalCapacity > 0 ? Math.round((totalMembers / totalCapacity) * 100) : 0);
+  const orgScale = stats?.organizationScale ?? totalMembers;
 
   return (
     <AppShell
@@ -67,35 +111,35 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatMetricCard
             label="Total Personnel"
-            value="2,048"
+            value={orgScale.toLocaleString()}
             subtext={`${totalMembers} Assigned to subrooms`}
-            trend="98% Provisioned"
+            trend="100% Authoritative"
             icon="groups"
             indicatorColor="primary"
           />
           <StatMetricCard
             label="Subroom Saturation"
             value={`${overallOccupancy}%`}
-            subtext="Across 64 Subrooms (A1-H8)"
-            trend="Optimal Density"
+            subtext={`Across ${rooms.length * 8 || 64} Subrooms`}
+            trend="Live Occupancy"
             icon="meeting_room"
             indicatorColor="available"
           />
           <StatMetricCard
             label="Active Campaigns"
-            value={MOCK_CAMPAIGNS.length}
-            subtext="24 individual subtasks active"
-            trend="+1 this week"
+            value={campaigns.length}
+            subtext={`${tasks.length} individual subtasks active`}
+            trend="Active Dispatches"
             icon="campaign"
             indicatorColor="busy"
           />
           <StatMetricCard
             label="Task Overdue Risk"
-            value="4.2%"
-            subtext="1 task flagged with policy block"
-            trend="-1.5% vs last cycle"
+            value={`${stats?.overdueRiskPercentage ?? 0}%`}
+            subtext="Calculated from active task SLAs"
+            trend="Real-time Health"
             icon="speed"
-            indicatorColor="blocked"
+            indicatorColor={stats?.overdueRiskPercentage && stats.overdueRiskPercentage > 10 ? 'blocked' : 'available'}
           />
         </div>
 
@@ -113,32 +157,38 @@ export default function AdminDashboard() {
               </CardHeader>
 
               <div className="space-y-3">
-                {MOCK_CAMPAIGNS.map((camp) => (
-                  <div
-                    key={camp.id}
-                    className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-primary text-sm">{camp.title}</span>
-                          <Badge priority={camp.priority} />
+                {campaigns.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant py-3 text-center">No active task campaigns.</p>
+                ) : (
+                  campaigns.map((camp) => (
+                    <div
+                      key={camp.id}
+                      className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-primary text-sm">{camp.title}</span>
+                            <Badge priority={camp.priority} />
+                          </div>
+                          <p className="text-on-surface-variant text-xs mt-0.5">{camp.description}</p>
                         </div>
-                        <p className="text-on-surface-variant text-xs mt-0.5">{camp.description}</p>
+                        <span className="font-mono font-semibold text-primary tabular-nums">
+                          {camp.completedCount} / {camp.tasksCount} Tasks Done
+                        </span>
                       </div>
-                      <span className="font-mono font-semibold text-primary tabular-nums">
-                        {camp.completedCount} / {camp.tasksCount} Tasks Done
-                      </span>
-                    </div>
 
-                    <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary rounded-full"
-                        style={{ width: `${(camp.completedCount / camp.tasksCount) * 100}%` }}
-                      />
+                      <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{
+                            width: `${camp.tasksCount > 0 ? (camp.completedCount / camp.tasksCount) * 100 : 0}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </Card>
 
@@ -173,28 +223,32 @@ export default function AdminDashboard() {
               </CardHeader>
 
               <div className="space-y-3 text-xs">
-                {MOCK_ROOMS.map((room) => (
-                  <div key={room.letter} className="space-y-1">
-                    <div className="flex justify-between items-center tabular-nums">
-                      <span className="font-semibold text-primary">Sector {room.letter}</span>
-                      <span className="font-mono text-on-surface-variant">
-                        {room.totalMembers} / {room.totalCapacity} ({room.occupancyPercentage}%)
-                      </span>
+                {rooms.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant py-2">Loading sector data...</p>
+                ) : (
+                  rooms.map((room) => (
+                    <div key={room.letter} className="space-y-1">
+                      <div className="flex justify-between items-center tabular-nums">
+                        <span className="font-semibold text-primary">Sector {room.letter}</span>
+                        <span className="font-mono text-on-surface-variant">
+                          {room.totalMembers} / {room.totalCapacity} ({room.occupancyPercentage}%)
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            room.occupancyPercentage > 90
+                              ? 'bg-status-blocked'
+                              : room.occupancyPercentage > 75
+                              ? 'bg-status-busy'
+                              : 'bg-status-available'
+                          }`}
+                          style={{ width: `${room.occupancyPercentage}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${
-                          room.occupancyPercentage > 90
-                            ? 'bg-status-blocked'
-                            : room.occupancyPercentage > 75
-                            ? 'bg-status-busy'
-                            : 'bg-status-available'
-                        }`}
-                        style={{ width: `${room.occupancyPercentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </Card>
 
@@ -225,6 +279,7 @@ export default function AdminDashboard() {
       <CreateTaskModal
         isOpen={isCreateTaskOpen}
         onClose={() => setIsCreateTaskOpen(false)}
+        onTaskCreated={() => loadData()}
       />
     </AppShell>
   );
