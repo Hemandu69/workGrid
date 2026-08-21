@@ -89,8 +89,8 @@ export default function MemberDashboard() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: user.room || 'Sector B', href: '#' },
-        { label: user.subroom ? `Subroom ${user.subroom}` : 'Subroom B3', href: '#' },
+        { label: user.room || 'Unassigned Section', href: '#' },
+        { label: user.subroom ? `Subroom ${user.subroom}` : 'Unassigned Subroom', href: '#' },
         { label: 'Member Workspace' },
       ]}
     >
@@ -165,8 +165,10 @@ export default function MemberDashboard() {
             <Card padded={false}>
               <div className="p-4 border-b border-surface-outline bg-surface-container-low flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-primary">Subroom {user.subroom || 'B3'}</h3>
-                  <p className="text-[11px] text-on-surface-variant">{user.room || 'Section B'} • Core Operations</p>
+                  <h3 className="text-sm font-bold text-primary">
+                    {user.subroom ? `Subroom ${user.subroom}` : 'No Subroom Assigned'}
+                  </h3>
+                  <p className="text-[11px] text-on-surface-variant">{user.room || 'No section assigned'}</p>
                 </div>
                 <Badge status="AVAILABLE">Subroom Unit</Badge>
               </div>

@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth-context';
 import { apiClient } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
 import { AttendanceMeResponse, AttendanceDayGroup } from '../../types/attendance';
+import { AvailabilityStatusControl } from '../availability/AvailabilityStatusControl';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
 
@@ -59,6 +60,8 @@ export function AttendanceCard() {
         return {
           state: 'OUT',
           presenceState: 'OUT',
+          availabilityState: 'UNAVAILABLE',
+          availabilityLabel: 'Unavailable',
           currentSession: null,
           todaySummary: {
             totalSeconds: 0,
@@ -75,12 +78,23 @@ export function AttendanceCard() {
     fetchAttendance();
   }, [fetchAttendance]);
 
-  // Real-Time Domain Event Subscription: instant update when attendance changes
-  useDomainEvent(['EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED'], (event) => {
-    if (!event.targetUserId || event.targetUserId === user?.id) {
-      fetchAttendance();
+  // Real-Time Domain Event Subscription: instant update when attendance or the
+  // user's own operational availability changes — including changes an admin
+  // makes on their behalf from another session.
+  useDomainEvent(
+    ['EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED', 'AVAILABILITY_CHANGED'],
+    (event) => {
+      const payload = event.payload as { userId?: string | null; personId?: string } | null;
+      const concernsMe =
+        !event.targetUserId ||
+        event.targetUserId === user?.id ||
+        payload?.userId === user?.id ||
+        payload?.personId === user?.id;
+      if (concernsMe) {
+        fetchAttendance();
+      }
     }
-  });
+  );
 
   // Live 1-second dynamic clock for continuous working duration calculation
   useEffect(() => {
@@ -249,7 +263,21 @@ export function AttendanceCard() {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2 self-end sm:self-center shrink-0 w-full sm:w-auto justify-end">
+          <div className="flex flex-wrap items-center gap-2 self-end sm:self-center shrink-0 w-full sm:w-auto justify-end">
+            {/* Own operational availability — persisted server-side and
+                broadcast to every authorized view. */}
+            <div className="flex items-center gap-1.5 mr-1">
+              <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                Availability
+              </span>
+              <AvailabilityStatusControl
+                current={data?.availabilityState}
+                disabled={!isCheckedIn}
+                disabledHint="Check in before setting your availability."
+                onChanged={fetchAttendance}
+              />
+            </div>
+
             <Button
               variant="outline"
               size="sm"
