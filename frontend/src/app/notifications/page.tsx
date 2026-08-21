@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { MOCK_NOTIFICATIONS } from '../../lib/mock-data';
 import { AppNotification } from '../../types/notification';
+import { useDomainEvent } from '../../lib/realtime-context';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import Link from 'next/link';
@@ -11,6 +12,32 @@ import Link from 'next/link';
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<AppNotification[]>(MOCK_NOTIFICATIONS);
   const [tab, setTab] = useState<'ALL' | 'UNREAD'>('ALL');
+
+  // Real-Time Notification & Announcement Domain Events
+  useDomainEvent<{ title?: string; content?: string }>(
+    ['NOTIFICATION_CREATED', 'ANNOUNCEMENT_CREATED', 'TASK_ASSIGNED', 'EMPLOYEE_APPROVED'],
+    (event) => {
+      const payload = event.payload || {};
+      const newNotif: AppNotification = {
+        id: `notif-${event.id}`,
+        type: event.type === 'ANNOUNCEMENT_CREATED' ? 'ANNOUNCEMENT' : 'TASK_ASSIGNED',
+        title:
+          event.type === 'ANNOUNCEMENT_CREATED'
+            ? `Announcement: ${payload.title || 'Company Notice'}`
+            : 'Task Assignment / System Update',
+        message: payload.content || payload.title || 'You have a new real-time notification.',
+        read: false,
+        createdAt: event.timestamp || new Date().toISOString(),
+        priority: 'HIGH',
+      };
+
+      setNotifications((prev) => {
+        const exists = prev.some((n) => n.id === newNotif.id);
+        if (exists) return prev;
+        return [newNotif, ...prev];
+      });
+    }
+  );
 
   const filtered = notifications.filter((n) => tab === 'ALL' || !n.read);
 

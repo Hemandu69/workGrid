@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { useAuth } from '../../../lib/auth-context';
 import { apiClient, PeopleAvailabilityResponse } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 import { PersonAvailabilityDrawer } from '../../../components/availability/PersonAvailabilityDrawer';
 import { StatMetricCard } from '../../../components/monitoring/StatMetricCard';
 import { Avatar } from '../../../components/ui/Avatar';
@@ -172,6 +173,22 @@ export default function PeopleAvailabilityPage() {
   useEffect(() => {
     fetchAvailability();
   }, [fetchAvailability]);
+
+  // Real-Time Domain Event Subscription (Availability, Presence, Attendance, Location)
+  useDomainEvent(
+    [
+      'AVAILABILITY_CHANGED',
+      'PRESENCE_CHANGED',
+      'EMPLOYEE_CHECKED_IN',
+      'EMPLOYEE_CHECKED_OUT',
+      'ATTENDANCE_UPDATED',
+      'LOCATION_CHANGED',
+      'ROLE_CHANGED',
+    ],
+    () => {
+      fetchAvailability();
+    }
+  );
 
   const handleSetNow = () => {
     const now = new Date();

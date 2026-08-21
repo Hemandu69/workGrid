@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { useAuth } from '../../../lib/auth-context';
 import { apiClient, OperationalGridResponse } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 import { OperationsGrid } from '../../../components/operations/OperationsGrid';
 import { ActiveEventBanner } from '../../../components/operations/ActiveEventBanner';
 import { ServerCoverageCard } from '../../../components/operations/ServerCoverageCard';
@@ -181,9 +182,24 @@ export default function OperationsGridPage() {
 
   useEffect(() => {
     fetchGrid();
-    const interval = setInterval(fetchGrid, 20000); // 20s active polling
-    return () => clearInterval(interval);
   }, [fetchGrid]);
+
+  // Real-Time Domain Event Subscription (Operations Grid, Attendance, Presence, Room Changes)
+  useDomainEvent(
+    [
+      'GRID_UPDATED',
+      'EMPLOYEE_CHECKED_IN',
+      'EMPLOYEE_CHECKED_OUT',
+      'PRESENCE_CHANGED',
+      'LOCATION_CHANGED',
+      'ROOM_STATUS_CHANGED',
+      'SUBROOM_STATUS_CHANGED',
+      'ROOM_ASSIGNMENT_CHANGED',
+    ],
+    () => {
+      fetchGrid();
+    }
+  );
 
   if (!isAuthorized) {
     return (

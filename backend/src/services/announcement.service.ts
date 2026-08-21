@@ -2,6 +2,7 @@ import { prisma } from '../db/client.js';
 import { CreateAnnouncementInput } from '../schemas/announcement.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { AnnouncementStatus, AudienceScope } from '@prisma/client';
+import { publishDomainEvent } from '../events/domain-events.js';
 
 export class AnnouncementService {
   static async getAnnouncements(filters: {
@@ -60,7 +61,7 @@ export class AnnouncementService {
       },
     });
 
-    return {
+    const result = {
       id: announcement.id,
       title: announcement.title,
       content: announcement.content,
@@ -74,5 +75,15 @@ export class AnnouncementService {
       scheduledFor: announcement.scheduledFor ? announcement.scheduledFor.toISOString() : undefined,
       createdAt: announcement.createdAt.toISOString(),
     };
+
+    publishDomainEvent({
+      type: 'ANNOUNCEMENT_CREATED',
+      organizationId: user.organizationId,
+      entityId: announcement.id,
+      actorId: user.id,
+      payload: result,
+    });
+
+    return result;
   }
 }

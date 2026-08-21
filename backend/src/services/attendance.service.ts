@@ -1,6 +1,7 @@
 import { prisma } from '../db/client.js';
 import { AccountStatus, PresenceState, UserRole } from '@prisma/client';
 import { formatToISTDate, formatToISTTime, getCurrentDate, APP_TIMEZONE, TIMEZONE_LABEL } from '../utils/time.js';
+import { publishDomainEvent } from '../events/domain-events.js';
 
 export interface AttendanceSessionDto {
   id: string;
@@ -165,6 +166,37 @@ export class AttendanceService {
       return record;
     });
 
+    // Publish Real-Time Domain Events (Organization Scoped)
+    publishDomainEvent({
+      type: 'EMPLOYEE_CHECKED_IN',
+      organizationId: user.organizationId,
+      entityId: result.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        arrivedAt: now.toISOString(),
+        arrivedAtIST: formatToISTTime(now),
+        presenceState: PresenceState.IN,
+      },
+    });
+
+    publishDomainEvent({
+      type: 'ATTENDANCE_UPDATED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        state: 'IN',
+        presenceState: PresenceState.IN,
+        arrivedAt: now.toISOString(),
+      },
+    });
+
     return {
       state: 'IN' as const,
       presenceState: PresenceState.IN,
@@ -268,6 +300,39 @@ export class AttendanceService {
       }
 
       return updatedRecord;
+    });
+
+    // Publish Real-Time Domain Events (Organization Scoped)
+    publishDomainEvent({
+      type: 'EMPLOYEE_CHECKED_OUT',
+      organizationId: user.organizationId,
+      entityId: result.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        leftAt: now.toISOString(),
+        leftAtIST: formatToISTTime(now),
+        durationSeconds,
+        durationFormatted: formatDuration(durationSeconds),
+        presenceState: PresenceState.OUT,
+      },
+    });
+
+    publishDomainEvent({
+      type: 'ATTENDANCE_UPDATED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        state: 'OUT',
+        presenceState: PresenceState.OUT,
+        leftAt: now.toISOString(),
+      },
     });
 
     return {
