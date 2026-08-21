@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, UserRole, AccountStatus } from '../types/auth';
-import { MOCK_USERS } from './mock-data';
 import { apiClient, ApiError } from './api-client';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -16,10 +15,21 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | null>;
-  setRole: (role: UserRole) => void; // Development/demo switcher
+  setRole: (role: UserRole) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const INITIAL_USER: User = {
+  id: '',
+  name: '',
+  email: '',
+  role: null,
+  accountStatus: 'PENDING',
+  status: 'OFFLINE',
+  capacityLimitHours: 40,
+  currentAllocatedHours: 0,
+};
 
 export function getRoleLandingPath(role?: UserRole | null, status?: AccountStatus): string {
   if (status === 'PENDING' || !role) {
@@ -48,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [user, setUser] = useState<User>(MOCK_USERS.superAdmin);
+  const [user, setUser] = useState<User>(INITIAL_USER);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,33 +140,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ignore network errors on logout
     } finally {
       setIsAuthenticated(false);
-      setUser(MOCK_USERS.member);
+      setUser(INITIAL_USER);
       router.push('/login');
     }
   };
 
   // Development/Preview role switcher
   const setRole = (newRole: UserRole) => {
-    switch (newRole) {
-      case 'SUPER_ADMIN':
-        setUser(MOCK_USERS.superAdmin);
-        break;
-      case 'ADMIN':
-        setUser(MOCK_USERS.admin);
-        break;
-      case 'HR':
-        setUser(MOCK_USERS.hr);
-        break;
-      case 'TEAM_LEAD':
-        setUser(MOCK_USERS.teamLead);
-        break;
-      case 'SERVER':
-        setUser(MOCK_USERS.server);
-        break;
-      case 'MEMBER':
-        setUser(MOCK_USERS.member);
-        break;
-    }
+    setUser((prev) => ({
+      ...prev,
+      role: newRole,
+    }));
   };
 
   return (

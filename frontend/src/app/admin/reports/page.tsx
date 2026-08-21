@@ -1,12 +1,46 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { StatMetricCard } from '../../../components/monitoring/StatMetricCard';
 import { Card, CardHeader, CardTitle } from '../../../components/ui/Card';
-import { MOCK_ROOMS } from '../../../lib/mock-data';
+import { Room } from '../../../types/room';
+import { apiClient } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function AdminReportsPage() {
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [stats, setStats] = useState<{
+    organizationScale?: number;
+    totalMembers?: number;
+    totalCapacity?: number;
+    globalSaturationPercentage?: number;
+    activeTasks?: number;
+    overdueRiskPercentage?: number;
+  } | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [roomsData, statsData] = await Promise.all([
+        apiClient.getRooms().catch(() => []),
+        apiClient.getDashboardSummary().catch(() => null),
+      ]);
+
+      if (Array.isArray(roomsData)) setRooms(roomsData);
+      if (statsData) setStats(statsData as typeof stats);
+    } catch {
+      // Handled
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useDomainEvent(['ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED', 'TASK_STATUS_CHANGED'], () => {
+    loadData();
+  });
+
   return (
     <AppShell
       breadcrumbs={[
@@ -29,34 +63,34 @@ export default function AdminReportsPage() {
         {/* Analytics Top Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatMetricCard
-            label="Avg Task Turnaround"
-            value="1.8 Days"
-            subtext="From ASSIGNED to COMPLETED"
-            trend="-0.4d vs Target"
-            icon="timer"
+            label="Global Saturation"
+            value={`${stats?.globalSaturationPercentage ?? 0}%`}
+            subtext="Occupied subroom capacity"
+            trend="Real-time Density"
+            icon="speed"
             indicatorColor="available"
           />
           <StatMetricCard
-            label="Global Throughput"
-            value="89.4%"
-            subtext="On-time delivery rate"
-            trend="+2.1% this month"
-            icon="trending_up"
+            label="Active Workload Tasks"
+            value={stats?.activeTasks ?? 0}
+            subtext="Total tasks in dispatch"
+            trend="Active Queue"
+            icon="assignment"
             indicatorColor="primary"
           />
           <StatMetricCard
-            label="Peak Workload Window"
-            value="13:00 UTC"
-            subtext="Highest concurrency demand"
-            trend="Mon / Wed peaks"
+            label="Subrooms Monitored"
+            value={rooms.length * 8 || 64}
+            subtext="Across all provisioned sectors"
+            trend="Sectors A–H"
             icon="insights"
             indicatorColor="busy"
           />
           <StatMetricCard
-            label="Audit Event Volume"
-            value="14,892"
-            subtext="Immutable ledger entries"
-            trend="Zero anomalies"
+            label="Task Overdue Risk"
+            value={`${stats?.overdueRiskPercentage ?? 0}%`}
+            subtext="Risk of SLA deviation"
+            trend="Calculated from tasks"
             icon="verified_user"
             indicatorColor="available"
           />
@@ -69,27 +103,31 @@ export default function AdminReportsPage() {
           </CardHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {MOCK_ROOMS.map((room) => (
-              <div
-                key={room.letter}
-                className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2"
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-primary text-sm">Sector {room.letter}</span>
-                  <span className="font-mono text-xs font-semibold text-primary">{room.occupancyPercentage}%</span>
+            {rooms.length === 0 ? (
+              <p className="text-xs text-on-surface-variant py-4 col-span-4 text-center">Loading sector reports...</p>
+            ) : (
+              rooms.map((room) => (
+                <div
+                  key={room.letter}
+                  className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2"
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-primary text-sm">Sector {room.letter}</span>
+                    <span className="font-mono text-xs font-semibold text-primary">{room.occupancyPercentage}%</span>
+                  </div>
+                  <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-primary rounded-full"
+                      style={{ width: `${room.occupancyPercentage}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] text-on-surface-variant font-mono">
+                    <span>{room.totalMembers} Members</span>
+                    <span>{room.totalCapacity} Cap</span>
+                  </div>
                 </div>
-                <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full"
-                    style={{ width: `${room.occupancyPercentage}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[11px] text-on-surface-variant font-mono">
-                  <span>{room.totalMembers} Members</span>
-                  <span>{room.totalCapacity} Cap</span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </Card>
       </div>

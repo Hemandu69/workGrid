@@ -5,7 +5,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/dashboard/summary
   fastify.get('/summary', async (request, reply) => {
     try {
-      const summary = await DashboardService.getSummary();
+      const organizationId = (request as any).user?.organizationId;
+      const summary = await DashboardService.getSummary(organizationId);
       return reply.send(summary);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to generate dashboard summary';

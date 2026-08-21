@@ -1,15 +1,47 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { AvailabilityGrid } from '../../../components/availability/AvailabilityGrid';
-import { MOCK_SCHEDULE } from '../../../lib/mock-data';
+import { useAuth } from '../../../lib/auth-context';
+import { apiClient } from '../../../lib/api-client';
+import { WeeklyAvailabilitySchedule } from '../../../types/availability';
+import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function AvailabilityPage() {
+  const { user } = useAuth();
+  const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [savedNotification, setSavedNotification] = useState(false);
+
+  const fetchSchedule = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      setIsLoading(true);
+      const data = await apiClient.getUserAvailability(user.id);
+      if (data) {
+        setSchedule(data);
+      }
+    } catch {
+      // Clean fallback
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    fetchSchedule();
+  }, [fetchSchedule]);
+
+  useDomainEvent('AVAILABILITY_CHANGED', (event) => {
+    if (!event.targetUserId || event.targetUserId === user?.id) {
+      fetchSchedule();
+    }
+  });
 
   const handleSave = () => {
     setSavedNotification(true);
+    fetchSchedule();
     setTimeout(() => setSavedNotification(false), 3000);
   };
 
@@ -53,7 +85,13 @@ export default function AvailabilityPage() {
         </div>
 
         {/* 7-Day Matrix */}
-        <AvailabilityGrid initialSchedule={MOCK_SCHEDULE} onSave={handleSave} />
+        {isLoading ? (
+          <p className="text-xs text-on-surface-variant text-center py-12">Loading availability matrix...</p>
+        ) : schedule ? (
+          <AvailabilityGrid initialSchedule={schedule} onSave={handleSave} />
+        ) : (
+          <p className="text-xs text-on-surface-variant text-center py-12">No schedule records available.</p>
+        )}
       </div>
     </AppShell>
   );

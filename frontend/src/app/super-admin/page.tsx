@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
 import { RoomOverviewGrid } from '../../components/rooms/RoomOverviewGrid';
@@ -8,21 +8,65 @@ import { AnnouncementCard } from '../../components/announcements/AnnouncementCar
 import { CreateAnnouncementModal } from '../../components/announcements/CreateAnnouncementModal';
 import { TaskTable } from '../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../components/tasks/TaskDetailDrawer';
-import { MOCK_TASKS, MOCK_ANNOUNCEMENTS, MOCK_ROOMS } from '../../lib/mock-data';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import Link from 'next/link';
 import { Task } from '../../types/task';
+import { Room } from '../../types/room';
+import { Announcement } from '../../types/announcement';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
+import { apiClient } from '../../lib/api-client';
+import { useDomainEvent } from '../../lib/realtime-context';
 
 export default function SuperAdminDashboard() {
-  const [announcements] = useState(MOCK_ANNOUNCEMENTS);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
-  const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [stats, setStats] = useState<{
+    organizationScale?: number;
+    totalMembers?: number;
+    totalCapacity?: number;
+    globalSaturationPercentage?: number;
+    overdueRiskPercentage?: number;
+  } | null>(null);
+
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+  const loadData = useCallback(async () => {
+    try {
+      const [statsData, annData, tasksData, roomsData] = await Promise.all([
+        apiClient.getDashboardSummary().catch(() => null),
+        apiClient.getAnnouncements().catch(() => []),
+        apiClient.getTasks().catch(() => []),
+        apiClient.getRooms().catch(() => []),
+      ]);
+
+      if (statsData) setStats(statsData as typeof stats);
+      if (Array.isArray(annData)) setAnnouncements(annData);
+      if (Array.isArray(tasksData)) setTasks(tasksData);
+      if (Array.isArray(roomsData)) setRooms(roomsData);
+    } catch {
+      // Clean fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Real-Time Domain Events
+  useDomainEvent(
+    ['ANNOUNCEMENT_CREATED', 'TASK_CREATED', 'TASK_STATUS_CHANGED', 'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED'],
+    () => {
+      loadData();
+    }
+  );
+
   const blockedTasks = tasks.filter((t) => t.status === 'BLOCKED');
+  const orgScale = stats?.organizationScale ?? tasks.length;
+  const globalSaturation = stats?.globalSaturationPercentage ?? 0;
 
   return (
     <AppShell
@@ -46,7 +90,7 @@ export default function SuperAdminDashboard() {
               <Badge role="Super Admin" variant="role" />
             </div>
             <p className="text-xs text-on-surface-variant">
-              Centralized monitoring, organization-wide health, announcements, and policy oversight for ~2,000 personnel.
+              Centralized monitoring, organization-wide health, announcements, and policy oversight across all personnel.
             </p>
           </div>
 
@@ -71,7 +115,7 @@ export default function SuperAdminDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatMetricCard
             label="Organization Scale"
-            value="2,048"
+            value={orgScale.toLocaleString()}
             subtext="Active provisioned nodes"
             trend="100% Operational"
             icon="hub"
@@ -79,7 +123,7 @@ export default function SuperAdminDashboard() {
           />
           <StatMetricCard
             label="Global Room Saturation"
-            value="84.6%"
+            value={`${globalSaturation}%`}
             subtext="Sectors A through H"
             trend="Balanced Load"
             icon="grid_view"
@@ -87,17 +131,17 @@ export default function SuperAdminDashboard() {
           />
           <StatMetricCard
             label="Critical Blockages"
-            value={`${blockedTasks.length} Task`}
+            value={`${blockedTasks.length} ${blockedTasks.length === 1 ? 'Task' : 'Tasks'}`}
             subtext="Requires Admin policy review"
-            trend="Attention Required"
-            trendDirection="down"
+            trend={blockedTasks.length > 0 ? "Attention Required" : "All Clear"}
+            trendDirection={blockedTasks.length > 0 ? "down" : "up"}
             icon="error"
-            indicatorColor="blocked"
+            indicatorColor={blockedTasks.length > 0 ? "blocked" : "available"}
           />
           <StatMetricCard
-            label="System Availability"
-            value="99.98%"
-            subtext="PostgreSQL & Redis replicas"
+            label="System Health"
+            value="100%"
+            subtext="PostgreSQL & Socket.IO realtime"
             trend="Healthy"
             icon="dns"
             indicatorColor="available"
@@ -116,7 +160,7 @@ export default function SuperAdminDashboard() {
                   Detailed Grid →
                 </Link>
               </CardHeader>
-              <RoomOverviewGrid rooms={MOCK_ROOMS} selectedRoomLetter="B" />
+              <RoomOverviewGrid rooms={rooms} selectedRoomLetter="B" />
             </Card>
 
             {/* Blocked or High-Risk Tasks Table */}
@@ -154,9 +198,13 @@ export default function SuperAdminDashboard() {
               </CardHeader>
 
               <div className="space-y-3">
-                {announcements.map((ann) => (
-                  <AnnouncementCard key={ann.id} announcement={ann} />
-                ))}
+                {announcements.length === 0 ? (
+                  <p className="text-xs text-on-surface-variant text-center py-4">No announcements published yet.</p>
+                ) : (
+                  announcements.map((ann) => (
+                    <AnnouncementCard key={ann.id} announcement={ann} />
+                  ))
+                )}
               </div>
             </Card>
 
@@ -188,7 +236,7 @@ export default function SuperAdminDashboard() {
         isOpen={isAnnouncementModalOpen}
         onClose={() => setIsAnnouncementModalOpen(false)}
         onCreated={() => {
-          // Re-trigger
+          loadData();
         }}
       />
     </AppShell>

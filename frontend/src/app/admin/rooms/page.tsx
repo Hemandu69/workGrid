@@ -3,13 +3,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { RoomOverviewGrid } from '../../../components/rooms/RoomOverviewGrid';
-import { MOCK_ROOMS } from '../../../lib/mock-data';
 import { Room } from '../../../types/room';
 import { apiClient } from '../../../lib/api-client';
 import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function AdminRoomsPage() {
-  const [rooms, setRooms] = useState<Room[]>(MOCK_ROOMS);
+  const [rooms, setRooms] = useState<Room[]>([]);
 
   const fetchRooms = useCallback(async () => {
     try {

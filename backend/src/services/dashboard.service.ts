@@ -48,7 +48,7 @@ export class DashboardService {
     const overdueRiskPercentage = tasks.length > 0 ? Math.round((overdueOrAtRisk / tasks.length) * 100) : 0;
 
     return {
-      organizationScale: totalUsers || 2048,
+      organizationScale: totalUsers,
       totalMembers: totalRoomMembers,
       totalCapacity: totalSubroomCapacity,
       globalSaturationPercentage,

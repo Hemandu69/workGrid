@@ -1,17 +1,41 @@
-'use client';
+﻿'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { AnnouncementCard } from '../../../components/announcements/AnnouncementCard';
 import { CreateAnnouncementModal } from '../../../components/announcements/CreateAnnouncementModal';
-import { MOCK_ANNOUNCEMENTS } from '../../../lib/mock-data';
 import { Button } from '../../../components/ui/Button';
 import { Announcement } from '../../../types/announcement';
+import { apiClient } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function SuperAdminAnnouncementsPage() {
-  const [announcements] = useState<Announcement[]>(MOCK_ANNOUNCEMENTS);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'PUBLISHED' | 'DRAFT'>('ALL');
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchAnnouncements = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await apiClient.getAnnouncements();
+      if (Array.isArray(data)) {
+        setAnnouncements(data);
+      }
+    } catch {
+      // Clean error handling
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, [fetchAnnouncements]);
+
+  useDomainEvent('ANNOUNCEMENT_CREATED', () => {
+    fetchAnnouncements();
+  });
 
   const filtered = announcements.filter(
     (a) => filter === 'ALL' || a.status === filter
@@ -66,9 +90,17 @@ export default function SuperAdminAnnouncementsPage() {
 
         {/* Announcements List */}
         <div className="space-y-4">
-          {filtered.map((ann) => (
-            <AnnouncementCard key={ann.id} announcement={ann} />
-          ))}
+          {isLoading ? (
+            <p className="text-xs text-on-surface-variant text-center py-8">Loading announcements...</p>
+          ) : filtered.length === 0 ? (
+            <div className="p-8 border border-surface-outline rounded bg-surface-container-low text-center text-xs text-on-surface-variant">
+              No announcements found.
+            </div>
+          ) : (
+            filtered.map((ann) => (
+              <AnnouncementCard key={ann.id} announcement={ann} />
+            ))
+          )}
         </div>
       </div>
 
@@ -76,7 +108,7 @@ export default function SuperAdminAnnouncementsPage() {
       <CreateAnnouncementModal
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        onCreated={() => {}}
+        onCreated={() => fetchAnnouncements()}
       />
     </AppShell>
   );

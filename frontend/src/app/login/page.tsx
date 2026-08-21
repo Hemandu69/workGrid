@@ -244,7 +244,7 @@ export default function LoginPage() {
                 Development Preview Logins
               </p>
               <span className="text-[9px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant font-mono">
-                Mock / Seed
+                Seeded Accounts
               </span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 text-xs">

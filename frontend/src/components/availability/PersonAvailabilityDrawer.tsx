@@ -5,7 +5,6 @@ import { PersonAvailabilityDetailResponse, apiClient } from '../../lib/api-clien
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { MOCK_USERS, MOCK_ROOM_B_MEMBERS } from '../../lib/mock-data';
 
 interface PersonAvailabilityDrawerProps {
   userId: string | null;
@@ -40,140 +39,10 @@ export function PersonAvailabilityDrawer({
           setIsLoading(false);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (isMounted) {
-          const all = [
-            MOCK_USERS.superAdmin,
-            MOCK_USERS.admin,
-            MOCK_USERS.server,
-            ...MOCK_ROOM_B_MEMBERS,
-          ];
-          const matchedUser = all.find((u) => u.id === userId) || all[0];
-
-          setData({
-            person: {
-                id: matchedUser.id,
-                name: matchedUser.name,
-                email: matchedUser.email,
-                role: matchedUser.role || 'MEMBER',
-                status: matchedUser.status || 'ONLINE',
-                avatarUrl: matchedUser.avatarUrl,
-                title: matchedUser.title,
-                room: matchedUser.room ? `Sector ${matchedUser.room}` : undefined,
-                subroom: matchedUser.subroom,
-                currentLocation: matchedUser.subroom ? `Subroom ${matchedUser.subroom}` : (matchedUser.room || 'Sector B'),
-                attendanceState: 'IN',
-                presenceState: 'IN',
-                arrivedAtIST: '09:12 AM IST',
-                lastSeenAtIST: '02:45 PM IST',
-                currentDurationFormatted: '4h 15m',
-                capacityLimitHours: 40,
-                currentAllocatedHours: 24,
-              },
-              currentStatus: {
-                state: matchedUser.status === 'BUSY' ? 'BUSY' : 'FREE',
-                reason: matchedUser.status === 'BUSY' ? 'Active Task: TSK-8421 (Design System Migration)' : (matchedUser.subroom ? `In Subroom ${matchedUser.subroom}` : 'Scheduled Available'),
-                room: matchedUser.room,
-                subroom: matchedUser.subroom,
-                until: '04:30 PM UTC',
-              },
-              nextFree: {
-                isCurrentlyFree: matchedUser.status !== 'BUSY',
-                statusText: matchedUser.status === 'BUSY' ? 'Today at 04:30 PM UTC' : 'Available until 06:00 PM UTC',
-                nextFreeDate: 'Today',
-                nextFreeTime: '04:30 PM UTC',
-                durationFormatted: 'Available for 1h 30m',
-              },
-              weeklyTimeline: [
-                {
-                  date: '2026-08-20',
-                  dayName: 'Thu 20',
-                  dayOfWeek: 'THURSDAY',
-                  isToday: true,
-                  status: 'PARTIALLY_AVAILABLE',
-                  windows: [
-                    { startHour: 9, endHour: 12, startFormatted: '09:00 AM', endFormatted: '12:00 PM', state: 'FREE', label: 'Free / Available' },
-                    { startHour: 12, endHour: 16, startFormatted: '12:00 PM', endFormatted: '04:30 PM', state: 'BUSY', label: 'Busy (TSK-8421)' },
-                    { startHour: 16, endHour: 18, startFormatted: '04:30 PM', endFormatted: '06:00 PM', state: 'FREE', label: 'Free / Available' },
-                  ],
-                },
-                {
-                  date: '2026-08-21',
-                  dayName: 'Fri 21',
-                  dayOfWeek: 'FRIDAY',
-                  isToday: false,
-                  status: 'FREE',
-                  windows: [
-                    { startHour: 9, endHour: 17, startFormatted: '09:00 AM', endFormatted: '05:00 PM', state: 'FREE', label: 'Free / Available' },
-                  ],
-                },
-                {
-                  date: '2026-08-22',
-                  dayName: 'Sat 22',
-                  dayOfWeek: 'SATURDAY',
-                  isToday: false,
-                  status: 'UNAVAILABLE',
-                  windows: [
-                    { startHour: 0, endHour: 24, startFormatted: '12:00 AM', endFormatted: '12:00 AM', state: 'UNAVAILABLE', label: 'Off-schedule' },
-                  ],
-                },
-                {
-                  date: '2026-08-23',
-                  dayName: 'Sun 23',
-                  dayOfWeek: 'SUNDAY',
-                  isToday: false,
-                  status: 'UNAVAILABLE',
-                  windows: [
-                    { startHour: 0, endHour: 24, startFormatted: '12:00 AM', endFormatted: '12:00 AM', state: 'UNAVAILABLE', label: 'Off-schedule' },
-                  ],
-                },
-                {
-                  date: '2026-08-24',
-                  dayName: 'Mon 24',
-                  dayOfWeek: 'MONDAY',
-                  isToday: false,
-                  status: 'FREE',
-                  windows: [
-                    { startHour: 10, endHour: 18, startFormatted: '10:00 AM', endFormatted: '06:00 PM', state: 'FREE', label: 'Free / Available' },
-                  ],
-                },
-                {
-                  date: '2026-08-25',
-                  dayName: 'Tue 25',
-                  dayOfWeek: 'TUESDAY',
-                  isToday: false,
-                  status: 'PARTIALLY_AVAILABLE',
-                  windows: [
-                    { startHour: 9, endHour: 13, startFormatted: '09:00 AM', endFormatted: '01:00 PM', state: 'FREE', label: 'Free / Available' },
-                    { startHour: 13, endHour: 17, startFormatted: '01:00 PM', endFormatted: '05:00 PM', state: 'BUSY', label: 'Busy (Room B3)' },
-                  ],
-                },
-                {
-                  date: '2026-08-26',
-                  dayName: 'Wed 26',
-                  dayOfWeek: 'WEDNESDAY',
-                  isToday: false,
-                  status: 'FREE',
-                  windows: [
-                    { startHour: 10, endHour: 16, startFormatted: '10:00 AM', endFormatted: '04:00 PM', state: 'FREE', label: 'Free / Available' },
-                  ],
-                },
-              ],
-              upcomingCommitments: [
-                {
-                  id: 'TSK-8421',
-                  title: 'Design System Migration & Audit',
-                  status: 'IN_PROGRESS',
-                  priority: 'HIGH',
-                  estimatedHours: 12,
-                  allocatedHours: 8,
-                  dueDateFormatted: 'Aug 21',
-                  room: matchedUser.room || 'Sector B',
-                  subroom: matchedUser.subroom || 'B3',
-                },
-              ],
-            });
-            setIsLoading(false);
+          setError(err instanceof Error ? err.message : 'Failed to fetch person details');
+          setIsLoading(false);
         }
       });
 

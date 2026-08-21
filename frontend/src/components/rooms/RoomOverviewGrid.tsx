@@ -27,6 +27,14 @@ export function RoomOverviewGrid({
 
   const activeRoom = rooms.find((r) => r.letter === activeLetter) || rooms[0];
 
+  if (!rooms || rooms.length === 0 || !activeRoom) {
+    return (
+      <div className="p-8 border border-surface-outline rounded bg-surface-container-low text-center text-xs text-on-surface-variant">
+        Loading room and sector topology...
+      </div>
+    );
+  }
+
   const handleOpenCapacityModal = (subroom: Subroom) => {
     setEditingSubroom(subroom);
     setNewCapacity(subroom.memberCapacity.toString());

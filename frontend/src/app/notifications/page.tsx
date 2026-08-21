@@ -1,17 +1,34 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
-import { MOCK_NOTIFICATIONS } from '../../lib/mock-data';
 import { AppNotification } from '../../types/notification';
 import { useDomainEvent } from '../../lib/realtime-context';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
+import { apiClient } from '../../lib/api-client';
 import Link from 'next/link';
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<AppNotification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [tab, setTab] = useState<'ALL' | 'UNREAD'>('ALL');
+
+  useEffect(() => {
+    apiClient.getAnnouncements().then((anns) => {
+      if (Array.isArray(anns)) {
+        const notifs: AppNotification[] = anns.map((a) => ({
+          id: `ann-${a.id}`,
+          type: 'ANNOUNCEMENT',
+          title: `Announcement: ${a.title}`,
+          message: a.content,
+          read: false,
+          createdAt: a.createdAt,
+          priority: 'NORMAL',
+        }));
+        setNotifications(notifs);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Real-Time Notification & Announcement Domain Events
   useDomainEvent<{ title?: string; content?: string }>(

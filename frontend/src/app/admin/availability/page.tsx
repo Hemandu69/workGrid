@@ -11,7 +11,6 @@ import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
-import { MOCK_USERS, MOCK_ROOM_B_MEMBERS } from '../../../lib/mock-data';
 import {
   getCurrentISTDateString,
   formatToISTTime,
@@ -70,104 +69,10 @@ export default function PeopleAvailabilityPage() {
         setData(res);
         setIsLoading(false);
       })
-      .catch(() => {
-        // Seamless fallback when backend is offline
-        const all = [
-          MOCK_USERS.superAdmin,
-          MOCK_USERS.admin,
-          MOCK_USERS.server,
-          ...MOCK_ROOM_B_MEMBERS,
-        ];
-
-          let mockList = all.map((u, i) => {
-            const st = (
-              i % 4 === 0
-                ? 'FREE'
-                : i % 4 === 1
-                ? 'BUSY'
-                : i % 4 === 2
-                ? 'PARTIALLY_AVAILABLE'
-                : 'UNAVAILABLE'
-            ) as 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
-            return {
-              id: u.id,
-              name: u.name,
-              email: u.email,
-              role: u.role || 'MEMBER',
-              avatarUrl: u.avatarUrl,
-              title: u.title,
-              room: u.room ? (u.room.startsWith('Sector') ? u.room : `Sector ${u.room}`) : undefined,
-              subroom: u.subroom,
-              currentLocation: u.subroom ? `Subroom ${u.subroom}` : (u.room || 'Sector B'),
-              attendanceState: (i % 2 === 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
-              presenceState: (i % 2 === 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
-              arrivedAtIST: i % 2 === 0 ? '09:12 AM IST' : undefined,
-              lastSeenAtIST: '02:45 PM IST',
-              currentDurationFormatted: i % 2 === 0 ? '4h 15m' : undefined,
-              status: st,
-              statusLabel:
-                st === 'FREE'
-                  ? 'Free'
-                  : st === 'BUSY'
-                  ? 'Busy'
-                  : st === 'PARTIALLY_AVAILABLE'
-                  ? 'Partially Available'
-                  : 'Unavailable',
-              reason:
-                st === 'BUSY'
-                  ? 'Active Task: TSK-8421 (Design System Audit)'
-                  : st === 'UNAVAILABLE'
-                  ? 'Offline / Non-working hours'
-                  : u.subroom
-                  ? `In Subroom ${u.subroom}`
-                  : 'Scheduled Available',
-              until: '04:30 PM UTC',
-              freeWindow: st === 'PARTIALLY_AVAILABLE' ? '03:00 PM – 03:30 PM' : undefined,
-              activeTask:
-                st === 'BUSY'
-                  ? {
-                      id: 'TSK-8421',
-                      title: 'Design System Migration & Audit',
-                      priority: 'HIGH',
-                    }
-                  : undefined,
-            };
-          });
-
-          if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
-            mockList = mockList.filter((m) => m.name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q));
-          }
-          if (statusFilter !== 'ALL') {
-            mockList = mockList.filter((m) => m.status === statusFilter);
-          }
-          if (roleFilter !== 'ALL') {
-            mockList = mockList.filter((m) => m.role === roleFilter);
-          }
-          if (roomFilter !== 'ALL') {
-            mockList = mockList.filter((m) => m.room?.includes(roomFilter) || m.subroom?.startsWith(roomFilter));
-          }
-
-          setData({
-            timeSlot: {
-              date: selectedDate,
-              startHour,
-              endHour,
-              startFormatted: `${startHour.toString().padStart(2, '0')}:00 UTC`,
-              endFormatted: `${endHour.toString().padStart(2, '0')}:00 UTC`,
-              timezone: 'UTC',
-            },
-            summary: {
-              totalPeople: all.length,
-              freeCount: mockList.filter((p) => p.status === 'FREE').length,
-              busyCount: mockList.filter((p) => p.status === 'BUSY').length,
-              partialCount: mockList.filter((p) => p.status === 'PARTIALLY_AVAILABLE').length,
-              unavailableCount: mockList.filter((p) => p.status === 'UNAVAILABLE').length,
-            },
-            people: mockList,
-          });
-          setIsLoading(false);
-        });
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to fetch availability');
+        setIsLoading(false);
+      });
   }, [selectedDate, startHour, endHour, statusFilter, roleFilter, roomFilter, searchQuery]);
 
   useEffect(() => {
