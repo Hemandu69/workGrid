@@ -1,5 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { OperationsService } from '../../services/operations.service.js';
+import { SimulationService } from '../../services/simulation.service.js';
+import { AvailabilityService } from '../../services/availability.service.js';
+import { publishDomainEvent } from '../../events/domain-events.js';
 import { requireRole } from '../../plugins/auth.js';
 import { PresenceState, UserRole } from '@prisma/client';
 import { prisma } from '../../db/client.js';
@@ -176,6 +179,136 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(400).send({
           statusCode: 400,
           error: 'Bad Request',
+          message,
+        });
+      }
+    }
+  );
+
+  // POST /api/v1/operations/simulation/toggle
+  // Toggles or sets state for a simulated test person without database writes
+  fastify.post(
+    '/simulation/toggle',
+    async (request, reply) => {
+      const { id, presenceState } = request.body as { id: string; presenceState?: 'IN' | 'OUT' };
+
+      if (!id) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Simulation person id is required.',
+        });
+      }
+
+      try {
+        const currentPerson = SimulationService.getSimulatedPerson(id);
+        if (!currentPerson) {
+          return reply.status(404).send({
+            statusCode: 404,
+            error: 'Not Found',
+            message: `Simulated person ${id} not found.`,
+          });
+        }
+
+        const targetState = presenceState || (currentPerson.presenceState === 'IN' ? 'OUT' : 'IN');
+        const updated = SimulationService.updateSimulatedPersonState(id, targetState);
+
+        // Emit Socket.IO realtime events across the cluster
+        publishDomainEvent({
+          type: 'LOCATION_CHANGED',
+          organizationId: 'workgrid-simulation',
+          entityId: updated.id,
+          payload: {
+            userId: updated.id,
+            name: updated.name,
+            presenceState: updated.presenceState,
+            section: updated.sectionLetter,
+            subroom: updated.subroomCode,
+            isSimulated: true,
+          },
+        });
+
+        publishDomainEvent({
+          type: 'ROOM_STATUS_CHANGED',
+          organizationId: 'workgrid-simulation',
+          entityId: updated.sectionLetter,
+          payload: {
+            roomLetter: updated.sectionLetter,
+            subroomCode: updated.subroomCode,
+            isSimulated: true,
+          },
+        });
+
+        return reply.send({
+          success: true,
+          person: updated,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to toggle simulation state';
+        return reply.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message,
+        });
+      }
+    }
+  );
+
+  // POST /api/v1/operations/simulation/reset
+  // Restores initial test fixtures for simulated personnel
+  fastify.post(
+    '/simulation/reset',
+    async (_request, reply) => {
+      try {
+        const resetPersonnel = SimulationService.resetSimulation();
+
+        // Emit Socket.IO realtime event
+        publishDomainEvent({
+          type: 'ROOM_STATUS_CHANGED',
+          organizationId: 'workgrid-simulation',
+          entityId: 'ALL',
+          payload: {
+            resetSimulation: true,
+          },
+        });
+
+        return reply.send({
+          success: true,
+          message: 'Simulation reset to default fixture state.',
+          personnel: resetPersonnel,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to reset simulation';
+        return reply.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message,
+        });
+      }
+    }
+  );
+
+  // GET /api/v1/operations/person/:id
+  // Retrieves details for either real database user or simulated personnel
+  fastify.get(
+    '/person/:id',
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      try {
+        const personDetail = await OperationsService.getPersonDetail(id);
+        if (personDetail) {
+          return reply.send(personDetail);
+        }
+
+        // If not simulated, delegate to AvailabilityService for database user
+        const dbUserAvailability = await AvailabilityService.getUserAvailability(id);
+        return reply.send(dbUserAvailability);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Person not found';
+        return reply.status(404).send({
+          statusCode: 404,
+          error: 'Not Found',
           message,
         });
       }

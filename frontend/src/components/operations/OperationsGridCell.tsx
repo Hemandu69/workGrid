@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import { GridSubroomCell } from '../../lib/api-client';
@@ -8,6 +8,7 @@ interface OperationsGridCellProps {
   subroom: GridSubroomCell;
   onSelectPerson: (userId: string) => void;
   onSelectEvent?: (eventId: string) => void;
+  onToggleSimulated?: (id: string, presenceState?: 'IN' | 'OUT') => void;
   presenceFilter: string;
   roleFilter: string;
 }
@@ -16,6 +17,7 @@ export function OperationsGridCell({
   subroom,
   onSelectPerson,
   onSelectEvent,
+  onToggleSimulated,
   presenceFilter,
   roleFilter,
 }: OperationsGridCellProps) {
@@ -81,38 +83,64 @@ export function OperationsGridCell({
         {/* Occupying Members */}
         {filteredMembers.length > 0 ? (
           <div className="space-y-1">
-            {filteredMembers.map((member) => (
-              <button
-                key={member.id}
-                onClick={() => onSelectPerson(member.id)}
-                className="w-full text-left p-1 rounded hover:bg-surface-container flex items-center justify-between gap-1.5 transition-colors group"
-              >
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <div className="relative shrink-0">
-                    <Avatar src={member.avatarUrl} name={member.name} size="sm" />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ${
-                        member.presenceState === 'IN'
-                          ? 'bg-status-available'
-                          : member.presenceState === 'OUT'
-                          ? 'bg-status-blocked'
-                          : 'bg-slate-400'
-                      }`}
-                      title={`Attendance: ${member.presenceState === 'IN' ? '🟢 IN' : member.presenceState === 'OUT' ? '⚪ OUT' : 'UNKNOWN'} | Location: ${member.currentLocation}`}
-                    />
+            {filteredMembers.map((member) => {
+              const isPresent = member.presenceState === 'IN';
+              return (
+                <div
+                  key={member.id}
+                  className="w-full p-1 rounded hover:bg-surface-container flex items-center justify-between gap-1.5 transition-colors group cursor-pointer"
+                  onClick={() => onSelectPerson(member.id)}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="relative shrink-0">
+                      <Avatar src={member.avatarUrl} name={member.name} size="sm" />
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ${
+                          isPresent
+                            ? 'bg-status-available'
+                            : member.presenceState === 'OUT'
+                            ? 'bg-status-blocked'
+                            : 'bg-slate-400'
+                        }`}
+                        title={`Attendance: ${isPresent ? '🟢 IN' : '⚪ OUT'} | Location: ${member.currentLocation}`}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="truncate text-[11px] font-medium text-on-surface group-hover:text-primary block leading-tight">
+                        {member.name.split(' ')[0]}
+                      </span>
+                    </div>
                   </div>
-                  <span className="truncate text-[11px] font-medium text-on-surface group-hover:text-primary">
-                    {member.name.split(' ')[0]}
-                  </span>
-                </div>
 
-                {member.activeTaskId && (
-                  <span className="font-mono text-[9px] text-on-surface-variant bg-surface-container px-1 rounded truncate max-w-[50px]">
-                    {member.activeTaskId}
-                  </span>
-                )}
-              </button>
-            ))}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {member.activeTaskId && (
+                      <span className="font-mono text-[9px] text-on-surface-variant bg-surface-container px-1 rounded truncate max-w-[45px]">
+                        {member.activeTaskId}
+                      </span>
+                    )}
+
+                    {/* Simulation Quick State Toggle Control */}
+                    {member.isSimulated && onToggleSimulated && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleSimulated(member.id, isPresent ? 'OUT' : 'IN');
+                        }}
+                        className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold transition-all shadow-2xs border ${
+                          isPresent
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                        }`}
+                        title={`Toggle test presence (currently ${member.presenceState})`}
+                      >
+                        {isPresent ? 'IN' : 'OUT'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="text-[10px] text-outline text-center py-2 italic">
@@ -134,25 +162,48 @@ export function OperationsGridCell({
                 </span>
               )}
             </div>
-            {filteredServers.map((srv) => (
-              <button
-                key={srv.id}
-                onClick={() => onSelectPerson(srv.id)}
-                className="w-full text-left p-1 rounded bg-secondary-container/40 border border-secondary/20 hover:bg-secondary-container flex items-center justify-between gap-1 transition-colors"
-              >
-                <div className="flex items-center gap-1 truncate">
-                  <span className="text-[11px] font-semibold text-secondary-dim truncate">
-                    {srv.name.split(' ')[0]}
-                  </span>
-                  {srv.supervisoryPosition && (
-                    <span className="text-[9px] font-mono text-secondary-dim font-bold">
-                      (P{srv.supervisoryPosition})
+            {filteredServers.map((srv) => {
+              const isPresent = srv.presenceState === 'IN';
+              return (
+                <div
+                  key={srv.id}
+                  onClick={() => onSelectPerson(srv.id)}
+                  className="w-full p-1 rounded bg-secondary-container/40 border border-secondary/20 hover:bg-secondary-container flex items-center justify-between gap-1 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-1 truncate">
+                    <span className="text-[11px] font-semibold text-secondary-dim truncate">
+                      {srv.name.split(' ')[0]}
                     </span>
-                  )}
+                    {srv.supervisoryPosition && (
+                      <span className="text-[9px] font-mono text-secondary-dim font-bold">
+                        (P{srv.supervisoryPosition})
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-status-available animate-pulse" />
+                    {srv.isSimulated && onToggleSimulated && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleSimulated(srv.id, isPresent ? 'OUT' : 'IN');
+                        }}
+                        className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold transition-all border ${
+                          isPresent
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                        }`}
+                        title={`Toggle server test presence (currently ${srv.presenceState})`}
+                      >
+                        {isPresent ? 'IN' : 'OUT'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className="w-1.5 h-1.5 rounded-full bg-status-available animate-pulse" />
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

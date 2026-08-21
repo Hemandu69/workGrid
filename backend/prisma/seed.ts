@@ -1,11 +1,11 @@
-import { PrismaClient, UserRole, AccountStatus, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, DayOfWeek, SlotState, PresenceState, EventScope, EventStatus } from '@prisma/client';
+﻿import { PrismaClient, UserRole, AccountStatus, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, DayOfWeek, SlotState, PresenceState, EventScope, EventStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import process from 'node:process';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting WorkGrid database seed (Development / Demo Environment)...');
+  console.log('🌱 Starting WorkGrid database seed (7 Core Authenticated Accounts)...');
 
   // 1. Clean existing records in reverse dependency order
   await prisma.eventParticipant.deleteMany();
@@ -79,16 +79,12 @@ async function main() {
   }
   console.log(`✓ Created 8 Sections and 64 Subrooms (A1 through H8) with 2-member capacity`);
 
-  // 4. Create Development/Demo Users with Hashed Passwords
+  // 4. Create the 7 Official Test/Authentication Accounts
   const defaultPasswordHash = await bcrypt.hash('password123', 10);
   const now = new Date();
   const arrivalTime = new Date(now.getTime() - 4 * 3600000); // 4 hours ago
 
-  // -------------------------------------------------------------
-  // Seeded Authentication & Test Accounts (Retained exactly)
-  // -------------------------------------------------------------
-
-  // Super Admin (Elena Vance)
+  // 1) Super Admin (Elena Vance)
   const superAdmin = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -109,7 +105,7 @@ async function main() {
     },
   });
 
-  // Admin (Marcus Sterling)
+  // 2) Admin (Marcus Sterling)
   const admin = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -130,7 +126,7 @@ async function main() {
     },
   });
 
-  // HR (Sarah Jenkins)
+  // 3) HR (Sarah Jenkins)
   const hrUser = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -151,7 +147,7 @@ async function main() {
     },
   });
 
-  // Server 1 (David Chen) — Section B Supervisor (Position 1)
+  // 4) Server (David Chen) — Section B Supervisor (Position 1)
   const server1 = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -180,53 +176,7 @@ async function main() {
     data: { leadServerId: server1.id },
   });
 
-  // Server 2 (Maya Lin) — Section B Supervisor (Position 3)
-  const server2 = await prisma.user.create({
-    data: {
-      organizationId: org.id,
-      email: 'maya.lin@workgrid.corp',
-      passwordHash: defaultPasswordHash,
-      name: 'Maya Lin',
-      role: UserRole.SERVER,
-      accountStatus: AccountStatus.ACTIVE,
-      status: UserStatus.ONLINE,
-      presenceState: PresenceState.IN,
-      currentLocationName: 'B3',
-      arrivedAt: arrivalTime,
-      lastSeenAt: now,
-      title: 'Supervisor (Section B - Pos 3)',
-      roomId: createdRooms['B'].id,
-      subroomId: createdSubrooms['B3'].id,
-      avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
-      capacityLimitHours: 40,
-      currentAllocatedHours: 20,
-    },
-  });
-
-  // Server 3 (Alex Mercer) — Section B Supervisor (Position 5)
-  const server3 = await prisma.user.create({
-    data: {
-      organizationId: org.id,
-      email: 'alex.mercer@workgrid.corp',
-      passwordHash: defaultPasswordHash,
-      name: 'Alex Mercer',
-      role: UserRole.SERVER,
-      accountStatus: AccountStatus.ACTIVE,
-      status: UserStatus.ONLINE,
-      presenceState: PresenceState.IN,
-      currentLocationName: 'B5',
-      arrivedAt: arrivalTime,
-      lastSeenAt: now,
-      title: 'Supervisor (Section B - Pos 5)',
-      roomId: createdRooms['B'].id,
-      subroomId: createdSubrooms['B5'].id,
-      avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
-      capacityLimitHours: 40,
-      currentAllocatedHours: 16,
-    },
-  });
-
-  // Member 1 (Sarah Connor) — Subroom B3 (Member 1 of 2 in B3)
+  // 5) Member 1 (Sarah Connor) — Subroom B3
   const member1 = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -249,7 +199,7 @@ async function main() {
     },
   });
 
-  // Member 2 / Team Lead (Alex Rivera) — Subroom B3 (Member 2 of 2 in B3)
+  // 6) Team Lead (Alex Rivera) — Subroom B3
   const member2 = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -272,76 +222,7 @@ async function main() {
     },
   });
 
-  // Member 3 (Maya Patel) — Subroom B2 (Member 1 of 2 in B2)
-  const member3 = await prisma.user.create({
-    data: {
-      organizationId: org.id,
-      email: 'maya.patel@workgrid.corp',
-      passwordHash: defaultPasswordHash,
-      name: 'Maya Patel',
-      role: UserRole.MEMBER,
-      accountStatus: AccountStatus.ACTIVE,
-      status: UserStatus.BUSY,
-      presenceState: PresenceState.IN,
-      currentLocationName: 'B2',
-      arrivedAt: arrivalTime,
-      lastSeenAt: now,
-      title: 'Security Analyst',
-      roomId: createdRooms['B'].id,
-      subroomId: createdSubrooms['B2'].id,
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      capacityLimitHours: 40,
-      currentAllocatedHours: 38,
-    },
-  });
-
-  // Member 4 (James Wilson) — Subroom B2 (Member 2 of 2 in B2)
-  const member4 = await prisma.user.create({
-    data: {
-      organizationId: org.id,
-      email: 'james.wilson@workgrid.corp',
-      passwordHash: defaultPasswordHash,
-      name: 'James Wilson',
-      role: UserRole.MEMBER,
-      accountStatus: AccountStatus.ACTIVE,
-      status: UserStatus.ONLINE,
-      presenceState: PresenceState.IN,
-      currentLocationName: 'B2',
-      arrivedAt: arrivalTime,
-      lastSeenAt: now,
-      title: 'Site Reliability Engineer',
-      roomId: createdRooms['B'].id,
-      subroomId: createdSubrooms['B2'].id,
-      avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&auto=format&fit=crop&q=80',
-      capacityLimitHours: 40,
-      currentAllocatedHours: 22,
-    },
-  });
-
-  // Member 5 (Liam Vance) — Subroom B4 (1 member in B4, currently OUT)
-  const member5 = await prisma.user.create({
-    data: {
-      organizationId: org.id,
-      email: 'liam.vance@workgrid.corp',
-      passwordHash: defaultPasswordHash,
-      name: 'Liam Vance',
-      role: UserRole.MEMBER,
-      accountStatus: AccountStatus.ACTIVE,
-      status: UserStatus.OFFLINE,
-      presenceState: PresenceState.OUT,
-      currentLocationName: 'Outside',
-      leftAt: now,
-      lastSeenAt: now,
-      title: 'QA Engineer',
-      roomId: createdRooms['B'].id,
-      subroomId: createdSubrooms['B4'].id,
-      avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80',
-      capacityLimitHours: 40,
-      currentAllocatedHours: 15,
-    },
-  });
-
-  // Pending Onboarding User (John Doe)
+  // 7) Pending Onboarding User (John Doe)
   const pendingUser = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -358,8 +239,8 @@ async function main() {
     },
   });
 
-  // Initial Attendance Records
-  for (const u of [superAdmin, admin, hrUser, server1, server2, server3, member1, member2, member3, member4]) {
+  // Attendance Records for Active Users
+  for (const u of [superAdmin, admin, hrUser, server1, member1, member2]) {
     await prisma.attendanceRecord.create({
       data: {
         userId: u.id,
@@ -381,7 +262,7 @@ async function main() {
     },
   });
 
-  console.log(`✓ Created demo users (Super Admin, Admin, HR, Team Lead, 3 Supervisory Servers, 4 Members, Pending User)`);
+  console.log(`✓ Created 7 official authenticated accounts (Super Admin, Admin, HR, Server, Member, Team Lead, Pending)`);
 
   // 5. Create Task Campaigns
   const campaign1 = await prisma.taskCampaign.create({
@@ -444,57 +325,6 @@ async function main() {
     },
   });
 
-  await prisma.task.create({
-    data: {
-      organizationId: org.id,
-      taskIdDisplay: 'TSK-8423',
-      title: 'Redis Rate Limiting & Auth Token Rotation',
-      description: 'Implement rotating refresh tokens with strict rate limits per IP and user session.',
-      status: TaskStatus.ASSIGNED,
-      priority: TaskPriority.MEDIUM,
-      assigneeId: member1.id,
-      creatorId: server1.id,
-      estimatedHours: 6,
-      allocatedHours: 4,
-      dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      tags: ['Security', 'Redis', 'Auth'],
-    },
-  });
-
-  await prisma.task.create({
-    data: {
-      organizationId: org.id,
-      taskIdDisplay: 'TSK-8424',
-      title: 'Subroom Capacity Exceeded Policy Guard',
-      description: 'Transactional rejection on any membership writes that attempt to exceed the configured member limit.',
-      status: TaskStatus.BLOCKED,
-      priority: TaskPriority.HIGH,
-      assigneeId: member3.id,
-      creatorId: admin.id,
-      estimatedHours: 10,
-      allocatedHours: 5,
-      dueDate: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
-      tags: ['Backend', 'Policies', 'Transactions'],
-    },
-  });
-
-  await prisma.task.create({
-    data: {
-      organizationId: org.id,
-      taskIdDisplay: 'TSK-8425',
-      title: 'Global Announcement Broadcast Verification',
-      description: 'Ensure Super Admin announcements propagate through SSE and Redis pub/sub to all active presence sessions.',
-      status: TaskStatus.COMPLETED,
-      priority: TaskPriority.LOW,
-      assigneeId: member1.id,
-      creatorId: superAdmin.id,
-      estimatedHours: 4,
-      allocatedHours: 4,
-      dueDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
-      tags: ['PubSub', 'Announcements'],
-    },
-  });
-
   // Task Comments
   await prisma.taskComment.create({
     data: {
@@ -542,18 +372,7 @@ async function main() {
     },
   });
 
-  await prisma.announcement.create({
-    data: {
-      organizationId: org.id,
-      title: 'Upcoming Q4 Task Priority Guidelines',
-      content: 'Drafting new priority assignment criteria for high-load campaigns across Rooms E through H.',
-      status: AnnouncementStatus.DRAFT,
-      scope: AudienceScope.ADMINS_ONLY,
-      authorId: superAdmin.id,
-      pinned: false,
-    },
-  });
-  console.log(`✓ Created announcements (Global, Section-specific, and Drafts)`);
+  console.log(`✓ Created announcements (Global & Section-specific)`);
 
   // 8. Create Live Events for Operations Grid Telemetry
   const eventStartTime = new Date(now.getTime() - 1 * 3600000);
@@ -590,18 +409,6 @@ async function main() {
     data: {
       eventId: companyEvent.id,
       serverId: server1.id,
-    },
-  });
-  await prisma.eventRequiredServer.create({
-    data: {
-      eventId: companyEvent.id,
-      serverId: server2.id,
-    },
-  });
-  await prisma.eventRequiredServer.create({
-    data: {
-      eventId: companyEvent.id,
-      serverId: server3.id,
     },
   });
 
@@ -685,7 +492,7 @@ async function main() {
   });
   console.log(`✓ Generated 7-day 24h recurring availability schedule for Sarah Connor`);
 
-  console.log('✅ WorkGrid seed finished successfully!');
+  console.log('✅ WorkGrid seed finished successfully (7 authentic users)!');
 }
 
 main()
