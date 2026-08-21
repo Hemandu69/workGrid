@@ -3,6 +3,7 @@ import { CreateTaskInput, UpdateTaskStatusInput, AddTaskCommentInput } from '../
 import { AuthUserPayload } from '../plugins/auth.js';
 import { TaskPriority, TaskStatus, UserRole } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
+import { AvailabilityService } from './availability.service.js';
 
 export class TaskService {
   static async getTasks(filters: {
@@ -227,6 +228,11 @@ export class TaskService {
       },
     });
 
+    // Receiving work moves a FREE person to BUSY and broadcasts it, so every
+    // authorized view reflects the new load without a refresh. A person who has
+    // explicitly set another availability keeps their choice.
+    await AvailabilityService.syncAvailabilityWithTasks(assignee.id, user.id).catch(() => null);
+
     return fullTask;
   }
 
@@ -265,6 +271,12 @@ export class TaskService {
         task: fullTask,
       },
     });
+
+    // Finishing the last active task restores the assignee to FREE; picking work
+    // back up moves them to BUSY. Broadcast so every projection stays in step.
+    if (task.assigneeId) {
+      await AvailabilityService.syncAvailabilityWithTasks(task.assigneeId).catch(() => null);
+    }
 
     return fullTask;
   }

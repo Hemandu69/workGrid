@@ -225,7 +225,7 @@ export default function AdminOperationsPage() {
         )}
 
         {/* Operational Metrics Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatMetricCard
             label="People Present (IN)"
             value={gridData?.totalPeoplePresent ?? '—'}
@@ -246,9 +246,32 @@ export default function AdminOperationsPage() {
             label="Subrooms Monitored"
             value={gridData?.totalSubrooms ?? '—'}
             subtext="Across active sections"
-            trend="100% Online"
+            trend={gridData ? `${gridData.totalRooms} sections` : '—'}
             icon="grid_view"
             indicatorColor="available"
+          />
+          {/* Availability KPIs recomputed server-side from the same projection
+              the cells render — never incremented client-side, so they cannot
+              drift after several simultaneous changes. */}
+          <StatMetricCard
+            label="Free Now"
+            value={gridData?.availabilitySummary.freeCount ?? '—'}
+            subtext="Available for assignment"
+            trend={gridData ? `of ${gridData.availabilitySummary.totalPeople} tracked` : '—'}
+            icon="task_alt"
+            indicatorColor="available"
+          />
+          <StatMetricCard
+            label="Busy Now"
+            value={gridData?.availabilitySummary.busyCount ?? '—'}
+            subtext="On active workload"
+            trend={
+              gridData
+                ? `${gridData.availabilitySummary.partialCount} partially available`
+                : '—'
+            }
+            icon="pending_actions"
+            indicatorColor="busy"
           />
           <StatMetricCard
             label="Active Events"

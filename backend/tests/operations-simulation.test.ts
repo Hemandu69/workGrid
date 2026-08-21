@@ -10,6 +10,9 @@ import { UserRole, AccountStatus } from '@prisma/client';
 
 let dbDavidChenPresence: 'IN' | 'OUT' = 'IN';
 let dbSarahConnorPresence: 'IN' | 'OUT' = 'IN';
+// Stored operational availability (User.status) for the real accounts.
+let dbDavidChenStatus = 'ONLINE';
+let dbSarahConnorStatus = 'ONLINE';
 
 const sections = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const mockRooms = sections.map((letter) => ({
@@ -25,6 +28,7 @@ const mockRooms = sections.map((letter) => ({
             email: 'david.chen@workgrid.corp',
             role: 'SERVER',
             presenceState: dbDavidChenPresence,
+            status: dbDavidChenStatus,
             currentLocationName: 'B1',
             arrivedAt: new Date('2026-08-21T03:30:00.000Z'),
             lastSeenAt: new Date(),
@@ -46,6 +50,7 @@ const mockRooms = sections.map((letter) => ({
               role: 'MEMBER',
               title: 'Senior Systems Engineer',
               presenceState: dbSarahConnorPresence,
+              status: dbSarahConnorStatus,
               currentLocationName: 'B3',
               arrivedAt: new Date('2026-08-21T03:30:00.000Z'),
               lastSeenAt: new Date(),
@@ -57,6 +62,7 @@ const mockRooms = sections.map((letter) => ({
               role: 'TEAM_LEAD',
               title: 'Infrastructure Specialist',
               presenceState: 'IN',
+              status: 'ONLINE',
               currentLocationName: 'B3',
               arrivedAt: new Date('2026-08-21T03:30:00.000Z'),
               lastSeenAt: new Date(),
@@ -186,7 +192,9 @@ const { mockPrisma } = vi.hoisted(() => ({
         mockRooms.forEach((r) => {
           if (r.letter === 'B') {
             r.members[0].presenceState = dbDavidChenPresence;
+            r.members[0].status = dbDavidChenStatus;
             r.subrooms[2].members[0].presenceState = dbSarahConnorPresence;
+            r.subrooms[2].members[0].status = dbSarahConnorStatus;
           }
         });
         if (query?.where?.letter) {
@@ -230,6 +238,8 @@ describe('Operations Grid Stateful Simulation & Real Authenticated Users Real-Ti
   beforeEach(() => {
     dbDavidChenPresence = 'IN';
     dbSarahConnorPresence = 'IN';
+    dbDavidChenStatus = 'ONLINE';
+    dbSarahConnorStatus = 'ONLINE';
     publishedEvents.length = 0;
     SimulationService.resetSimulation(new Date('2026-08-21T08:00:00.000Z'));
   });
@@ -735,5 +745,161 @@ describe('Simulation toggle/reset HTTP domain-event propagation', () => {
 
     const grid = await OperationsService.getOperationalGrid({ room: 'D' });
     expect(grid.rooms.find((r) => r.letter === 'D')!.serverCoverageSummary).toBe('2 / 3 Present');
+  });
+});
+
+describe('Operations Grid availability projection', () => {
+  beforeEach(() => {
+    dbDavidChenPresence = 'IN';
+    dbSarahConnorPresence = 'IN';
+    dbDavidChenStatus = 'ONLINE';
+    dbSarahConnorStatus = 'ONLINE';
+    publishedEvents.length = 0;
+    SimulationService.resetSimulation(new Date('2026-08-21T08:00:00.000Z'));
+  });
+
+  it('16. projects a present, unloaded real member as FREE in their subroom', async () => {
+    const grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    const b3 = grid.rooms.find((r) => r.letter === 'B')!.subrooms.find((s) => s.code === 'B3')!;
+    const sarah = b3.members.find((m) => m.id === 'usr-sarah-connor')!;
+
+    expect(sarah.presenceState).toBe('IN');
+    expect(sarah.availabilityState).toBe('FREE');
+    expect(sarah.availabilityLabel).toBe('Free');
+    expect(sarah.currentLocation).toBe('B3');
+  });
+
+  it('17. projects a real member whose stored status is BUSY as BUSY', async () => {
+    dbSarahConnorStatus = 'BUSY';
+
+    const grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    const b3 = grid.rooms.find((r) => r.letter === 'B')!.subrooms.find((s) => s.code === 'B3')!;
+
+    expect(b3.members.find((m) => m.id === 'usr-sarah-connor')!.availabilityState).toBe('BUSY');
+  });
+
+  it('18. never shows a checked-OUT member as FREE, and locates them Outside', async () => {
+    // Stored status still says ONLINE — presence must override it.
+    dbSarahConnorPresence = 'OUT';
+    dbSarahConnorStatus = 'ONLINE';
+
+    const grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    const b3 = grid.rooms.find((r) => r.letter === 'B')!.subrooms.find((s) => s.code === 'B3')!;
+    const sarah = b3.members.find((m) => m.id === 'usr-sarah-connor')!;
+
+    expect(sarah.availabilityState).toBe('UNAVAILABLE');
+    expect(sarah.currentLocation).toBe('Outside');
+  });
+
+  it('19. projects availability for servers and suppresses it when they leave', async () => {
+    const inGrid = await OperationsService.getOperationalGrid({ room: 'B' });
+    const davidIn = inGrid.rooms
+      .find((r) => r.letter === 'B')!
+      .assignedServers.find((s) => s.id === 'server-david-id')!;
+    expect(davidIn.availabilityState).toBe('FREE');
+
+    dbDavidChenPresence = 'OUT';
+    const outGrid = await OperationsService.getOperationalGrid({ room: 'B' });
+    const davidOut = outGrid.rooms
+      .find((r) => r.letter === 'B')!
+      .assignedServers.find((s) => s.id === 'server-david-id')!;
+
+    expect(davidOut.availabilityState).toBe('UNAVAILABLE');
+    expect(davidOut.currentLocation).toBe('Outside');
+    expect(davidOut.assignedPosition).toBeUndefined();
+  });
+
+  it('20. reflects a simulated availability change in the grid without a presence change', async () => {
+    const target = SimulationService.getSimulatedPersons().find(
+      (p) => p.role === 'MEMBER' && p.sectionLetter === 'C' && p.presenceState === 'IN'
+    )!;
+
+    const before = await OperationsService.getOperationalGrid({ room: 'C' });
+    const beforeCell = before.rooms[0].subrooms.find((s) => s.code === target.subroomCode)!;
+    const beforePresence = beforeCell.members.find((m) => m.id === target.id)!.presenceState;
+
+    SimulationService.updateSimulatedAvailability(target.id, 'BUSY');
+
+    const after = await OperationsService.getOperationalGrid({ room: 'C' });
+    const afterMember = after.rooms[0].subrooms
+      .find((s) => s.code === target.subroomCode)!
+      .members.find((m) => m.id === target.id)!;
+
+    expect(afterMember.availabilityState).toBe('BUSY');
+    // Availability and presence are independent pieces of state.
+    expect(afterMember.presenceState).toBe(beforePresence);
+  });
+
+  it('21. keeps availability KPIs consistent with the cells they summarise', async () => {
+    const grid = await OperationsService.getOperationalGrid({ room: 'B' });
+
+    const projected = [
+      ...grid.rooms.flatMap((r) => r.subrooms.flatMap((s) => s.members)),
+      ...grid.rooms.flatMap((r) => r.assignedServers),
+    ];
+
+    expect(grid.availabilitySummary.totalPeople).toBe(projected.length);
+    expect(grid.availabilitySummary.freeCount).toBe(
+      projected.filter((p) => p.availabilityState === 'FREE').length
+    );
+    expect(grid.availabilitySummary.busyCount).toBe(
+      projected.filter((p) => p.availabilityState === 'BUSY').length
+    );
+    expect(
+      grid.availabilitySummary.freeCount +
+        grid.availabilitySummary.busyCount +
+        grid.availabilitySummary.partialCount +
+        grid.availabilitySummary.unavailableCount
+    ).toBe(grid.availabilitySummary.totalPeople);
+  });
+
+  it('22. does not drift the KPIs after repeated availability changes', async () => {
+    const targets = SimulationService.getSimulatedPersons()
+      .filter((p) => p.role === 'MEMBER' && p.sectionLetter === 'B' && p.presenceState === 'IN')
+      .slice(0, 3);
+
+    for (const t of targets) {
+      SimulationService.updateSimulatedAvailability(t.id, 'BUSY');
+      SimulationService.updateSimulatedAvailability(t.id, 'FREE');
+      SimulationService.updateSimulatedAvailability(t.id, 'BUSY');
+    }
+
+    const grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    const projected = [
+      ...grid.rooms.flatMap((r) => r.subrooms.flatMap((s) => s.members)),
+      ...grid.rooms.flatMap((r) => r.assignedServers),
+    ];
+
+    // Recomputed from the projection, so the totals still add up exactly.
+    expect(grid.availabilitySummary.busyCount).toBe(
+      projected.filter((p) => p.availabilityState === 'BUSY').length
+    );
+    expect(grid.availabilitySummary.totalPeople).toBe(projected.length);
+  });
+
+  it('23. preserves supervisory positioning while availability changes', async () => {
+    const before = await OperationsService.getOperationalGrid({ room: 'A' });
+    const beforePositions = before.rooms[0].assignedServers
+      .filter((s) => s.presenceState === 'IN')
+      .map((s) => s.assignedPosition)
+      .sort();
+
+    expect(beforePositions).toEqual([1, 3, 5]);
+
+    const serverA = SimulationService.getSimulatedPersons().find(
+      (p) => p.role === 'SERVER' && p.sectionLetter === 'A' && p.presenceState === 'IN'
+    )!;
+    SimulationService.updateSimulatedAvailability(serverA.id, 'BUSY');
+
+    const after = await OperationsService.getOperationalGrid({ room: 'A' });
+    const afterPositions = after.rooms[0].assignedServers
+      .filter((s) => s.presenceState === 'IN')
+      .map((s) => s.assignedPosition)
+      .sort();
+
+    expect(afterPositions).toEqual([1, 3, 5]);
+    expect(
+      after.rooms[0].assignedServers.find((s) => s.id === serverA.id)!.availabilityState
+    ).toBe('BUSY');
   });
 });

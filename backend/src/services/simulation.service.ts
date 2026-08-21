@@ -271,6 +271,29 @@ class SimulationStore {
   }
 
   /**
+   * Sets a simulated person's operational availability.
+   *
+   * Mirrors the real-account rule: presence dominates, so a person who is OUT
+   * cannot be marked FREE/BUSY — the stored state stays UNAVAILABLE until they
+   * check back IN. Changing availability never touches room assignment.
+   */
+  updateAvailability(id: string, state: SimulatedAvailabilityState, asOf: Date = new Date()): SimulatedPerson {
+    const person = this.personnel.get(id);
+    if (!person) {
+      throw new Error(`Simulated person with ID ${id} not found.`);
+    }
+
+    if (person.presenceState !== 'IN') {
+      throw new Error(`${person.name} is currently OUT. Check them IN before changing availability.`);
+    }
+
+    person.availabilityState = state;
+    person.lastSeenAt = asOf;
+
+    return { ...person };
+  }
+
+  /**
    * Mutates a simulated person's section/subroom assignment in place.
    * sectionLetter '' represents "unassigned" — the person then matches no
    * room/subroom filter and simply disappears from every grid projection,
@@ -302,6 +325,10 @@ export class SimulationService {
 
   static updateSimulatedPersonState(id: string, presenceState: SimulatedPresenceState, asOf?: Date): SimulatedPerson {
     return simulationStore.updatePresence(id, presenceState, asOf);
+  }
+
+  static updateSimulatedAvailability(id: string, state: SimulatedAvailabilityState, asOf?: Date): SimulatedPerson {
+    return simulationStore.updateAvailability(id, state, asOf);
   }
 
   static reassignSimulatedPerson(id: string, sectionLetter: string, subroomCode: string): SimulatedPerson {

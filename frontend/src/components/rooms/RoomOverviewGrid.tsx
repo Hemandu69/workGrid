@@ -16,11 +16,13 @@ interface RoomOverviewGridProps {
 
 export function RoomOverviewGrid({
   rooms,
-  selectedRoomLetter = 'B',
+  selectedRoomLetter,
   onSelectRoom,
-  userSubroomId = 'B3',
+  // No default: the caller's real assignment decides which subroom is
+  // highlighted, and an unassigned viewer highlights nothing.
+  userSubroomId,
 }: RoomOverviewGridProps) {
-  const [activeLetter, setActiveLetter] = useState(selectedRoomLetter);
+  const [activeLetter, setActiveLetter] = useState(selectedRoomLetter ?? rooms[0]?.letter ?? '');
   const [editingSubroom, setEditingSubroom] = useState<Subroom | null>(null);
   const [newCapacity, setNewCapacity] = useState('2');
   const [capacityError, setCapacityError] = useState<string | null>(null);

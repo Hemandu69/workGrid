@@ -111,6 +111,24 @@ export function OperationsGridCell({
                       <span className="truncate text-[11px] font-medium text-on-surface group-hover:text-primary block leading-tight">
                         {member.name.split(' ')[0]}
                       </span>
+                      {/* Operational availability, shown only when it differs
+                          from plain "free and present" so the cell stays quiet. */}
+                      {isPresent && member.availabilityState !== 'FREE' && (
+                        <span
+                          className={`text-[9px] font-mono font-bold leading-none ${
+                            member.availabilityState === 'BUSY'
+                              ? 'text-amber-700'
+                              : member.availabilityState === 'PARTIALLY_AVAILABLE'
+                              ? 'text-blue-700'
+                              : 'text-slate-500'
+                          }`}
+                          title={member.availabilityLabel}
+                        >
+                          {member.availabilityState === 'PARTIALLY_AVAILABLE'
+                            ? 'PARTIAL'
+                            : member.availabilityState}
+                        </span>
+                      )}
                     </div>
                   </div>
 
