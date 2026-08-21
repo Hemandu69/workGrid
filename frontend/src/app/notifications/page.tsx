@@ -1,100 +1,19 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { AppNotification } from '../../types/notification';
-import { OrgEvent } from '../../types/org-event';
-import { useDomainEvent } from '../../lib/realtime-context';
+import { useNotifications } from '../../lib/notifications-context';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { apiClient } from '../../lib/api-client';
 import { EventCard } from '../../components/events/EventCard';
 import Link from 'next/link';
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [events, setEvents] = useState<OrgEvent[]>([]);
+  const { notifications, events, markAllRead, refreshEvents } = useNotifications();
   const [tab, setTab] = useState<'ALL' | 'UNREAD'>('ALL');
 
-  const fetchEvents = useCallback(() => {
-    apiClient.getEvents().then((data) => {
-      if (Array.isArray(data)) {
-        setEvents(data.filter((e) => e.status === 'UPCOMING' || e.status === 'LIVE'));
-      }
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    apiClient.getAnnouncements().then((anns) => {
-      if (Array.isArray(anns)) {
-        const notifs: AppNotification[] = anns.map((a) => ({
-          id: `ann-${a.id}`,
-          type: 'ANNOUNCEMENT',
-          title: `Announcement: ${a.title}`,
-          message: a.content,
-          read: false,
-          createdAt: a.createdAt,
-          priority: 'NORMAL',
-        }));
-        setNotifications(notifs);
-      }
-    }).catch(() => {});
-
-    fetchEvents();
-  }, [fetchEvents]);
-
-  // Real-Time Notification & Announcement Domain Events
-  useDomainEvent<{ title?: string; content?: string }>(
-    ['NOTIFICATION_CREATED', 'ANNOUNCEMENT_CREATED', 'TASK_ASSIGNED', 'EMPLOYEE_APPROVED'],
-    (event) => {
-      const payload = event.payload || {};
-      const newNotif: AppNotification = {
-        id: `notif-${event.id}`,
-        type: event.type === 'ANNOUNCEMENT_CREATED' ? 'ANNOUNCEMENT' : 'TASK_ASSIGNED',
-        title:
-          event.type === 'ANNOUNCEMENT_CREATED'
-            ? `Announcement: ${payload.title || 'Company Notice'}`
-            : 'Task Assignment / System Update',
-        message: payload.content || payload.title || 'You have a new real-time notification.',
-        read: false,
-        createdAt: event.timestamp || new Date().toISOString(),
-        priority: 'HIGH',
-      };
-
-      setNotifications((prev) => {
-        const exists = prev.some((n) => n.id === newNotif.id);
-        if (exists) return prev;
-        return [newNotif, ...prev];
-      });
-    }
-  );
-
-  // Organization Events — distinct notification lane from announcements, and a
-  // dedicated live "Upcoming Events" section below (event availability polling).
-  useDomainEvent<{ event?: OrgEvent }>(['ORG_EVENT_CREATED'], (event) => {
-    const eventTitle = event.payload?.event?.title || 'Organization Event';
-    const newNotif: AppNotification = {
-      id: `notif-${event.id}`,
-      type: 'EVENT',
-      title: `Event: ${eventTitle}`,
-      message: "You're invited to this organization event. Respond below.",
-      read: false,
-      createdAt: event.timestamp || new Date().toISOString(),
-      priority: 'HIGH',
-    };
-    setNotifications((prev) => (prev.some((n) => n.id === newNotif.id) ? prev : [newNotif, ...prev]));
-    fetchEvents();
-  });
-
-  useDomainEvent(['ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_RESPONSE_CHANGED'], () => {
-    fetchEvents();
-  });
-
   const filtered = notifications.filter((n) => tab === 'ALL' || !n.read);
-
-  const markAllRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, read: true })));
-  };
 
   const getIconForType = (type: AppNotification['type']) => {
     switch (type) {
@@ -173,13 +92,7 @@ export default function NotificationsPage() {
             </h2>
             <div className="space-y-3">
               {events.map((e) => (
-                <EventCard
-                  key={e.id}
-                  event={e}
-                  onResponseChange={(updated) =>
-                    setEvents((prev) => prev.map((ev) => (ev.id === updated.id ? updated : ev)))
-                  }
-                />
+                <EventCard key={e.id} event={e} onResponseChange={() => refreshEvents()} />
               ))}
             </div>
           </section>
