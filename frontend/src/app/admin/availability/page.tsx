@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { useAuth } from '../../../lib/auth-context';
 import { apiClient, PeopleAvailabilityResponse } from '../../../lib/api-client';
@@ -50,8 +50,8 @@ export default function PeopleAvailabilityPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAvailability = useCallback(() => {
-    setIsLoading(true);
+  const fetchAvailability = useCallback((showSpinner = true) => {
+    if (showSpinner) setIsLoading(true);
     setError(null);
 
     apiClient
@@ -75,8 +75,14 @@ export default function PeopleAvailabilityPage() {
       });
   }, [selectedDate, startHour, endHour, statusFilter, roleFilter, roomFilter, searchQuery]);
 
+  // Keep a stable ref to the latest fetchAvailability for real-time event handlers
+  const fetchAvailabilityRef = useRef(fetchAvailability);
   useEffect(() => {
-    fetchAvailability();
+    fetchAvailabilityRef.current = fetchAvailability;
+  });
+
+  useEffect(() => {
+    fetchAvailability(true);
   }, [fetchAvailability]);
 
   // Real-Time Domain Event Subscription (Availability, Presence, Attendance, Location)
@@ -91,7 +97,7 @@ export default function PeopleAvailabilityPage() {
       'ROLE_CHANGED',
     ],
     () => {
-      fetchAvailability();
+      fetchAvailabilityRef.current(false);
     }
   );
 
@@ -200,7 +206,7 @@ export default function PeopleAvailabilityPage() {
             <Button
               variant="primary"
               size="sm"
-              onClick={fetchAvailability}
+              onClick={() => fetchAvailability(true)}
               isLoading={isLoading}
               leftIcon={<span className="material-symbols-outlined text-[16px]">refresh</span>}
             >
@@ -400,7 +406,7 @@ export default function PeopleAvailabilityPage() {
               <span className="material-symbols-outlined text-[18px]">error</span>
               <span>{error}</span>
             </div>
-            <Button variant="outline" size="sm" onClick={fetchAvailability}>
+            <Button variant="outline" size="sm" onClick={() => fetchAvailability(true)}>
               Retry Query
             </Button>
           </div>

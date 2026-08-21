@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { useAuth } from '../../lib/auth-context';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
@@ -68,11 +68,17 @@ export default function ServerDashboard() {
     }
   }, [serverRoomLetter]);
 
+  // Keep a stable ref to the latest loadServerData for real-time event handlers
+  const loadServerDataRef = useRef(loadServerData);
+  useEffect(() => {
+    loadServerDataRef.current = loadServerData;
+  });
+
   useEffect(() => {
     loadServerData();
   }, [loadServerData]);
 
-  // Real-Time Domain Events
+  // Real-Time Domain Events — silent background refresh
   useDomainEvent(
     [
       'TASK_CREATED',
@@ -88,7 +94,7 @@ export default function ServerDashboard() {
       'AVAILABILITY_CHANGED',
     ],
     () => {
-      loadServerData();
+      loadServerDataRef.current();
     }
   );
 

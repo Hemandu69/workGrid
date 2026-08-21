@@ -1,9 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest';
 import { SimulationService } from '../src/services/simulation.service.js';
 import { OperationsService } from '../src/services/operations.service.js';
 import { AvailabilityService } from '../src/services/availability.service.js';
 import { AttendanceService } from '../src/services/attendance.service.js';
-import { publishDomainEvent } from '../events/domain-events.js';
+import { publishDomainEvent } from '../src/events/domain-events.js';
+import { buildApp } from '../src/app.js';
+import { FastifyInstance } from 'fastify';
+import { UserRole, AccountStatus } from '@prisma/client';
 
 let dbDavidChenPresence: 'IN' | 'OUT' = 'IN';
 let dbSarahConnorPresence: 'IN' | 'OUT' = 'IN';
@@ -206,7 +209,21 @@ vi.mock('../src/db/client.js', () => ({
 vi.mock('../src/events/domain-events.js', () => ({
   publishDomainEvent: vi.fn().mockImplementation((event: any) => {
     publishedEvents.push(event);
+    return {
+      id: `evt_test_${publishedEvents.length}`,
+      timestamp: new Date().toISOString(),
+      ...event,
+    };
   }),
+  domainEventBus: {
+    publishDomainEvent: vi.fn(),
+    subscribeOrganization: vi.fn(() => () => undefined),
+    subscribeAll: vi.fn(() => () => undefined),
+    on: vi.fn(),
+    off: vi.fn(),
+    emit: vi.fn(),
+    setMaxListeners: vi.fn(),
+  },
 }));
 
 describe('Operations Grid Stateful Simulation & Real Authenticated Users Real-Time Suite', () => {
@@ -324,5 +341,259 @@ describe('Operations Grid Stateful Simulation & Real Authenticated Users Real-Ti
     expect(david!.isSimulated).toBe(false);
     expect(maya).toBeDefined();
     expect(maya!.isSimulated).toBe(true);
+  });
+
+  it('7. Simulated server IN→OUT updates Section D KPI (2/3 → 1/3 Present)', async () => {
+    // Section D starts with pos 5 OUT → 2/3 Present
+    let grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    let secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.serverPresenceCount).toBe(2);
+    expect(secD.serverTotalCount).toBe(3);
+    expect(secD.serverCoverageSummary).toBe('2 / 3 Present');
+
+    const inServers = secD.assignedServers.filter((s) => s.presenceState === 'IN');
+    expect(inServers).toHaveLength(2);
+    const targetId = inServers[0].id;
+
+    SimulationService.updateSimulatedPersonState(targetId, 'OUT');
+
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.serverPresenceCount).toBe(1);
+    expect(secD.serverCoverageSummary).toBe('1 / 3 Present');
+    expect(secD.assignedServers.find((s) => s.id === targetId)?.presenceState).toBe('OUT');
+
+    // Reverse OUT→IN restores KPI
+    SimulationService.updateSimulatedPersonState(targetId, 'IN');
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.serverPresenceCount).toBe(2);
+    expect(secD.serverCoverageSummary).toBe('2 / 3 Present');
+  });
+
+  it('8. Simulated member IN→OUT updates subroom occupancy and people-present KPI', async () => {
+    const memberId = 'sim-member-b2-01'; // Maya Patel
+    let grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    let cellB2 = grid.rooms.find((r) => r.letter === 'B')?.subrooms.find((s) => s.code === 'B2');
+    const initialOccupancy = cellB2!.occupancyCount;
+    const initialPeople = grid.totalPeoplePresent;
+    expect(cellB2!.members.find((m) => m.id === memberId)?.presenceState).toBe('IN');
+    expect(initialOccupancy).toBeGreaterThanOrEqual(1);
+
+    SimulationService.updateSimulatedPersonState(memberId, 'OUT');
+
+    grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    cellB2 = grid.rooms.find((r) => r.letter === 'B')?.subrooms.find((s) => s.code === 'B2');
+    expect(cellB2!.occupancyCount).toBe(initialOccupancy - 1);
+    expect(grid.totalPeoplePresent).toBe(initialPeople - 1);
+    expect(cellB2!.members.find((m) => m.id === memberId)?.presenceState).toBe('OUT');
+
+    SimulationService.updateSimulatedPersonState(memberId, 'IN');
+    grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    cellB2 = grid.rooms.find((r) => r.letter === 'B')?.subrooms.find((s) => s.code === 'B2');
+    expect(cellB2!.occupancyCount).toBe(initialOccupancy);
+    expect(grid.totalPeoplePresent).toBe(initialPeople);
+  });
+
+  it('9. Simulated server OUT recalculates supervisory positions using shared algorithm', async () => {
+    // Match product scenario: Karan (sim pos1) starts OUT so active set is David + Maya + Alex
+    SimulationService.updateSimulatedPersonState('sim-server-b-01', 'OUT');
+    SimulationService.updateSimulatedPersonState('sim-server-b-03', 'IN');
+    SimulationService.updateSimulatedPersonState('sim-server-b-05', 'IN');
+    dbDavidChenPresence = 'IN';
+
+    let grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    let secB = grid.rooms.find((r) => r.letter === 'B')!;
+    let active = secB.assignedServers.filter((s) => s.presenceState === 'IN');
+    expect(active).toHaveLength(3);
+    expect(active.map((s) => s.assignedPosition).sort()).toEqual([1, 3, 5]);
+
+    // Maya Lin → OUT; remaining David + Alex keep compacted slots
+    SimulationService.updateSimulatedPersonState('sim-server-b-03', 'OUT');
+    grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    secB = grid.rooms.find((r) => r.letter === 'B')!;
+    active = secB.assignedServers.filter((s) => s.presenceState === 'IN');
+    expect(active.map((s) => s.id).sort()).toEqual(['server-david-id', 'sim-server-b-05'].sort());
+    expect(active.map((s) => s.assignedPosition).sort()).toEqual([1, 5]);
+
+    // David Chen → OUT; Alex Mercer alone compacts to position 1
+    dbDavidChenPresence = 'OUT';
+    grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    secB = grid.rooms.find((r) => r.letter === 'B')!;
+    active = secB.assignedServers.filter((s) => s.presenceState === 'IN');
+    expect(active).toHaveLength(1);
+    expect(active[0].id).toBe('sim-server-b-05');
+    expect(active[0].assignedPosition).toBe(1);
+  });
+
+  it('10. Simulated person detail drawer reflects authoritative simulation state', async () => {
+    const memberId = 'sim-member-b2-01';
+    let detail = await AvailabilityService.getPersonDetailedAvailability(memberId);
+    expect(detail.person.isSimulated).toBe(true);
+    expect(detail.person.attendanceState).toBe('IN');
+
+    SimulationService.updateSimulatedPersonState(memberId, 'OUT');
+    detail = await AvailabilityService.getPersonDetailedAvailability(memberId);
+    expect(detail.person.attendanceState).toBe('OUT');
+    expect(detail.person.presenceState).toBe('OUT');
+
+    SimulationService.updateSimulatedPersonState(memberId, 'IN');
+    detail = await AvailabilityService.getPersonDetailedAvailability(memberId);
+    expect(detail.person.attendanceState).toBe('IN');
+  });
+
+  it('11. Reset Simulation restores Section D KPI and fixture presence', async () => {
+    const inServer = SimulationService.getSimulatedPersons().find(
+      (p) => p.role === 'SERVER' && p.sectionLetter === 'D' && p.presenceState === 'IN'
+    )!;
+    SimulationService.updateSimulatedPersonState(inServer.id, 'OUT');
+
+    let grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    expect(grid.rooms.find((r) => r.letter === 'D')!.serverPresenceCount).toBe(1);
+
+    SimulationService.resetSimulation(new Date('2026-08-21T08:00:00.000Z'));
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    expect(grid.rooms.find((r) => r.letter === 'D')!.serverCoverageSummary).toBe('2 / 3 Present');
+  });
+
+  it('12. Mixed real + simulated Section B: sim OUT then real OUT both reflected in coverage', async () => {
+    SimulationService.updateSimulatedPersonState('sim-server-b-01', 'OUT');
+    SimulationService.updateSimulatedPersonState('sim-server-b-03', 'IN');
+    SimulationService.updateSimulatedPersonState('sim-server-b-05', 'IN');
+    dbDavidChenPresence = 'IN';
+
+    let grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    let secB = grid.rooms.find((r) => r.letter === 'B')!;
+    // David (real) + Maya + Alex = 3 present
+    expect(secB.serverPresenceCount).toBe(3);
+
+    SimulationService.updateSimulatedPersonState('sim-server-b-03', 'OUT');
+    grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    secB = grid.rooms.find((r) => r.letter === 'B')!;
+    expect(secB.serverPresenceCount).toBe(2);
+    expect(secB.assignedServers.find((s) => s.id === 'sim-server-b-03')?.presenceState).toBe('OUT');
+    expect(secB.assignedServers.find((s) => s.id === 'server-david-id')?.presenceState).toBe('IN');
+
+    dbDavidChenPresence = 'OUT';
+    grid = await OperationsService.getOperationalGrid({ room: 'B' });
+    secB = grid.rooms.find((r) => r.letter === 'B')!;
+    expect(secB.serverPresenceCount).toBe(1);
+    expect(secB.assignedServers.find((s) => s.id === 'server-david-id')?.presenceState).toBe('OUT');
+  });
+});
+
+describe('Simulation toggle/reset HTTP domain-event propagation', () => {
+  let app: FastifyInstance;
+  let adminToken: string;
+
+  beforeAll(async () => {
+    app = await buildApp();
+    await app.ready();
+    adminToken = app.jwt.sign({
+      id: 'usr-2',
+      email: 'marcus.sterling@workgrid.corp',
+      name: 'Marcus Sterling',
+      role: UserRole.ADMIN,
+      accountStatus: AccountStatus.ACTIVE,
+      organizationId: 'org-test',
+      version: 1,
+    });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    publishedEvents.length = 0;
+    SimulationService.resetSimulation(new Date('2026-08-21T08:00:00.000Z'));
+  });
+
+  it('13. POST simulation/toggle emits Socket.IO domain events with simulatedPersonId and real orgId', async () => {
+    const targetId = 'sim-server-d-01';
+    const before = SimulationService.getSimulatedPerson(targetId)!;
+    expect(before.presenceState).toBe('IN');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/operations/simulation/toggle',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { id: targetId, presenceState: 'OUT' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().person.presenceState).toBe('OUT');
+    expect(SimulationService.getSimulatedPerson(targetId)!.presenceState).toBe('OUT');
+
+    const types = publishedEvents.map((e) => e.type);
+    expect(types).toEqual(
+      expect.arrayContaining([
+        'PRESENCE_CHANGED',
+        'ATTENDANCE_UPDATED',
+        'LOCATION_CHANGED',
+        'ROOM_STATUS_CHANGED',
+        'AVAILABILITY_CHANGED',
+      ])
+    );
+
+    for (const evt of publishedEvents) {
+      expect(evt.organizationId).toBe('org-test');
+      expect(evt.organizationId).not.toBe('workgrid-simulation');
+      if (evt.type !== 'ROOM_STATUS_CHANGED') {
+        expect(evt.entityId).toBe(targetId);
+      }
+      expect(evt.payload.simulatedPersonId).toBe(targetId);
+      expect(evt.payload.personId).toBe(targetId);
+      expect(evt.payload.userId).toBeNull();
+      expect(evt.payload.isSimulated).toBe(true);
+      expect(evt.payload.presenceState).toBe('OUT');
+    }
+
+    // Grid projection matches
+    const grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    expect(grid.rooms.find((r) => r.letter === 'D')!.serverCoverageSummary).toBe('1 / 3 Present');
+  });
+
+  it('14. POST simulation/reset emits GRID_UPDATED to real organization and restores KPI', async () => {
+    SimulationService.updateSimulatedPersonState('sim-server-d-01', 'OUT');
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/operations/simulation/reset',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(publishedEvents.some((e) => e.type === 'GRID_UPDATED' && e.organizationId === 'org-test')).toBe(true);
+    expect(publishedEvents.some((e) => e.type === 'ROOM_STATUS_CHANGED' && e.payload.resetSimulation === true)).toBe(true);
+
+    const grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    expect(grid.rooms.find((r) => r.letter === 'D')!.serverCoverageSummary).toBe('2 / 3 Present');
+  });
+
+  it('15. Two sequential toggles produce consistent event payloads for both clients', async () => {
+    const targetId = 'sim-server-d-01';
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/operations/simulation/toggle',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { id: targetId, presenceState: 'OUT' },
+    });
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/operations/simulation/toggle',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { id: targetId, presenceState: 'IN' },
+    });
+
+    const presenceEvents = publishedEvents.filter((e) => e.type === 'PRESENCE_CHANGED');
+    expect(presenceEvents).toHaveLength(2);
+    expect(presenceEvents[0].payload.presenceState).toBe('OUT');
+    expect(presenceEvents[1].payload.presenceState).toBe('IN');
+    expect(presenceEvents.every((e) => e.organizationId === 'org-test')).toBe(true);
+
+    const grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    expect(grid.rooms.find((r) => r.letter === 'D')!.serverCoverageSummary).toBe('2 / 3 Present');
   });
 });

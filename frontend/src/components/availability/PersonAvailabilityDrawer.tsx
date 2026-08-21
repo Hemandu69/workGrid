@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { PersonAvailabilityDetailResponse, apiClient } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
 import { Avatar } from '../ui/Avatar';
@@ -24,7 +24,34 @@ export function PersonAvailabilityDrawer({
   const [isUpdatingPresence, setIsUpdatingPresence] = useState(false);
   const [liveDuration, setLiveDuration] = useState<string>('');
 
-  // Real-time synchronization: refresh drawer whenever the displayed person or room changes
+  // Monotonic fetch counter to prevent stale responses from overwriting newer ones
+  const fetchSeq = useRef(0);
+
+  const refreshDrawer = useCallback((silent = false) => {
+    if (!userId) return;
+    const seq = ++fetchSeq.current;
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
+    }
+    apiClient
+      .getPersonAvailabilityDetail(userId)
+      .then((res) => {
+        // Only apply if this is still the latest request
+        if (seq === fetchSeq.current) {
+          setData(res);
+          setIsLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (seq === fetchSeq.current) {
+          if (!silent) setError(err instanceof Error ? err.message : 'Failed to fetch person details');
+          setIsLoading(false);
+        }
+      });
+  }, [userId]);
+
+  // Real-time synchronization: refresh drawer for real users AND simulated personnel
   useDomainEvent(
     [
       'LOCATION_CHANGED',
@@ -33,15 +60,35 @@ export function PersonAvailabilityDrawer({
       'EMPLOYEE_CHECKED_IN',
       'EMPLOYEE_CHECKED_OUT',
       'AVAILABILITY_CHANGED',
+      'PRESENCE_CHANGED',
+      'GRID_UPDATED',
     ],
     (event) => {
       if (!userId) return;
-      const target = (event.payload as { userId?: string })?.userId || event.targetUserId || event.entityId;
-      if (!target || target === userId || event.type === 'ROOM_STATUS_CHANGED') {
-        apiClient
-          .getPersonAvailabilityDetail(userId)
-          .then(setData)
-          .catch((err) => console.error('Failed to sync person availability drawer:', err));
+
+      const payload = event.payload as {
+        userId?: string | null;
+        simulatedPersonId?: string;
+        personId?: string;
+        resetSimulation?: boolean;
+        isSimulated?: boolean;
+      } | null;
+
+      // Real user match OR simulated person match (sim events use userId: null)
+      const matchesViewedPerson =
+        payload?.userId === userId ||
+        payload?.simulatedPersonId === userId ||
+        payload?.personId === userId ||
+        event.targetUserId === userId ||
+        event.entityId === userId;
+
+      const isBroadcast =
+        event.type === 'ROOM_STATUS_CHANGED' ||
+        event.type === 'GRID_UPDATED' ||
+        payload?.resetSimulation === true;
+
+      if (matchesViewedPerson || isBroadcast) {
+        refreshDrawer(true);
       }
     }
   );
@@ -49,31 +96,11 @@ export function PersonAvailabilityDrawer({
   useEffect(() => {
     if (!userId) {
       setData(null);
+      setIsLoading(false);
       return;
     }
-
-    let isMounted = true;
-    setIsLoading(true);
-    setError(null);
-
-    apiClient
-      .getPersonAvailabilityDetail(userId)
-      .then((res) => {
-        if (isMounted) {
-          setData(res);
-          setIsLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (isMounted) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch person details');
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
+    refreshDrawer(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   // Live client-side duration timer against authoritative arrivedAt timestamp

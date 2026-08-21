@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { useAuth } from '../../lib/auth-context';
 import { TaskCard } from '../../components/tasks/TaskCard';
@@ -49,15 +49,21 @@ export default function MemberDashboard() {
     }
   }, [user?.id, user?.subroom]);
 
+  // Keep a stable ref to the latest loadMemberData for real-time event handlers
+  const loadMemberDataRef = useRef(loadMemberData);
+  useEffect(() => {
+    loadMemberDataRef.current = loadMemberData;
+  });
+
   useEffect(() => {
     loadMemberData();
   }, [loadMemberData]);
 
-  // Real-Time Subscriptions
+  // Real-Time Subscriptions — silent background refresh
   useDomainEvent(
     ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED', 'ANNOUNCEMENT_CREATED', 'AVAILABILITY_CHANGED'],
     () => {
-      loadMemberData();
+      loadMemberDataRef.current();
     }
   );
 
