@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth-context';
+import { useNotifications } from '../../lib/notifications-context';
 import { UserRole } from '../../types/auth';
 import { Avatar } from '../ui/Avatar';
 import { formatToISTTime } from '../../lib/time-utils';
@@ -14,6 +15,7 @@ interface TopHeaderProps {
 
 export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps) {
   const { user, role, setRole, logout } = useAuth();
+  const { unreadCount } = useNotifications();
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [currentISTClock, setCurrentISTClock] = useState<string>('');
@@ -148,7 +150,9 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
           title="Notifications"
         >
           <span className="material-symbols-outlined text-[20px]">notifications</span>
-          <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-status-blocked" />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-status-blocked" />
+          )}
         </Link>
 
         {/* User Avatar & Menu */}

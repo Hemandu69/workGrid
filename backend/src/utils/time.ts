@@ -88,6 +88,29 @@ export function formatUtcWindowToIST(dateStr: string, startHourUtc: number, endH
 }
 
 /**
+ * Decomposes a UTC Date into its IST wall-clock date (YYYY-MM-DD), hour (0-23),
+ * and minute components — the inverse of convertISTToUTC.
+ */
+export function getISTDateTimeParts(date: Date): { dateStr: string; hour: number; minute: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || '00';
+  const dateStr = `${get('year')}-${get('month')}-${get('day')}`;
+  const hour = parseInt(get('hour'), 10) % 24;
+  const minute = parseInt(get('minute'), 10);
+
+  return { dateStr, hour, minute };
+}
+
+/**
  * Converts an IST date string & hour into corresponding UTC date string & hour
  */
 export function convertISTToUTC(istDateStr: string, istHour: number, istMinute: number = 0): {
