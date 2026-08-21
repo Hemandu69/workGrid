@@ -31,6 +31,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'campaign',
     roles: ['SUPER_ADMIN'],
   },
+  {
+    label: 'Events',
+    href: '/super-admin/events',
+    icon: 'event_upcoming',
+    roles: ['SUPER_ADMIN'],
+  },
 
   // HR Dedicated Links (People Management)
   {
@@ -88,6 +94,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin/reports',
     icon: 'analytics',
     roles: ['ADMIN', 'SUPER_ADMIN'],
+  },
+  {
+    label: 'Events',
+    href: '/admin/events',
+    icon: 'event_upcoming',
+    roles: ['ADMIN'],
   },
 
   // Server Link (Room & Event Supervision)
