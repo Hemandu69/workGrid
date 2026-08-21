@@ -268,22 +268,47 @@ export class OperationsService {
       // Combined server roster (real + simulated). One authoritative presenceState each.
       const allRoomServers = [...dbServers, ...simServers];
 
-      // Format for server positioning algorithm — ONLY current presence participates
-      const serverPositionInputs = allRoomServers.map((srv, idx) => {
+      // Assign UNIQUE preferred supervisory identities (1, 3, 5).
+      // Real servers claim first (stable section overseers), then simulated servers
+      // take their preferredServerPosition if still free — never duplicate identities.
+      const usedPreferred = new Set<SupervisoryPosition>();
+      const preferredByServerId = new Map<string, SupervisoryPosition>();
+
+      for (const srv of allRoomServers.filter((s) => !s.isSimulated)) {
+        const next = ([1, 3, 5] as SupervisoryPosition[]).find((slot) => !usedPreferred.has(slot));
+        if (next) {
+          preferredByServerId.set(srv.id, next);
+          usedPreferred.add(next);
+        }
+      }
+      // A simulated server keeps its own fixture identity only if that slot is
+      // still free. If a real server already claimed it, the simulated server
+      // does NOT cascade into a different slot (that would steal another
+      // simulated server's rightful identity) — it is left with no primary
+      // identity and is only ever seated via the extras pool in
+      // calculateServerPositions.
+      for (const srv of allRoomServers.filter((s) => s.isSimulated)) {
         const simMatch = SimulationService.getSimulatedPerson(srv.id);
-        const preferredSlot = (simMatch?.preferredServerPosition ||
-          (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+        const wanted = simMatch?.preferredServerPosition;
+        if (wanted && !usedPreferred.has(wanted)) {
+          preferredByServerId.set(srv.id, wanted);
+          usedPreferred.add(wanted);
+        }
+      }
+
+      // Format for server positioning algorithm — presence + preferred identity
+      const serverPositionInputs = allRoomServers.map((srv) => {
         const presenceState = resolveAuthoritativePresence(srv.id, srv.presenceState);
         return {
           id: srv.id,
           name: srv.name,
           presenceState,
-          preferredSlot,
+          preferredSlot: preferredByServerId.get(srv.id),
           isSimulated: srv.isSimulated,
         };
       });
 
-      // Calculate dynamic server positions based on currently PRESENT servers only
+      // Recalculate CURRENT operational positions whenever presence changes
       const serverPositionResults = calculateServerPositions(serverPositionInputs);
 
       const serverPositionMap = new Map<string, SupervisoryPosition>();
@@ -300,7 +325,6 @@ export class OperationsService {
           srv.currentLocation = assigned ? `${room.letter}${assigned}` : srv.currentLocation;
         } else if (presenceState === 'OUT') {
           srv.currentLocation = 'Outside';
-          // OUT servers must never carry a supervisory seat
         }
       }
 
@@ -438,17 +462,14 @@ export class OperationsService {
         id: room.id,
         letter: room.letter,
         name: room.name,
-        assignedServers: allRoomServers.map((s, idx) => {
-          const simMatch = SimulationService.getSimulatedPerson(s.id);
-          const preferredPosition = (simMatch?.preferredServerPosition ||
-            (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+        assignedServers: allRoomServers.map((s) => {
           const presenceState = resolveAuthoritativePresence(s.id, s.presenceState);
           return {
             id: s.id,
             name: s.name,
             presenceState,
             currentLocation: presenceState === 'IN' ? s.currentLocation : 'Outside',
-            preferredPosition,
+            preferredPosition: preferredByServerId.get(s.id),
             // Only IN servers receive an assigned supervisory position
             assignedPosition: presenceState === 'IN' ? serverPositionMap.get(s.id) : undefined,
             isSimulated: s.isSimulated,

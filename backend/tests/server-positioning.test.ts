@@ -173,4 +173,35 @@ describe('Dynamic Server Supervisory Positioning & Compaction Algorithm', () => 
       { server: expect.objectContaining({ id: 'srv-3' }), position: 3 },
     ]);
   });
+
+  it('Scenario 11: Regression matrix for all presence combinations', () => {
+    const trio = (a: 'IN' | 'OUT', b: 'IN' | 'OUT', c: 'IN' | 'OUT') =>
+      calculateServerPositions([
+        { ...serverA, presenceState: a },
+        { ...serverB, presenceState: b },
+        { ...serverC, presenceState: c },
+      ]).map((r) => ({ id: r.server.id, pos: r.position }));
+
+    expect(trio('IN', 'IN', 'IN')).toEqual([
+      { id: 'srv-1', pos: 1 },
+      { id: 'srv-2', pos: 3 },
+      { id: 'srv-3', pos: 5 },
+    ]);
+    expect(trio('OUT', 'IN', 'IN')).toEqual([
+      { id: 'srv-2', pos: 1 },
+      { id: 'srv-3', pos: 3 },
+    ]);
+    expect(trio('IN', 'OUT', 'IN')).toEqual([
+      { id: 'srv-1', pos: 1 },
+      { id: 'srv-3', pos: 5 },
+    ]);
+    expect(trio('IN', 'IN', 'OUT')).toEqual([
+      { id: 'srv-1', pos: 1 },
+      { id: 'srv-2', pos: 3 },
+    ]);
+    expect(trio('OUT', 'OUT', 'IN')).toEqual([{ id: 'srv-3', pos: 1 }]);
+    expect(trio('OUT', 'IN', 'OUT')).toEqual([{ id: 'srv-2', pos: 1 }]);
+    expect(trio('IN', 'OUT', 'OUT')).toEqual([{ id: 'srv-1', pos: 1 }]);
+    expect(trio('OUT', 'OUT', 'OUT')).toEqual([]);
+  });
 });
