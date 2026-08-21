@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal } from '../ui/Modal';
@@ -114,7 +114,7 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
       description={
         role === 'SERVER'
           ? 'As a Server/Team Lead, you can assign tasks to members in your top-level room.'
-          : 'Global task dispatch across all sectors and active room members.'
+          : 'Global task dispatch across all sections and active room members.'
       }
       maxWidth="lg"
       footer={

@@ -48,7 +48,7 @@ export const roomRoutes: FastifyPluginAsync = async (fastify) => {
             return reply.status(403).send({
               statusCode: 403,
               error: 'Forbidden',
-              message: `As a Server for Sector ${serverUser.room.letter}, you are not authorized to inspect Sector ${letter.toUpperCase()}.`,
+              message: `As a Server for Section ${serverUser.room.letter}, you are not authorized to inspect Section ${letter.toUpperCase()}.`,
             });
           }
         }

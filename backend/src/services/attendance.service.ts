@@ -572,7 +572,7 @@ export class AttendanceService {
         role: u.role,
         title: u.title,
         avatarUrl: u.avatarUrl,
-        room: u.room ? `Sector ${u.room.letter}` : undefined,
+        room: u.room ? `Section ${u.room.letter}` : undefined,
         subroom: u.subroom?.code,
         presenceState: u.presenceState,
         isCurrentlyIn: u.presenceState === PresenceState.IN,

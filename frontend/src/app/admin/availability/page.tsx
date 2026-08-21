@@ -156,8 +156,8 @@ export default function PeopleAvailabilityPage() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: isServer ? `Sector ${serverRoomLetter} Operations` : 'Admin Operations', href: isServer ? '/server' : '/admin' },
-        { label: isServer ? `Sector ${serverRoomLetter} Availability` : 'People Availability' },
+        { label: isServer ? `Section ${serverRoomLetter} Operations` : 'Admin Operations', href: isServer ? '/server' : '/admin' },
+        { label: isServer ? `Section ${serverRoomLetter} Availability` : 'People Availability' },
       ]}
     >
       <div className="space-y-6">
@@ -167,7 +167,7 @@ export default function PeopleAvailabilityPage() {
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-primary tracking-tight">
                 {isServer
-                  ? `Sector ${serverRoomLetter} People Availability & Oversight`
+                  ? `Section ${serverRoomLetter} People Availability & Oversight`
                   : 'Enterprise People Availability Matrix'}
               </h1>
               <Badge
@@ -177,8 +177,8 @@ export default function PeopleAvailabilityPage() {
             </div>
             <p className="text-xs text-on-surface-variant">
               {isServer
-                ? `Overseeing personnel availability across all 8 subrooms in Sector ${serverRoomLetter}. All times in IST (Asia/Kolkata).`
-                : 'Live and scheduled personnel availability across all 8 sectors in IST (Asia/Kolkata, UTC+05:30).'}
+                ? `Overseeing personnel availability across all 8 subrooms in Section ${serverRoomLetter}. All times in IST (Asia/Kolkata).`
+                : 'Live and scheduled personnel availability across all 8 sections in IST (Asia/Kolkata, UTC+05:30).'}
             </p>
           </div>
 
@@ -350,11 +350,11 @@ export default function PeopleAvailabilityPage() {
               ))}
             </div>
 
-            {/* Sector / Room Filter */}
+            {/* Section / Room Filter */}
             {isServer ? (
               <div className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs font-semibold text-primary flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-secondary">meeting_room</span>
-                <span>Sector {serverRoomLetter} (Assigned Scope)</span>
+                <span>Section {serverRoomLetter} (Assigned Scope)</span>
               </div>
             ) : (
               <select
@@ -362,15 +362,15 @@ export default function PeopleAvailabilityPage() {
                 onChange={(e) => setRoomFilter(e.target.value)}
                 className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface focus:outline-none focus:border-primary"
               >
-                <option value="ALL">All Sectors (A–H)</option>
-                <option value="A">Sector A</option>
-                <option value="B">Sector B</option>
-                <option value="C">Sector C</option>
-                <option value="D">Sector D</option>
-                <option value="E">Sector E</option>
-                <option value="F">Sector F</option>
-                <option value="G">Sector G</option>
-                <option value="H">Sector H</option>
+                <option value="ALL">All Sections (A–H)</option>
+                <option value="A">Section A</option>
+                <option value="B">Section B</option>
+                <option value="C">Section C</option>
+                <option value="D">Section D</option>
+                <option value="E">Section E</option>
+                <option value="F">Section F</option>
+                <option value="G">Section G</option>
+                <option value="H">Section H</option>
               </select>
             )}
 

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
@@ -80,7 +80,7 @@ export default function AdminTasksPage() {
               Enterprise Task Management & Campaigns
             </h1>
             <p className="text-xs text-on-surface-variant mt-1">
-              Dispatch individual tasks or group work campaigns across all 8 sectors.
+              Dispatch individual tasks or group work campaigns across all 8 sections.
             </p>
           </div>
 
@@ -134,11 +134,11 @@ export default function AdminTasksPage() {
               onChange={(e) => setRoomFilter(e.target.value)}
               className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface focus:outline-none focus:border-primary"
             >
-              <option value="ALL">All Sectors (A-H)</option>
-              <option value="Room A">Sector A</option>
-              <option value="Room B">Sector B</option>
-              <option value="Room C">Sector C</option>
-              <option value="Room D">Sector D</option>
+              <option value="ALL">All Sections (A-H)</option>
+              <option value="Room A">Section A</option>
+              <option value="Room B">Section B</option>
+              <option value="Room C">Section C</option>
+              <option value="Room D">Section D</option>
             </select>
 
             <select

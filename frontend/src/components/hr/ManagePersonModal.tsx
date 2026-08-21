@@ -68,7 +68,7 @@ export function ManagePersonModal({
     {
       role: 'SERVER',
       label: 'Server',
-      desc: 'Room/Sector supervisor (Room scoped)',
+      desc: 'Room/Section supervisor (Room scoped)',
       allowed: true,
     },
     {
@@ -81,7 +81,7 @@ export function ManagePersonModal({
     {
       role: 'ADMIN',
       label: 'Admin',
-      desc: 'Operational management across all sectors',
+      desc: 'Operational management across all sections',
       allowed: currentCallerRole === 'SUPER_ADMIN',
       restrictionReason: 'Requires Super Admin authority',
     },

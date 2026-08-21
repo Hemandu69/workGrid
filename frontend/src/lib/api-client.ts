@@ -603,6 +603,7 @@ export interface GridServerItem {
   presenceState: 'IN' | 'OUT' | 'UNKNOWN';
   currentLocation: string;
   isCurrentlyInSubroom: boolean;
+  supervisoryPosition?: 1 | 3 | 5;
   arrivedAtIST?: string;
   lastSeenIST: string;
 }
@@ -635,6 +636,8 @@ export interface GridRoomColumn {
     name: string;
     presenceState: 'IN' | 'OUT' | 'UNKNOWN';
     currentLocation: string;
+    preferredPosition?: 1 | 3 | 5;
+    assignedPosition?: 1 | 3 | 5;
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;

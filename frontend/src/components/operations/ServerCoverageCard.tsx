@@ -18,10 +18,10 @@ export function ServerCoverageCard({ rooms, onSelectServer }: ServerCoverageCard
           </span>
           <div>
             <h3 className="text-xs font-bold text-primary uppercase tracking-wider">
-              Room Server Presence & Coverage
+              Section Server Presence & Supervisory Positions
             </h3>
             <p className="text-[11px] text-on-surface-variant">
-              Room-level supervisors responsible for overseeing rooms and live event coverage (Up to 3 Servers per Sector).
+              Section-level supervisors occupying operational positions 1, 3, and 5 (Up to 3 Servers per Section).
             </p>
           </div>
         </div>
@@ -42,7 +42,7 @@ export function ServerCoverageCard({ rooms, onSelectServer }: ServerCoverageCard
             >
               <div className="flex items-center justify-between">
                 <span className="font-bold text-primary text-xs">
-                  Sector {room.letter}
+                  Section {room.letter}
                 </span>
                 <span
                   className={`font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded ${
@@ -77,6 +77,11 @@ export function ServerCoverageCard({ rooms, onSelectServer }: ServerCoverageCard
                           }`}
                         />
                         <span className="text-on-surface truncate font-medium">{srv.name}</span>
+                        {srv.assignedPosition && srv.presenceState === 'IN' && (
+                          <span className="px-1 py-0.2 bg-secondary/15 text-secondary text-[9px] font-mono font-bold rounded">
+                            Pos {srv.assignedPosition}
+                          </span>
+                        )}
                       </div>
                       <span className="font-mono text-[10px] text-on-surface-variant font-semibold shrink-0">
                         {srv.presenceState === 'IN' ? `Loc: ${srv.currentLocation}` : srv.presenceState}

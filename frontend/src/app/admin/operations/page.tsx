@@ -112,7 +112,7 @@ export default function OperationsGridPage() {
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
         {
-          label: isServer ? `Sector ${serverRoomLetter} Operations` : 'Admin Operations',
+          label: isServer ? `Section ${serverRoomLetter} Operations` : 'Admin Operations',
           href: isServer ? '/server' : '/admin',
         },
         { label: 'Operational Room Grid' },
@@ -125,7 +125,7 @@ export default function OperationsGridPage() {
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-primary tracking-tight">
                 {isServer
-                  ? `Sector ${serverRoomLetter} Operational Grid & Server Presence`
+                  ? `Section ${serverRoomLetter} Operational Grid & Server Presence`
                   : 'Enterprise Operational Room Grid & Server Presence'}
               </h1>
               <Badge
@@ -135,7 +135,7 @@ export default function OperationsGridPage() {
             </div>
             <p className="text-xs text-on-surface-variant">
               {isServer
-                ? `Real-time physical presence, room occupancy, and server coverage across Sector ${serverRoomLetter} subrooms in IST.`
+                ? `Real-time physical presence, room occupancy, and server coverage across Section ${serverRoomLetter} subrooms in IST.`
                 : 'Physical & logical 8 × 8 WorkGrid matrix monitoring people, supervisory server locations, and live event coverage in IST.'}
             </p>
           </div>
@@ -188,7 +188,7 @@ export default function OperationsGridPage() {
           <StatMetricCard
             label="Subrooms Monitored"
             value={gridData?.totalSubrooms ?? '—'}
-            subtext="Across active sectors"
+            subtext="Across active sections"
             trend="100% Online"
             icon="grid_view"
             indicatorColor="available"
@@ -233,7 +233,7 @@ export default function OperationsGridPage() {
               <span>WorkGrid Physical & Logical Subroom Matrix (A1 – H8)</span>
             </h3>
             <span className="text-[11px] font-mono text-on-surface-variant">
-              Showing {gridData?.rooms.length ?? 0} Sectors • All timestamps in IST
+              Showing {gridData?.rooms.length ?? 0} Sections • All timestamps in IST
             </span>
           </div>
 

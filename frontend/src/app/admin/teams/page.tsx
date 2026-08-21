@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
@@ -49,7 +49,7 @@ export default function AdminTeamsPage() {
         <div className="border-b border-surface-outline pb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-primary tracking-tight">
-              Personnel & Sector Membership Directory
+              Personnel & Section Membership Directory
             </h1>
             <p className="text-xs text-on-surface-variant mt-1">
               Global directory of administrators, servers, and members across the hierarchy.
@@ -61,7 +61,7 @@ export default function AdminTeamsPage() {
         <div className="p-3 bg-surface-bright border border-surface-outline rounded flex items-center justify-between">
           <input
             type="text"
-            placeholder="Search personnel by name, email, sector, subroom..."
+            placeholder="Search personnel by name, email, section, subroom..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-72 px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
@@ -77,7 +77,7 @@ export default function AdminTeamsPage() {
             <TableRow isHeader>
               <TableHead>User / Member</TableHead>
               <TableHead>System Role</TableHead>
-              <TableHead>Assigned Sector / Subroom</TableHead>
+              <TableHead>Assigned Section / Subroom</TableHead>
               <TableHead>Presence Status</TableHead>
               <TableHead>Allocated Workload</TableHead>
             </TableRow>

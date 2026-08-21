@@ -30,7 +30,7 @@ export function RoomOverviewGrid({
   if (!rooms || rooms.length === 0 || !activeRoom) {
     return (
       <div className="p-8 border border-surface-outline rounded bg-surface-container-low text-center text-xs text-on-surface-variant">
-        Loading room and sector topology...
+        Loading room and section topology...
       </div>
     );
   }
@@ -77,7 +77,7 @@ export function RoomOverviewGrid({
               }`}
             >
               <div className="flex items-center gap-1">
-                <span>Sector {room.letter}</span>
+                <span>Section {room.letter}</span>
                 {room.letter === 'B' && <span className="w-1.5 h-1.5 rounded-full bg-status-available" />}
               </div>
               <span
@@ -97,10 +97,10 @@ export function RoomOverviewGrid({
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-sm font-bold text-primary">
-              Sector {activeRoom.letter} Subrooms (1 through 8)
+              Section {activeRoom.letter} Subrooms (1 through 8)
             </h3>
             <p className="text-xs text-on-surface-variant">
-              Lead Server: {activeRoom.leadServer ? activeRoom.leadServer.name : 'Assigned per sector'} •
+              Lead Server: {activeRoom.leadServer ? activeRoom.leadServer.name : 'Assigned per section'} •
               Total Subrooms: {activeRoom.subrooms.length}
             </p>
           </div>

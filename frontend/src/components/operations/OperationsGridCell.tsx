@@ -123,9 +123,16 @@ export function OperationsGridCell({
         {/* Supervisory Servers Present in this Subroom */}
         {filteredServers.length > 0 && (
           <div className="pt-1.5 border-t border-surface-outline/50 space-y-1">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-secondary flex items-center gap-1">
-              <span className="material-symbols-outlined text-[11px]">shield_person</span>
-              <span>Server Present</span>
+            <div className="text-[9px] font-bold uppercase tracking-wider text-secondary flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <span className="material-symbols-outlined text-[11px]">shield_person</span>
+                <span>Server Overseer</span>
+              </div>
+              {filteredServers[0]?.supervisoryPosition && (
+                <span className="px-1 py-0.2 bg-secondary/15 text-secondary text-[9px] font-mono font-bold rounded">
+                  Pos {filteredServers[0].supervisoryPosition}
+                </span>
+              )}
             </div>
             {filteredServers.map((srv) => (
               <button
@@ -133,9 +140,16 @@ export function OperationsGridCell({
                 onClick={() => onSelectPerson(srv.id)}
                 className="w-full text-left p-1 rounded bg-secondary-container/40 border border-secondary/20 hover:bg-secondary-container flex items-center justify-between gap-1 transition-colors"
               >
-                <span className="text-[11px] font-semibold text-secondary-dim truncate">
-                  {srv.name.split(' ')[0]}
-                </span>
+                <div className="flex items-center gap-1 truncate">
+                  <span className="text-[11px] font-semibold text-secondary-dim truncate">
+                    {srv.name.split(' ')[0]}
+                  </span>
+                  {srv.supervisoryPosition && (
+                    <span className="text-[9px] font-mono text-secondary-dim font-bold">
+                      (P{srv.supervisoryPosition})
+                    </span>
+                  )}
+                </div>
                 <span className="w-1.5 h-1.5 rounded-full bg-status-available animate-pulse" />
               </button>
             ))}

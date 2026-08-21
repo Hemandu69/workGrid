@@ -40,7 +40,7 @@ export function OperationsGrid({
             {/* Room Column Header */}
             <div className="flex items-center justify-between px-1 pb-1 border-b border-surface-outline">
               <div className="flex items-center gap-1">
-                <span className="font-bold text-primary text-xs">Sector {room.letter}</span>
+                <span className="font-bold text-primary text-xs">Section {room.letter}</span>
               </div>
               <span className="font-mono text-[10px] text-on-surface-variant font-semibold">
                 {room.serverPresenceCount}/{room.serverTotalCount} 🛡

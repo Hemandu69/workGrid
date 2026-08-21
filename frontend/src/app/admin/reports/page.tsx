@@ -56,7 +56,7 @@ export default function AdminReportsPage() {
             Operational Analytics & Capacity Utilization
           </h1>
           <p className="text-xs text-on-surface-variant mt-1">
-            Historical throughput, sector capacity saturation, and task turnaround metrics across all sectors.
+            Historical throughput, section capacity saturation, and task turnaround metrics across all sections.
           </p>
         </div>
 
@@ -81,8 +81,8 @@ export default function AdminReportsPage() {
           <StatMetricCard
             label="Subrooms Monitored"
             value={rooms.length * 8 || 64}
-            subtext="Across all provisioned sectors"
-            trend="Sectors A–H"
+            subtext="Across all provisioned sections"
+            trend="Sections A–H"
             icon="insights"
             indicatorColor="busy"
           />
@@ -96,15 +96,15 @@ export default function AdminReportsPage() {
           />
         </div>
 
-        {/* Utilization by Sector */}
+        {/* Utilization by Section */}
         <Card>
           <CardHeader>
-            <CardTitle>Sector Capacity Saturation & Workload Breakdown</CardTitle>
+            <CardTitle>Section Capacity Saturation & Workload Breakdown</CardTitle>
           </CardHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {rooms.length === 0 ? (
-              <p className="text-xs text-on-surface-variant py-4 col-span-4 text-center">Loading sector reports...</p>
+              <p className="text-xs text-on-surface-variant py-4 col-span-4 text-center">Loading section reports...</p>
             ) : (
               rooms.map((room) => (
                 <div
@@ -112,7 +112,7 @@ export default function AdminReportsPage() {
                   className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2"
                 >
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-primary text-sm">Sector {room.letter}</span>
+                    <span className="font-bold text-primary text-sm">Section {room.letter}</span>
                     <span className="font-mono text-xs font-semibold text-primary">{room.occupancyPercentage}%</span>
                   </div>
                   <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden">
