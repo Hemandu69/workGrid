@@ -8,6 +8,7 @@ import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { RoomAssignmentModal } from './RoomAssignmentModal';
+import { AvailabilityStatusControl } from './AvailabilityStatusControl';
 
 interface PersonAvailabilityDrawerProps {
   userId: string | null;
@@ -154,7 +155,11 @@ export function PersonAvailabilityDrawer({
         await apiClient.updatePresence({
           userId,
           presenceState: targetState,
-          currentLocationName: targetState === 'IN' ? (data.person.subroom || 'B1') : 'Outside',
+          // Returning puts them back in their assigned subroom. With no
+          // assignment there is no location to claim — leave it to the backend
+          // rather than inventing one.
+          currentLocationName:
+            targetState === 'IN' ? data.person.subroom ?? null : 'Outside',
         });
       }
 
@@ -341,7 +346,7 @@ export function PersonAvailabilityDrawer({
                     </span>
                     <span className="font-bold text-primary">
                       {data.person.attendanceState === 'IN'
-                        ? (data.person.arrivedAtIST || '08:30 AM IST')
+                        ? (data.person.arrivedAtIST || '—')
                         : (data.person.leftAtIST || data.person.lastSeenAtIST || '—')}
                     </span>
                   </div>
@@ -359,9 +364,20 @@ export function PersonAvailabilityDrawer({
 
               {/* Current Status Box */}
               <div className="space-y-2">
-                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
-                  Live Operations Status
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
+                    Live Operations Status
+                  </span>
+                  {canManageAssignment && (
+                    <AvailabilityStatusControl
+                      current={data.currentStatus.state}
+                      personId={userId}
+                      disabled={data.person.attendanceState !== 'IN'}
+                      disabledHint="This person is checked OUT — availability is suppressed until they return."
+                      onChanged={() => refreshDrawer(true)}
+                    />
+                  )}
+                </div>
                 <div
                   className={`p-3 rounded border text-xs flex items-center justify-between ${
                     data.currentStatus.state === 'FREE'
@@ -389,9 +405,11 @@ export function PersonAvailabilityDrawer({
                     </div>
                   </div>
 
-                  <span className="text-[11px] font-mono font-semibold">
-                    Until {data.currentStatus.until}
-                  </span>
+                  {data.currentStatus.until && (
+                    <span className="text-[11px] font-mono font-semibold">
+                      Until {data.currentStatus.until}
+                    </span>
+                  )}
                 </div>
               </div>
 

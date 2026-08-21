@@ -1,5 +1,10 @@
 import { prisma } from '../db/client.js';
-import { AccountStatus, PresenceState, UserRole } from '@prisma/client';
+import { AccountStatus, PresenceState, TaskStatus, UserRole, UserStatus } from '@prisma/client';
+import {
+  AVAILABILITY_LABELS,
+  availabilityFromUserStatus,
+  userStatusFromAvailability,
+} from '../utils/availability-projection.js';
 import { formatToISTDate, formatToISTTime, getCurrentDate, APP_TIMEZONE, TIMEZONE_LABEL } from '../utils/time.js';
 import { publishDomainEvent } from '../events/domain-events.js';
 
@@ -16,6 +21,9 @@ export interface AttendanceSessionDto {
 export interface AttendanceMeResponse {
   state: 'IN' | 'OUT';
   presenceState: PresenceState;
+  /** Authoritative operational availability, presence-suppressed when OUT. */
+  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+  availabilityLabel: string;
   currentSession: {
     id: string;
     arrivedAt: string;
@@ -80,6 +88,29 @@ export function getISTDayRange(targetDate: Date = new Date()): { startUtc: Date;
 
 export class AttendanceService {
   /**
+   * Availability a person should hold on arrival: BUSY when work is already
+   * assigned to them, otherwise FREE. Checking in must never leave someone
+   * reading UNAVAILABLE, nor claim they are free while they hold live tasks.
+   */
+  private static async deriveArrivalAvailability(
+    userId: string
+  ): Promise<'FREE' | 'BUSY'> {
+    const activeTaskCount =
+      typeof prisma.task?.count === 'function'
+        ? await prisma.task
+            .count({
+              where: {
+                assigneeId: userId,
+                status: { in: [TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED, TaskStatus.BLOCKED] },
+              },
+            })
+            .catch(() => 0)
+        : 0;
+
+    return activeTaskCount > 0 ? 'BUSY' : 'FREE';
+  }
+
+  /**
    * Check In — Start a WorkGrid Attendance Period
    * Server timestamp is authoritative (UTC internal, presented in IST).
    * Idempotent: If already checked IN, returns the current active record.
@@ -114,6 +145,45 @@ export class AttendanceService {
 
     if (existingOpenRecord) {
       const durationSeconds = Math.max(0, Math.floor((now.getTime() - existingOpenRecord.arrivedAt.getTime()) / 1000));
+
+      // An open attendance record means the person IS present. If the user row
+      // has drifted out of step (it can, because this idempotent path used to
+      // return without touching it), reconcile it here — otherwise attendance
+      // says IN while every availability projection still reads OUT.
+      if (user.presenceState !== PresenceState.IN) {
+        const reconciledAvailability = await this.deriveArrivalAvailability(user.id);
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            presenceState: PresenceState.IN,
+            arrivedAt: existingOpenRecord.arrivedAt,
+            leftAt: null,
+            lastSeenAt: now,
+            status: userStatusFromAvailability(reconciledAvailability),
+          },
+        });
+
+        publishDomainEvent({
+          type: 'AVAILABILITY_CHANGED',
+          organizationId: user.organizationId,
+          entityId: user.id,
+          targetUserId: user.id,
+          actorId: user.id,
+          payload: {
+            userId: user.id,
+            personId: user.id,
+            presenceState: PresenceState.IN,
+            status: userStatusFromAvailability(reconciledAvailability),
+            availabilityState: reconciledAvailability,
+            availabilityLabel: AVAILABILITY_LABELS[reconciledAvailability],
+            reconciled: true,
+            isSimulated: false,
+            timestamp: now.toISOString(),
+          },
+        });
+      }
+
       return {
         state: 'IN' as const,
         presenceState: PresenceState.IN,
@@ -126,6 +196,8 @@ export class AttendanceService {
         message: `Already checked IN at ${formatToISTTime(existingOpenRecord.arrivedAt)}.`,
       };
     }
+
+    const arrivalAvailability = await this.deriveArrivalAvailability(user.id);
 
     // Atomically create attendance record and update user presence
     const result = await prisma.$transaction(async (tx) => {
@@ -145,7 +217,7 @@ export class AttendanceService {
           arrivedAt: now,
           leftAt: null,
           lastSeenAt: now,
-          status: 'ONLINE',
+          status: userStatusFromAvailability(arrivalAvailability),
         },
       });
 
@@ -237,8 +309,13 @@ export class AttendanceService {
       actorId: user.id,
       payload: {
         userId: user.id,
+        personId: user.id,
         presenceState: PresenceState.IN,
-        status: 'ONLINE',
+        status: userStatusFromAvailability(arrivalAvailability),
+        availabilityState: arrivalAvailability,
+        availabilityLabel: AVAILABILITY_LABELS[arrivalAvailability],
+        isSimulated: false,
+        timestamp: now.toISOString(),
       },
     });
 
@@ -420,8 +497,15 @@ export class AttendanceService {
       actorId: user.id,
       payload: {
         userId: user.id,
+        personId: user.id,
         presenceState: PresenceState.OUT,
-        status: 'OFFLINE',
+        status: UserStatus.OFFLINE,
+        // Presence dominates: leaving projects UNAVAILABLE everywhere.
+        availabilityState: 'UNAVAILABLE',
+        availabilityLabel: AVAILABILITY_LABELS.UNAVAILABLE,
+        currentLocation: 'Outside',
+        isSimulated: false,
+        timestamp: now.toISOString(),
       },
     });
 
@@ -510,9 +594,17 @@ export class AttendanceService {
       };
     });
 
+    // Presence dominates: an open session means the stored availability applies,
+    // otherwise the person reads UNAVAILABLE regardless of what is stored.
+    const projectedAvailability = openRecord
+      ? availabilityFromUserStatus(user.status)
+      : ('UNAVAILABLE' as const);
+
     return {
       state: openRecord ? 'IN' : 'OUT',
       presenceState: openRecord ? PresenceState.IN : PresenceState.OUT,
+      availabilityState: projectedAvailability,
+      availabilityLabel: AVAILABILITY_LABELS[projectedAvailability],
       currentSession,
       todaySummary: {
         totalSeconds,

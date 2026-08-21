@@ -168,7 +168,7 @@ export default function TeamLeadPage() {
                     <TableCell className="text-xs text-on-surface">{member.title || 'Engineer'}</TableCell>
 
                     <TableCell className="font-mono text-xs text-on-surface-variant">
-                      {member.subroom ? `${member.subroom} (${member.room || 'Section B'})` : (member.room || 'Section B')}
+                      {member.subroom ? `${member.subroom} (${member.room || 'Unassigned'})` : (member.room || 'Unassigned')}
                     </TableCell>
 
                     <TableCell className="font-mono text-xs text-on-surface font-semibold">

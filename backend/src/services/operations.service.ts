@@ -6,6 +6,11 @@ import {
   formatToISTDateTime,
 } from '../utils/time.js';
 import { calculateServerPositions, SupervisoryPosition } from '../utils/server-positioning.js';
+import {
+  AvailabilityState,
+  availabilityFromUserStatus,
+  deriveAvailability,
+} from '../utils/availability-projection.js';
 import { SimulationService, SimulatedPerson } from './simulation.service.js';
 import { AvailabilityService } from './availability.service.js';
 import { publishDomainEvent } from '../events/domain-events.js';
@@ -25,6 +30,9 @@ export interface GridMemberItem {
   avatarUrl?: string;
   presenceState: PresenceState | string;
   presenceLabel: string;
+  /** Authoritative operational availability — presence-suppressed when OUT. */
+  availabilityState: AvailabilityState;
+  availabilityLabel: string;
   currentLocation: string; // e.g. "B4", "UNKNOWN"
   arrivedAt?: string;
   arrivedAtIST?: string;
@@ -44,6 +52,8 @@ export interface GridServerItem {
   avatarUrl?: string;
   assignedRoomLetter: string;
   presenceState: PresenceState | string;
+  availabilityState: AvailabilityState;
+  availabilityLabel: string;
   currentLocation: string; // e.g. "B4", "UNKNOWN", "Outside"
   isCurrentlyInSubroom: boolean;
   supervisoryPosition?: SupervisoryPosition;
@@ -79,6 +89,8 @@ export interface GridRoomColumn {
     id: string;
     name: string;
     presenceState: PresenceState | string;
+    availabilityState: AvailabilityState;
+    availabilityLabel: string;
     currentLocation: string;
     preferredPosition?: SupervisoryPosition;
     assignedPosition?: SupervisoryPosition;
@@ -108,6 +120,17 @@ export interface OperationalGridResponse {
   totalSubrooms: number;
   totalPeoplePresent: number;
   totalServersPresent: number;
+  /**
+   * Authoritative availability KPIs recomputed from the same projection the
+   * cells render, so the numbers can never drift from the grid itself.
+   */
+  availabilitySummary: {
+    totalPeople: number;
+    freeCount: number;
+    busyCount: number;
+    partialCount: number;
+    unavailableCount: number;
+  };
   rooms: GridRoomColumn[];
 }
 
@@ -223,6 +246,11 @@ export class OperationsService {
       // 1. Real database servers for this room
       const dbServers: GridServerItem[] = room.members.map((srv) => {
         const presenceState = resolveAuthoritativePresence(srv.id, srv.presenceState);
+        const availability = deriveAvailability({
+          presenceState,
+          storedState: availabilityFromUserStatus(srv.status),
+          locationLabel: srv.currentLocationName,
+        });
         return {
           id: srv.id,
           name: srv.name,
@@ -230,6 +258,8 @@ export class OperationsService {
           avatarUrl: srv.avatarUrl || undefined,
           assignedRoomLetter: room.letter,
           presenceState,
+          availabilityState: availability.state,
+          availabilityLabel: availability.label,
           currentLocation:
             presenceState === 'IN' ? srv.currentLocationName || 'UNKNOWN' : presenceState === 'OUT' ? 'Outside' : srv.currentLocationName || 'UNKNOWN',
           isCurrentlyInSubroom: false,
@@ -246,6 +276,11 @@ export class OperationsService {
           // Re-read by id so we never project a stale fixture/metadata presence
           const live = SimulationService.getSimulatedPerson(p.id) ?? p;
           const presenceState = resolveAuthoritativePresence(live.id, live.presenceState);
+          const availability = deriveAvailability({
+            presenceState,
+            storedState: live.availabilityState,
+            locationLabel: live.subroomCode,
+          });
           return {
             id: live.id,
             name: live.name,
@@ -253,6 +288,8 @@ export class OperationsService {
             avatarUrl: live.avatarUrl,
             assignedRoomLetter: room.letter,
             presenceState,
+            availabilityState: availability.state,
+            availabilityLabel: availability.label,
             // Preferred home subroom is metadata only; location follows CURRENT presence
             currentLocation: presenceState === 'IN' ? live.subroomCode : 'Outside',
             isCurrentlyInSubroom: false,
@@ -349,6 +386,13 @@ export class OperationsService {
             durationInWorkGrid = `${hours}h ${mins}m`;
           }
 
+          const memberAvailability = deriveAvailability({
+            presenceState: m.presenceState,
+            storedState: availabilityFromUserStatus(m.status),
+            activeTaskLabel: m.assignedTasks[0]?.taskIdDisplay || m.assignedTasks[0]?.title || null,
+            locationLabel: subroom.code,
+          });
+
           return {
             id: m.id,
             name: m.name,
@@ -357,7 +401,9 @@ export class OperationsService {
             avatarUrl: m.avatarUrl || undefined,
             presenceState: m.presenceState,
             presenceLabel: m.presenceState === PresenceState.IN ? 'In Subroom' : m.presenceState === PresenceState.OUT ? 'Outside' : 'Unknown',
-            currentLocation: m.currentLocationName || subroom.code,
+            availabilityState: memberAvailability.state,
+            availabilityLabel: memberAvailability.label,
+            currentLocation: m.presenceState === PresenceState.IN ? m.currentLocationName || subroom.code : 'Outside',
             arrivedAt: m.arrivedAt ? m.arrivedAt.toISOString() : undefined,
             arrivedAtIST: m.arrivedAt ? formatToISTTime(m.arrivedAt) : undefined,
             leftAt: m.leftAt ? m.leftAt.toISOString() : undefined,
@@ -385,6 +431,13 @@ export class OperationsService {
               totalPeoplePresent++;
             }
 
+            const simAvailability = deriveAvailability({
+              presenceState,
+              storedState: live.availabilityState,
+              activeTaskLabel: live.activeTaskId || null,
+              locationLabel: live.subroomCode,
+            });
+
             return {
               id: live.id,
               name: live.name,
@@ -393,6 +446,8 @@ export class OperationsService {
               avatarUrl: live.avatarUrl,
               presenceState,
               presenceLabel: presenceState === 'IN' ? 'In Subroom' : 'Outside',
+              availabilityState: simAvailability.state,
+              availabilityLabel: simAvailability.label,
               currentLocation: presenceState === 'IN' ? live.subroomCode : 'Outside',
               arrivedAt: live.checkedInAt ? live.checkedInAt.toISOString() : undefined,
               arrivedAtIST: live.checkedInAt ? formatToISTTime(live.checkedInAt) : undefined,
@@ -468,6 +523,9 @@ export class OperationsService {
             id: s.id,
             name: s.name,
             presenceState,
+            // Already presence-suppressed when the roster entry was built above.
+            availabilityState: s.availabilityState,
+            availabilityLabel: s.availabilityLabel,
             currentLocation: presenceState === 'IN' ? s.currentLocation : 'Outside',
             preferredPosition: preferredByServerId.get(s.id),
             // Only IN servers receive an assigned supervisory position
@@ -503,6 +561,15 @@ export class OperationsService {
       };
     }
 
+    // Derive availability KPIs from the projected cells themselves — never by
+    // incrementing counters, so repeated changes cannot make the numbers drift.
+    const everyone = roomColumns.flatMap((r) => [
+      ...r.subrooms.flatMap((s) => s.members),
+      ...r.assignedServers,
+    ]);
+    const countBy = (state: AvailabilityState) =>
+      everyone.filter((p) => p.availabilityState === state).length;
+
     return {
       currentTimeIST: formatToISTTime(now),
       activeCompanyEvent: formattedCompanyEvent,
@@ -510,6 +577,13 @@ export class OperationsService {
       totalSubrooms,
       totalPeoplePresent,
       totalServersPresent,
+      availabilitySummary: {
+        totalPeople: everyone.length,
+        freeCount: countBy('FREE'),
+        busyCount: countBy('BUSY'),
+        partialCount: countBy('PARTIALLY_AVAILABLE'),
+        unavailableCount: countBy('UNAVAILABLE'),
+      },
       rooms: roomColumns,
     };
   }

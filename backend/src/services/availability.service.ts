@@ -2,7 +2,17 @@ import { prisma } from '../db/client.js';
 import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
 import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, TaskPriority, PresenceState } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
-import { SimulationService } from './simulation.service.js';
+import { SimulationService, SimulatedAvailabilityState } from './simulation.service.js';
+import {
+  AvailabilityState,
+  availabilityFromUserStatus,
+  userStatusFromAvailability,
+  deriveAvailability,
+  deriveTaskDrivenAvailability,
+  resolveCurrentLocation,
+  isPresent,
+  AVAILABILITY_LABELS,
+} from '../utils/availability-projection.js';
 import {
   APP_TIMEZONE,
   TIMEZONE_LABEL,
@@ -212,6 +222,176 @@ export class AvailabilityService {
   }
 
   /**
+   * Sets a person's authoritative operational availability (FREE / BUSY /
+   * PARTIALLY_AVAILABLE / UNAVAILABLE) and broadcasts it organization-wide.
+   *
+   * Handles real accounts and simulated test personnel through the same path so
+   * both produce identical domain-event semantics for every connected client.
+   * Room assignment is never touched — availability and location are separate
+   * pieces of state.
+   */
+  static async setAvailabilityState(
+    personId: string,
+    state: AvailabilityState,
+    actor: { id: string; organizationId: string }
+  ) {
+    const now = new Date();
+
+    // --- Simulated test personnel (in-memory, never written to PostgreSQL) ---
+    const sim = SimulationService.getSimulatedPerson(personId);
+    if (sim) {
+      const updated = SimulationService.updateSimulatedAvailability(
+        personId,
+        state as SimulatedAvailabilityState,
+        now
+      );
+
+      const payload = {
+        userId: null,
+        simulatedPersonId: updated.id,
+        personId: updated.id,
+        name: updated.name,
+        role: updated.role,
+        organizationId: actor.organizationId,
+        presenceState: updated.presenceState,
+        attendanceState: updated.attendanceState,
+        availabilityState: updated.availabilityState,
+        availabilityLabel: AVAILABILITY_LABELS[updated.availabilityState],
+        section: updated.sectionLetter,
+        sectionLetter: updated.sectionLetter,
+        subroomCode: updated.subroomCode,
+        currentLocation: resolveCurrentLocation({
+          presenceState: updated.presenceState,
+          subroomCode: updated.subroomCode,
+          roomLetter: updated.sectionLetter,
+        }),
+        isSimulated: true,
+        timestamp: now.toISOString(),
+      };
+
+      publishDomainEvent({
+        type: 'AVAILABILITY_CHANGED',
+        organizationId: actor.organizationId,
+        entityId: updated.id,
+        actorId: actor.id,
+        payload,
+      });
+
+      return {
+        personId: updated.id,
+        name: updated.name,
+        availabilityState: updated.availabilityState,
+        availabilityLabel: AVAILABILITY_LABELS[updated.availabilityState],
+        presenceState: updated.presenceState,
+        currentLocation: payload.currentLocation,
+        isSimulated: true,
+      };
+    }
+
+    // --- Real authenticated account ---
+    const user = await prisma.user.findUnique({
+      where: { id: personId },
+      include: { room: true, subroom: true },
+    });
+
+    if (!user) {
+      const error = new Error(`Person ${personId} not found.`);
+      (error as any).statusCode = 404;
+      throw error;
+    }
+
+    // Presence dominates availability: someone who has not checked IN cannot be
+    // marked FREE or BUSY, because every projection would suppress it anyway.
+    if (!isPresent(user.presenceState) && state !== 'UNAVAILABLE') {
+      const error = new Error(
+        `${user.name} is currently checked OUT. Check in before setting availability to ${state}.`
+      );
+      (error as any).statusCode = 409;
+      throw error;
+    }
+
+    const previousState = availabilityFromUserStatus(user.status);
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        status: userStatusFromAvailability(state),
+        lastSeenAt: now,
+      },
+    });
+
+    const currentLocation = resolveCurrentLocation({
+      presenceState: updated.presenceState,
+      currentLocationName: updated.currentLocationName,
+      subroomCode: user.subroom?.code,
+      roomLetter: user.room?.letter,
+    });
+
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: actor.id,
+      payload: {
+        userId: user.id,
+        personId: user.id,
+        name: user.name,
+        role: user.role,
+        organizationId: user.organizationId,
+        previousAvailabilityState: previousState,
+        availabilityState: state,
+        availabilityLabel: AVAILABILITY_LABELS[state],
+        status: updated.status,
+        presenceState: updated.presenceState,
+        currentLocation,
+        section: user.room?.letter,
+        subroomCode: user.subroom?.code,
+        isSimulated: false,
+        timestamp: now.toISOString(),
+      },
+    });
+
+    return {
+      personId: updated.id,
+      name: updated.name,
+      availabilityState: state,
+      availabilityLabel: AVAILABILITY_LABELS[state],
+      presenceState: updated.presenceState,
+      currentLocation,
+      isSimulated: false,
+    };
+  }
+
+  /**
+   * Applies a task-driven availability transition and broadcasts it.
+   * Used when a task is assigned to or completed by a real account.
+   */
+  static async syncAvailabilityWithTasks(userId: string, actorId?: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !isPresent(user.presenceState)) return null;
+
+    const activeTaskCount = await prisma.task.count({
+      where: {
+        assigneeId: userId,
+        status: { in: [TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED, TaskStatus.BLOCKED] },
+      },
+    });
+
+    const nextState = deriveTaskDrivenAvailability(
+      availabilityFromUserStatus(user.status),
+      activeTaskCount > 0
+    );
+
+    if (!nextState) return null;
+
+    return this.setAvailabilityState(userId, nextState, {
+      id: actorId || userId,
+      organizationId: user.organizationId,
+    });
+  }
+
+  /**
    * Enterprise-wide People Availability Overview with IST Time Presentation
    */
   static async getPeopleAvailability(filters: {
@@ -232,6 +412,13 @@ export class AvailabilityService {
     const endHour = filters.endHour !== undefined ? Math.max(startHour + 1, Math.min(24, Number(filters.endHour))) : Math.min(24, startHour + 1);
 
     const dayOfWeek = this.getDayOfWeek(targetDate);
+
+    // Does the selected window cover the present moment? If so the live
+    // authoritative state (presence + stored availability) is projected instead
+    // of the schedule, so the view never contradicts what is happening now.
+    const nowHour = now.getUTCHours();
+    const windowIncludesNow =
+      dateStr === now.toISOString().split('T')[0] && nowHour >= startHour && nowHour < endHour;
 
     // Build database query for users
     const where: any = {};
@@ -304,26 +491,49 @@ export class AvailabilityService {
         availableHours = 0;
       }
 
-      let status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' = 'FREE';
-      let statusLabel = 'Free';
-      let reason = 'Available for assignment';
+      // Scheduled projection for the SELECTED window, derived purely from slots.
+      let scheduledStatus: AvailabilityState;
+      let scheduledReason: string;
 
       if (busyHours === hoursCount) {
-        status = 'BUSY';
-        statusLabel = 'Busy';
-        reason = activeTask ? `Active Task: ${activeTask.taskIdDisplay || activeTask.title}` : (user.subroom ? `In Subroom ${user.subroom.code}` : 'Scheduled Busy');
+        scheduledStatus = 'BUSY';
+        scheduledReason = activeTask
+          ? `Active Task: ${activeTask.taskIdDisplay || activeTask.title}`
+          : user.subroom
+          ? `In Subroom ${user.subroom.code}`
+          : 'Scheduled Busy';
       } else if (availableHours === hoursCount) {
-        status = 'FREE';
-        statusLabel = 'Free';
-        reason = user.subroom ? `Subroom ${user.subroom.code} · Available` : 'Scheduled Available';
+        scheduledStatus = 'FREE';
+        scheduledReason = user.subroom ? `Subroom ${user.subroom.code} · Available` : 'Scheduled Available';
       } else if (availableHours > 0 && (busyHours > 0 || unavailableHours > 0)) {
-        status = 'PARTIALLY_AVAILABLE';
-        statusLabel = 'Partially Available';
-        reason = `Free for ${availableHours}h of ${hoursCount}h selected`;
+        scheduledStatus = 'PARTIALLY_AVAILABLE';
+        scheduledReason = `Free for ${availableHours}h of ${hoursCount}h selected`;
       } else {
-        status = 'UNAVAILABLE';
-        statusLabel = 'Unavailable';
-        reason = user.status === UserStatus.OFFLINE ? 'Offline / Non-working hours' : 'Outside scheduled availability';
+        scheduledStatus = 'UNAVAILABLE';
+        scheduledReason = 'Outside scheduled availability';
+      }
+
+      // When the selected window covers right now, the LIVE authoritative state
+      // wins over the schedule: presence plus the person's stored availability.
+      // A checked-out person can never read FREE, regardless of their schedule.
+      let status: AvailabilityState;
+      let statusLabel: string;
+      let reason: string;
+
+      if (windowIncludesNow) {
+        const projected = deriveAvailability({
+          presenceState: user.presenceState,
+          storedState: availabilityFromUserStatus(user.status),
+          activeTaskLabel: activeTask ? activeTask.taskIdDisplay || activeTask.title : null,
+          locationLabel: user.subroom ? `Subroom ${user.subroom.code}` : undefined,
+        });
+        status = projected.state;
+        statusLabel = projected.label;
+        reason = projected.reason;
+      } else {
+        status = scheduledStatus;
+        statusLabel = AVAILABILITY_LABELS[scheduledStatus];
+        reason = scheduledReason;
       }
 
       const untilDate = createUtcTimestamp(dateStr, endHour);
@@ -350,7 +560,14 @@ export class AvailabilityService {
         title: user.title || undefined,
         room: user.room ? `Section ${user.room.letter}` : undefined,
         subroom: user.subroom?.code,
-        currentLocation: user.currentLocationName || (user.subroom ? user.subroom.code : (user.room ? `Section ${user.room.letter}` : 'UNKNOWN')),
+        // Authoritative: a person who is not checked IN is "Outside", even
+        // though their permanent room assignment is unchanged.
+        currentLocation: resolveCurrentLocation({
+          presenceState: user.presenceState,
+          currentLocationName: user.currentLocationName,
+          subroomCode: user.subroom?.code,
+          roomLetter: user.room?.letter,
+        }),
         attendanceState: user.presenceState === 'IN' ? 'IN' : user.presenceState === 'OUT' ? 'OUT' : 'UNKNOWN',
         presenceState: user.presenceState || PresenceState.UNKNOWN,
         arrivedAt: user.arrivedAt ? user.arrivedAt.toISOString() : undefined,
@@ -421,7 +638,6 @@ export class AvailabilityService {
     if (userId.startsWith('sim-') || SimulationService.getSimulatedPerson(userId)) {
       const sim = SimulationService.getSimulatedPerson(userId);
       if (sim) {
-        const isPresent = sim.presenceState === 'IN';
         const now = new Date();
         const daysTimeline: DayAvailabilityTimeline[] = [];
         const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -451,7 +667,10 @@ export class AvailabilityService {
               ],
             });
           } else {
-            const hasTask = Boolean(sim.activeTaskId) && (i === 0 || i === 1);
+            // Today's timeline must agree with the person's live availability,
+            // including a manually set BUSY that has no backing task.
+            const isBusyNow = i === 0 && sim.presenceState === 'IN' && sim.availabilityState === 'BUSY';
+            const hasTask = (Boolean(sim.activeTaskId) && (i === 0 || i === 1)) || isBusyNow;
             daysTimeline.push({
               date: d.toISOString().split('T')[0],
               dayName,
@@ -489,18 +708,33 @@ export class AvailabilityService {
           }
         }
 
+        // Same authoritative derivation the real branch uses — presence dominates.
+        const simProjection = deriveAvailability({
+          presenceState: sim.presenceState,
+          storedState: sim.availabilityState,
+          activeTaskLabel: sim.activeTaskId ? `${sim.activeTaskId} — ${sim.activeTaskTitle}` : null,
+          locationLabel: `Subroom ${sim.subroomCode}`,
+        });
+        const simActiveWindow = this.findActiveWindow(daysTimeline, now);
+        const simNextFree = this.computeNextFree(daysTimeline, now);
+
         return {
           person: {
             id: sim.id,
             name: sim.name,
             email: sim.email,
             role: sim.role,
-            status: isPresent ? (sim.activeTaskId ? UserStatus.BUSY : UserStatus.ONLINE) : UserStatus.OFFLINE,
+            status: userStatusFromAvailability(simProjection.state),
+            availabilityState: simProjection.state,
             avatarUrl: sim.avatarUrl,
             title: sim.title,
             room: `Section ${sim.sectionLetter}`,
             subroom: sim.subroomCode,
-            currentLocation: isPresent ? (sim.role === 'SERVER' ? sim.subroomCode : `Subroom ${sim.subroomCode}`) : 'Outside',
+            currentLocation: resolveCurrentLocation({
+              presenceState: sim.presenceState,
+              subroomCode: sim.subroomCode,
+              roomLetter: sim.sectionLetter,
+            }),
             attendanceState: sim.attendanceState,
             presenceState: sim.presenceState,
             arrivedAt: sim.checkedInAt ? sim.checkedInAt.toISOString() : undefined,
@@ -514,24 +748,15 @@ export class AvailabilityService {
             isSimulated: true,
           },
           currentStatus: {
-            state: sim.availabilityState,
-            reason:
-              sim.presenceState === 'OUT'
-                ? 'Checked Out / Off-duty'
-                : sim.activeTaskId
-                ? `Active Task: ${sim.activeTaskId} — ${sim.activeTaskTitle}`
-                : 'Available for assignments',
+            state: simProjection.state,
+            label: simProjection.label,
+            reason: simProjection.reason,
             room: `Section ${sim.sectionLetter}`,
             subroom: sim.subroomCode,
-            until: isPresent ? 'End of Shift' : 'Next Shift',
+            // Derived from the simulated person's own timeline, not a fixed label.
+            until: simActiveWindow ? simActiveWindow.endFormatted : undefined,
           },
-          nextFree: {
-            isCurrentlyFree: sim.availabilityState === 'FREE',
-            statusText: sim.availabilityState === 'FREE' ? 'Available now' : isPresent ? 'Scheduled Busy' : 'Off-duty',
-            nextFreeDate: 'Today',
-            nextFreeTime: '18:00 IST',
-            durationFormatted: isPresent ? 'Core Shift Active' : 'Off-duty',
-          },
+          nextFree: simNextFree,
           weeklyTimeline: daysTimeline,
           upcomingCommitments: sim.activeTaskId
             ? [
@@ -657,46 +882,9 @@ export class AvailabilityService {
       });
     }
 
-    // Determine "Next Free" window in IST
-    let nextFreeInfo: NextFreeInfo = {
-      isCurrentlyFree: false,
-      statusText: 'No availability found within the next 7 days.',
-    };
-
-    const currentUTCHour = now.getUTCHours();
-    const todayTimeline = daysTimeline.find((d) => d.isToday) || daysTimeline[0];
-    const activeWindowNow = todayTimeline.windows.find((w) => currentUTCHour >= w.startHour && currentUTCHour < w.endHour);
-
-    if (activeWindowNow && activeWindowNow.state === 'FREE') {
-      nextFreeInfo = {
-        isCurrentlyFree: true,
-        statusText: `Available until ${activeWindowNow.endFormatted}`,
-        nextFreeDate: 'Today',
-        nextFreeTime: activeWindowNow.endFormatted,
-        durationFormatted: `${activeWindowNow.endHour - currentUTCHour}h remaining`,
-      };
-    } else {
-      // Find the next upcoming free window
-      let found = false;
-      for (const day of daysTimeline) {
-        for (const window of day.windows) {
-          if (window.state === 'FREE') {
-            if (!day.isToday || window.startHour > currentUTCHour) {
-              nextFreeInfo = {
-                isCurrentlyFree: false,
-                statusText: `${day.isToday ? 'Today' : day.dayName} at ${window.startFormatted}`,
-                nextFreeDate: day.isToday ? 'Today' : day.dayName,
-                nextFreeTime: window.startFormatted,
-                durationFormatted: `Available for ${window.endHour - window.startHour}h`,
-              };
-              found = true;
-              break;
-            }
-          }
-        }
-        if (found) break;
-      }
-    }
+    // "Next Free" derived from the same weekly timeline rendered above
+    const nextFreeInfo: NextFreeInfo = this.computeNextFree(daysTimeline, now);
+    const activeWindowNow = this.findActiveWindow(daysTimeline, now);
 
     // Format upcoming commitments with IST dates
     const upcomingCommitments = user.assignedTasks.map((t) => ({
@@ -713,8 +901,6 @@ export class AvailabilityService {
       subroom: user.subroom?.code || '—',
     }));
 
-    const untilTimestamp = new Date(now.getTime() + 2 * 3600000);
-
     let currentDurationFormatted: string | undefined;
     if (user.arrivedAt && user.presenceState === 'IN') {
       const diffMs = now.getTime() - user.arrivedAt.getTime();
@@ -723,18 +909,35 @@ export class AvailabilityService {
       currentDurationFormatted = `${hours}h ${mins}m`;
     }
 
+    // One authoritative projection drives both the status box and the avatar
+    // badge, so they can never disagree about whether someone is free.
+    const userProjection = deriveAvailability({
+      presenceState: user.presenceState,
+      storedState: availabilityFromUserStatus(user.status),
+      activeTaskLabel: user.assignedTasks[0]
+        ? user.assignedTasks[0].taskIdDisplay || user.assignedTasks[0].title
+        : null,
+      locationLabel: user.subroom ? `Subroom ${user.subroom.code}` : undefined,
+    });
+
     return {
       person: {
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
-        status: user.status,
+        status: userStatusFromAvailability(userProjection.state),
+        availabilityState: userProjection.state,
         avatarUrl: user.avatarUrl || undefined,
         title: user.title || undefined,
         room: user.room ? `Section ${user.room.letter} (${user.room.name})` : undefined,
         subroom: user.subroom?.code,
-        currentLocation: user.currentLocationName || (user.subroom ? user.subroom.code : (user.room ? `Section ${user.room.letter}` : 'UNKNOWN')),
+        currentLocation: resolveCurrentLocation({
+          presenceState: user.presenceState,
+          currentLocationName: user.currentLocationName,
+          subroomCode: user.subroom?.code,
+          roomLetter: user.room?.letter,
+        }),
         attendanceState: user.presenceState === 'IN' ? 'IN' : user.presenceState === 'OUT' ? 'OUT' : 'UNKNOWN',
         presenceState: user.presenceState || PresenceState.UNKNOWN,
         arrivedAt: user.arrivedAt ? user.arrivedAt.toISOString() : undefined,
@@ -748,15 +951,68 @@ export class AvailabilityService {
         currentAllocatedHours: user.currentAllocatedHours,
       },
       currentStatus: {
-        state: user.status === UserStatus.BUSY || user.assignedTasks[0]?.status === TaskStatus.IN_PROGRESS ? 'BUSY' : 'FREE',
-        reason: user.assignedTasks[0] ? `Active Task: ${user.assignedTasks[0].taskIdDisplay || user.assignedTasks[0].title}` : (user.subroom ? `Assigned to Subroom ${user.subroom.code}` : 'Ready for work'),
+        state: userProjection.state,
+        label: userProjection.label,
+        reason: userProjection.reason,
         room: user.room ? `Section ${user.room.letter}` : undefined,
         subroom: user.subroom?.code,
-        until: formatToISTTime(untilTimestamp),
+        // Derived from the person's own schedule — never a fabricated offset.
+        until: activeWindowNow ? activeWindowNow.endFormatted : undefined,
       },
       nextFree: nextFreeInfo,
       weeklyTimeline: daysTimeline,
       upcomingCommitments,
+    };
+  }
+
+  /**
+   * The schedule window covering right now, from the person's own timeline.
+   * Every "until" / "next change" value is derived from this same data so the
+   * status box, the timeline and the next-free card can never disagree.
+   */
+  private static findActiveWindow(daysTimeline: DayAvailabilityTimeline[], now: Date) {
+    const currentUTCHour = now.getUTCHours();
+    const today = daysTimeline.find((d) => d.isToday) || daysTimeline[0];
+    if (!today) return null;
+    return (
+      today.windows.find((w) => currentUTCHour >= w.startHour && currentUTCHour < w.endHour) || null
+    );
+  }
+
+  /**
+   * Next window in which the person is FREE, derived from the same timeline.
+   */
+  private static computeNextFree(daysTimeline: DayAvailabilityTimeline[], now: Date): NextFreeInfo {
+    const currentUTCHour = now.getUTCHours();
+    const activeWindowNow = this.findActiveWindow(daysTimeline, now);
+
+    if (activeWindowNow && activeWindowNow.state === 'FREE') {
+      return {
+        isCurrentlyFree: true,
+        statusText: `Available until ${activeWindowNow.endFormatted}`,
+        nextFreeDate: 'Today',
+        nextFreeTime: activeWindowNow.endFormatted,
+        durationFormatted: `${Math.max(0, activeWindowNow.endHour - currentUTCHour)}h remaining`,
+      };
+    }
+
+    for (const day of daysTimeline) {
+      for (const window of day.windows) {
+        if (window.state !== 'FREE') continue;
+        if (day.isToday && window.startHour <= currentUTCHour) continue;
+        return {
+          isCurrentlyFree: false,
+          statusText: `${day.isToday ? 'Today' : day.dayName} at ${window.startFormatted}`,
+          nextFreeDate: day.isToday ? 'Today' : day.dayName,
+          nextFreeTime: window.startFormatted,
+          durationFormatted: `Available for ${window.endHour - window.startHour}h`,
+        };
+      }
+    }
+
+    return {
+      isCurrentlyFree: false,
+      statusText: 'No availability found within the next 7 days.',
     };
   }
 

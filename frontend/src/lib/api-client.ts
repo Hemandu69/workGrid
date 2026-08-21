@@ -331,6 +331,34 @@ export const apiClient = {
     );
   },
 
+  /**
+   * Sets the authoritative operational availability for a person. Works for
+   * real accounts and simulated test personnel through the same endpoint —
+   * omit `personId` to change your own.
+   */
+  setAvailabilityStatus: async (
+    state: AvailabilityState,
+    personId?: string,
+    token?: string
+  ): Promise<{
+    personId: string;
+    name: string;
+    availabilityState: AvailabilityState;
+    availabilityLabel: string;
+    presenceState: string;
+    currentLocation: string;
+    isSimulated: boolean;
+  }> => {
+    return request(
+      '/api/v1/availability/status',
+      {
+        method: 'POST',
+        body: JSON.stringify({ state, personId }),
+      },
+      token
+    );
+  },
+
   // Operations Grid Test Personnel Simulation
   toggleSimulatedPresence: async (
     id: string,
@@ -636,10 +664,12 @@ export interface PersonAvailabilityDetailResponse {
     lastSeenAtIST?: string;
     capacityLimitHours: number;
     currentAllocatedHours: number;
+    availabilityState?: AvailabilityState;
     isSimulated?: boolean;
   };
   currentStatus: {
     state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+    label?: string;
     reason: string;
     room?: string;
     subroom?: string;
@@ -683,6 +713,8 @@ export interface PersonAvailabilityDetailResponse {
   }>;
 }
 
+export type AvailabilityState = 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+
 export type SupervisionState =
   | 'PRESENT_IN_EVENT'
   | 'IN_ROOM_DIFFERENT_SUBROOM'
@@ -698,6 +730,8 @@ export interface GridMemberItem {
   avatarUrl?: string;
   presenceState: 'IN' | 'OUT' | 'UNKNOWN';
   presenceLabel: string;
+  availabilityState: AvailabilityState;
+  availabilityLabel: string;
   currentLocation: string;
   arrivedAt?: string;
   arrivedAtIST?: string;
@@ -717,6 +751,8 @@ export interface GridServerItem {
   avatarUrl?: string;
   assignedRoomLetter: string;
   presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+  availabilityState: AvailabilityState;
+  availabilityLabel: string;
   currentLocation: string;
   isCurrentlyInSubroom: boolean;
   supervisoryPosition?: 1 | 3 | 5;
@@ -752,6 +788,8 @@ export interface GridRoomColumn {
     id: string;
     name: string;
     presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+    availabilityState: AvailabilityState;
+    availabilityLabel: string;
     currentLocation: string;
     preferredPosition?: 1 | 3 | 5;
     assignedPosition?: 1 | 3 | 5;
@@ -781,6 +819,13 @@ export interface OperationalGridResponse {
   totalSubrooms: number;
   totalPeoplePresent: number;
   totalServersPresent: number;
+  availabilitySummary: {
+    totalPeople: number;
+    freeCount: number;
+    busyCount: number;
+    partialCount: number;
+    unavailableCount: number;
+  };
   rooms: GridRoomColumn[];
 }
 
