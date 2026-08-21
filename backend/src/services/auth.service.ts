@@ -8,6 +8,7 @@ import {
   ResetPasswordInput,
 } from '../schemas/auth.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
+import { hrEventBus } from '../events/hr-events.js';
 
 export class AuthService {
   /**
@@ -159,6 +160,23 @@ export class AuthService {
         ipAddress: ipAddress || null,
       },
     }).catch(() => null);
+
+    // Emit real-time HR event (organization-isolated)
+    hrEventBus.emitHREvent(org.id, {
+      type: 'EMPLOYEE_REGISTERED',
+      organizationId: org.id,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        title: newUser.title,
+        role: null,
+        accountStatus: newUser.accountStatus,
+        status: 'OFFLINE',
+        createdAt: newUser.createdAt,
+      },
+      createdAt: new Date().toISOString(),
+    });
 
     return {
       id: newUser.id,

@@ -3,6 +3,7 @@ import { AccountStatus, UserRole } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { ProvisionUserInput } from '../schemas/hr.schema.js';
+import { hrEventBus, HREventType } from '../events/hr-events.js';
 
 export class HRService {
   /**
@@ -152,6 +153,24 @@ export class HRService {
       },
     });
 
+    // Emit real-time HR event (organization-isolated)
+    hrEventBus.emitHREvent(organizationId, {
+      type: 'EMPLOYEE_REGISTERED',
+      organizationId,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        title: user.title,
+        role: user.role,
+        accountStatus: user.accountStatus,
+        status: 'OFFLINE',
+        capacityLimitHours: user.capacityLimitHours,
+        createdAt: user.createdAt,
+      },
+      createdAt: new Date().toISOString(),
+    });
+
     return user;
   }
 
@@ -267,6 +286,39 @@ export class HRService {
       return { user: updated, audit };
     });
 
+    // Emit real-time HR event (organization-isolated)
+    const eventType: HREventType =
+      targetUser.accountStatus === AccountStatus.PENDING ? 'EMPLOYEE_APPROVED' : 'ROLE_CHANGED';
+
+    hrEventBus.emitHREvent(organizationId, {
+      type: eventType,
+      organizationId,
+      user: {
+        id: result.user.id,
+        name: result.user.name,
+        email: result.user.email,
+        title: result.user.title,
+        role: result.user.role,
+        accountStatus: result.user.accountStatus,
+        status: targetUser.status || 'OFFLINE',
+        updatedAt: result.user.updatedAt,
+      },
+      audit: {
+        id: result.audit.id,
+        targetUserId: result.audit.targetUserId,
+        targetUserName: result.user.name,
+        targetUserEmail: result.user.email,
+        changedById: result.audit.changedById,
+        changedByName: actor.name,
+        changedByRole: actor.role || 'HR',
+        previousRole: result.audit.previousRole,
+        newRole: result.audit.newRole,
+        reason: result.audit.reason,
+        createdAt: result.audit.createdAt,
+      },
+      createdAt: new Date().toISOString(),
+    });
+
     return result;
   }
 
@@ -356,6 +408,30 @@ export class HRService {
         details: { previousStatus: targetUser.accountStatus, newStatus, reason },
       },
     }).catch(() => null);
+
+    // Emit real-time HR event (organization-isolated)
+    let eventType: HREventType = 'ACCOUNT_STATUS_CHANGED';
+    if (newStatus === AccountStatus.SUSPENDED) eventType = 'EMPLOYEE_SUSPENDED';
+    else if (newStatus === AccountStatus.DEACTIVATED) eventType = 'EMPLOYEE_DEACTIVATED';
+    else if (newStatus === AccountStatus.ACTIVE && targetUser.accountStatus === AccountStatus.PENDING) {
+      eventType = 'EMPLOYEE_APPROVED';
+    }
+
+    hrEventBus.emitHREvent(organizationId, {
+      type: eventType,
+      organizationId,
+      user: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        title: updated.title,
+        role: updated.role,
+        accountStatus: updated.accountStatus,
+        status: targetUser.status || 'OFFLINE',
+        updatedAt: updated.updatedAt,
+      },
+      createdAt: new Date().toISOString(),
+    });
 
     return updated;
   }

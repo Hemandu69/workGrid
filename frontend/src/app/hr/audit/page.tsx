@@ -1,21 +1,62 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
+import { RoleAuditLog } from '../../../types/auth';
 import { MOCK_ROLE_AUDIT_LOGS } from '../../../lib/mock-data';
+import { apiClient } from '../../../lib/api-client';
+import { useHREvents, HREvent } from '../../../lib/useHREvents';
 import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 
 export default function HRAuditPage() {
   const [search, setSearch] = useState('');
-  const logs = MOCK_ROLE_AUDIT_LOGS;
+  const [logs, setLogs] = useState<RoleAuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const data = await apiClient.getRoleAuditLogs();
+      if (data && Array.isArray(data)) {
+        setLogs(data);
+      } else {
+        setLogs(MOCK_ROLE_AUDIT_LOGS);
+      }
+    } catch {
+      setLogs(MOCK_ROLE_AUDIT_LOGS);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  // Realtime Audit Updates
+  const handleRealtimeEvent = useCallback((event: HREvent) => {
+    if (event.audit) {
+      setLogs((prev) => {
+        const exists = prev.some((l) => l.id === event.audit?.id);
+        if (exists) return prev;
+        return [event.audit!, ...prev];
+      });
+    }
+  }, []);
+
+  useHREvents({
+    onEvent: handleRealtimeEvent,
+    onReconnect: fetchLogs,
+    enabled: true,
+  });
 
   const filtered = logs.filter(
     (l) =>
-      l.targetUserName.toLowerCase().includes(search.toLowerCase()) ||
-      l.targetUserEmail.toLowerCase().includes(search.toLowerCase()) ||
-      l.changedByName.toLowerCase().includes(search.toLowerCase()) ||
+      (l.targetUserName || '').toLowerCase().includes(search.toLowerCase()) ||
+      (l.targetUserEmail || '').toLowerCase().includes(search.toLowerCase()) ||
+      (l.changedByName || '').toLowerCase().includes(search.toLowerCase()) ||
       (l.reason && l.reason.toLowerCase().includes(search.toLowerCase()))
   );
 
@@ -78,7 +119,7 @@ export default function HRAuditPage() {
             {filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center py-8 text-on-surface-variant text-xs">
-                  No role transition logs found matching the search criteria.
+                  {isLoading ? 'Loading role governance audit history...' : 'No role transition logs found matching the search criteria.'}
                 </TableCell>
               </TableRow>
             ) : (
@@ -104,11 +145,17 @@ export default function HRAuditPage() {
 
                   <TableCell>
                     <div className="flex items-center gap-1.5">
-                      <Badge role={log.previousRole.replace('_', ' ')} variant="role" />
+                      <Badge
+                        role={log.previousRole ? log.previousRole.replace('_', ' ') : 'UNASSIGNED'}
+                        variant="role"
+                      />
                       <span className="material-symbols-outlined text-[14px] text-outline">
                         arrow_forward
                       </span>
-                      <Badge role={log.newRole.replace('_', ' ')} variant="role" />
+                      <Badge
+                        role={log.newRole ? log.newRole.replace('_', ' ') : 'UNASSIGNED'}
+                        variant="role"
+                      />
                     </div>
                   </TableCell>
 
