@@ -128,6 +128,26 @@ export const apiClient = {
     );
   },
 
+  // Dynamic Room/Subroom Assignment — single authoritative source for both
+  // real users and simulated personnel.
+  getRoomAssignment: async (personId: string, token?: string): Promise<RoomAssignment> => {
+    return request<RoomAssignment>(`/api/v1/rooms/assignment/${personId}`, {}, token);
+  },
+  assignRoom: async (
+    personId: string,
+    data: { sectionLetter: string; subroomCode?: string },
+    token?: string
+  ): Promise<RoomAssignmentResult> => {
+    return request<RoomAssignmentResult>(
+      `/api/v1/rooms/assignment/${personId}`,
+      { method: 'PATCH', body: JSON.stringify(data) },
+      token
+    );
+  },
+  clearRoomAssignment: async (personId: string, token?: string): Promise<RoomAssignmentResult> => {
+    return request<RoomAssignmentResult>(`/api/v1/rooms/assignment/${personId}`, { method: 'DELETE' }, token);
+  },
+
   // Users Directory
   getUsers: async (filters: { role?: string; status?: string; search?: string } = {}): Promise<User[]> => {
     const params = new URLSearchParams(filters as Record<string, string>);
@@ -576,6 +596,21 @@ export interface PeopleAvailabilityResponse {
       dueDate?: string;
     };
   }>;
+}
+
+export interface RoomAssignment {
+  personId: string;
+  name: string;
+  role: string;
+  isSimulated: boolean;
+  section: string | null; // e.g. "B"
+  subroom: string | null; // e.g. "B3" — always null for SERVER role
+}
+
+export interface RoomAssignmentResult {
+  current: RoomAssignment;
+  previousSection: string | null;
+  previousSubroom: string | null;
 }
 
 export interface PersonAvailabilityDetailResponse {

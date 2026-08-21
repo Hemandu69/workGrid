@@ -61,7 +61,7 @@ export default function MemberDashboard() {
 
   // Real-Time Subscriptions — silent background refresh
   useDomainEvent(
-    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED', 'ANNOUNCEMENT_CREATED', 'AVAILABILITY_CHANGED'],
+    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED', 'ANNOUNCEMENT_CREATED', 'AVAILABILITY_CHANGED', 'ROOM_ASSIGNMENT_CHANGED'],
     () => {
       loadMemberDataRef.current();
     }

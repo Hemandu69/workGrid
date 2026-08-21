@@ -269,6 +269,24 @@ class SimulationStore {
 
     return { ...person };
   }
+
+  /**
+   * Mutates a simulated person's section/subroom assignment in place.
+   * sectionLetter '' represents "unassigned" — the person then matches no
+   * room/subroom filter and simply disappears from every grid projection,
+   * the same way a real user with roomId=null does.
+   */
+  reassign(id: string, sectionLetter: string, subroomCode: string): SimulatedPerson {
+    const person = this.personnel.get(id);
+    if (!person) {
+      throw new Error(`Simulated person with ID ${id} not found.`);
+    }
+
+    person.sectionLetter = sectionLetter;
+    person.subroomCode = subroomCode;
+
+    return { ...person };
+  }
 }
 
 export const simulationStore = new SimulationStore();
@@ -284,6 +302,14 @@ export class SimulationService {
 
   static updateSimulatedPersonState(id: string, presenceState: SimulatedPresenceState, asOf?: Date): SimulatedPerson {
     return simulationStore.updatePresence(id, presenceState, asOf);
+  }
+
+  static reassignSimulatedPerson(id: string, sectionLetter: string, subroomCode: string): SimulatedPerson {
+    return simulationStore.reassign(id, sectionLetter, subroomCode);
+  }
+
+  static isUnassigned(person: Pick<SimulatedPerson, 'sectionLetter'>): boolean {
+    return !person.sectionLetter;
   }
 
   static resetSimulation(now?: Date): SimulatedPerson[] {
