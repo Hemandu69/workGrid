@@ -29,6 +29,8 @@ export function OperationsGridCell({
   });
 
   const filteredServers = subroom.serversPresent.filter((s) => {
+    // Grid cells must never render OUT overseers — presence is authoritative, not position
+    if (s.presenceState !== 'IN') return false;
     if (presenceFilter !== 'ALL' && s.presenceState !== presenceFilter) return false;
     if (roleFilter === 'MEMBERS') return false;
     return true;
@@ -148,7 +150,7 @@ export function OperationsGridCell({
           </div>
         )}
 
-        {/* Supervisory Servers Present in this Subroom */}
+        {/* Supervisory Servers Present in this Subroom — ONLY currently IN overseers */}
         {filteredServers.length > 0 && (
           <div className="pt-1.5 border-t border-surface-outline/50 space-y-1">
             <div className="text-[9px] font-bold uppercase tracking-wider text-secondary flex items-center justify-between">
@@ -156,14 +158,16 @@ export function OperationsGridCell({
                 <span className="material-symbols-outlined text-[11px]">shield_person</span>
                 <span>Server Overseer</span>
               </div>
-              {filteredServers[0]?.supervisoryPosition && (
+              {filteredServers[0]?.supervisoryPosition && filteredServers[0]?.presenceState === 'IN' && (
                 <span className="px-1 py-0.2 bg-secondary/15 text-secondary text-[9px] font-mono font-bold rounded">
                   Pos {filteredServers[0].supervisoryPosition}
                 </span>
               )}
             </div>
             {filteredServers.map((srv) => {
+              // Presence must come from the grid projection — never assume IN from position
               const isPresent = srv.presenceState === 'IN';
+              if (!isPresent) return null;
               return (
                 <div
                   key={srv.id}
@@ -182,7 +186,19 @@ export function OperationsGridCell({
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-status-available animate-pulse" />
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isPresent ? 'bg-status-available animate-pulse' : 'bg-status-blocked'
+                      }`}
+                      title={isPresent ? 'IN' : 'OUT'}
+                    />
+                    <span
+                      className={`text-[9px] font-mono font-bold ${
+                        isPresent ? 'text-emerald-700' : 'text-rose-700'
+                      }`}
+                    >
+                      {isPresent ? 'IN' : 'OUT'}
+                    </span>
                     {srv.isSimulated && onToggleSimulated && (
                       <button
                         type="button"
