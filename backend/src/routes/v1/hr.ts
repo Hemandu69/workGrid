@@ -47,12 +47,25 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
       };
 
       try {
+        const roleUpper = query.role ? query.role.toUpperCase() : undefined;
+        const statusUpper = query.accountStatus ? query.accountStatus.toUpperCase() : undefined;
+
+        const roleFilter =
+          roleUpper && roleUpper !== 'ALL'
+            ? roleUpper === 'UNASSIGNED'
+              ? 'UNASSIGNED'
+              : (roleUpper as UserRole)
+            : undefined;
+
+        const statusFilter =
+          statusUpper && statusUpper !== 'ALL'
+            ? (statusUpper as AccountStatus)
+            : undefined;
+
         const users = await HRService.getPeopleDirectory(request.user.organizationId, {
-          role: query.role ? (query.role.toUpperCase() as UserRole) : undefined,
-          accountStatus: query.accountStatus
-            ? (query.accountStatus.toUpperCase() as AccountStatus)
-            : undefined,
-          search: query.search,
+          role: roleFilter,
+          accountStatus: statusFilter,
+          search: query.search?.trim() || undefined,
         });
         return reply.send(users);
       } catch (err: unknown) {
