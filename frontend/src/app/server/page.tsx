@@ -92,6 +92,7 @@ export default function ServerDashboard() {
       'EMPLOYEE_CHECKED_OUT',
       'ATTENDANCE_UPDATED',
       'AVAILABILITY_CHANGED',
+      'ROOM_ASSIGNMENT_CHANGED',
     ],
     () => {
       loadServerDataRef.current();

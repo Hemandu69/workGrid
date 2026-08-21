@@ -1,6 +1,26 @@
 import { prisma } from '../db/client.js';
 import { UserRole } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
+import { SimulationService } from './simulation.service.js';
+
+export class RoomAssignmentError extends Error {
+  statusCode: number;
+  constructor(message: string, statusCode = 400) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
+export interface RoomAssignmentState {
+  personId: string;
+  name: string;
+  role: string;
+  isSimulated: boolean;
+  section: string | null; // e.g. "B"
+  subroom: string | null; // e.g. "B3" — always null for SERVER role
+}
+
+const SECTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export class RoomService {
   static async getAllRooms(organizationId?: string) {
@@ -218,5 +238,223 @@ export class RoomService {
     });
 
     return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Single authoritative room/subroom assignment — works uniformly for real
+  // (PostgreSQL-backed) users and in-memory SimulationService personnel.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Combined real + simulated occupancy of a subroom (MEMBER/TEAM_LEAD only —
+   * servers are section-scoped and never count against subroom capacity).
+   * `excludePersonId` lets a no-op / same-subroom reassignment pass its own
+   * current occupancy without double-counting itself against the cap.
+   */
+  private static async getSubroomOccupancy(
+    sectionLetter: string,
+    subroomCode: string,
+    excludePersonId?: string
+  ): Promise<number> {
+    const realCount = await prisma.user.count({
+      where: {
+        subroom: { code: subroomCode.toUpperCase() },
+        role: { in: [UserRole.MEMBER, UserRole.TEAM_LEAD] },
+        ...(excludePersonId ? { id: { not: excludePersonId } } : {}),
+      },
+    });
+
+    const simCount = SimulationService.getSimulatedPersons().filter(
+      (p) =>
+        p.role !== 'SERVER' &&
+        p.sectionLetter.toUpperCase() === sectionLetter.toUpperCase() &&
+        p.subroomCode.toUpperCase() === subroomCode.toUpperCase() &&
+        p.id !== excludePersonId
+    ).length;
+
+    return realCount + simCount;
+  }
+
+  /**
+   * Resolves a person's current assignment state, transparently handling both
+   * real (PostgreSQL) users and simulated in-memory personnel.
+   */
+  static async getPersonAssignment(personId: string, organizationId: string): Promise<RoomAssignmentState> {
+    const sim = SimulationService.getSimulatedPerson(personId);
+    if (sim) {
+      return {
+        personId,
+        name: sim.name,
+        role: sim.role,
+        isSimulated: true,
+        section: sim.sectionLetter || null,
+        subroom: sim.role === 'SERVER' ? null : sim.subroomCode || null,
+      };
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: personId }, include: { room: true, subroom: true } });
+    if (!user || user.organizationId !== organizationId) {
+      throw new RoomAssignmentError(`Person ${personId} not found`, 404);
+    }
+
+    return {
+      personId,
+      name: user.name,
+      role: user.role || UserRole.MEMBER,
+      isSimulated: false,
+      section: user.room?.letter ?? null,
+      subroom: user.role === UserRole.SERVER ? null : user.subroom?.code ?? null,
+    };
+  }
+
+  /**
+   * Assigns, reassigns, or clears (sectionLetter === null) a person's room.
+   * SERVER roles are section-scoped only — their subroom-level supervisory
+   * position remains fully computed by calculateServerPositions() and is
+   * never stored here. MEMBER/TEAM_LEAD require a target subroom and are
+   * subject to the 2-person subroom capacity rule.
+   */
+  static async setPersonAssignment(
+    personId: string,
+    target: { sectionLetter: string | null; subroomCode?: string | null },
+    actor: { organizationId: string }
+  ): Promise<{ current: RoomAssignmentState; previousSection: string | null; previousSubroom: string | null }> {
+    const previous = await this.getPersonAssignment(personId, actor.organizationId);
+    // Real users only: current physical presence, used to decide whether their
+    // displayed "current location" should follow the new assignment (a person
+    // marked IN is standing at their desk; moving the desk moves them with it).
+    const realUser = !previous.isSimulated ? await prisma.user.findUnique({ where: { id: personId } }) : null;
+    const isPresent = realUser?.presenceState === 'IN';
+
+    // Clearing the assignment
+    if (target.sectionLetter === null) {
+      if (previous.isSimulated) {
+        SimulationService.reassignSimulatedPerson(personId, '', '');
+      } else {
+        await prisma.user.update({
+          where: { id: personId },
+          data: {
+            roomId: null,
+            subroomId: null,
+            ...(isPresent
+              ? { currentLocationRoomId: null, currentLocationSubroomId: null, currentLocationName: null }
+              : {}),
+          },
+        });
+      }
+
+      const current = await this.getPersonAssignment(personId, actor.organizationId);
+      this.publishAssignmentChanged(personId, previous, current, actor.organizationId);
+      return { current, previousSection: previous.section, previousSubroom: previous.subroom };
+    }
+
+    const sectionLetter = target.sectionLetter.toUpperCase();
+    if (!SECTION_LETTERS.includes(sectionLetter)) {
+      throw new RoomAssignmentError(`Invalid section "${target.sectionLetter}". Must be one of A-H.`);
+    }
+
+    const room = await prisma.room.findFirst({ where: { letter: sectionLetter, organizationId: actor.organizationId } });
+    if (!room) {
+      throw new RoomAssignmentError(`Section ${sectionLetter} does not exist for this organization.`, 404);
+    }
+
+    const isServerRole = previous.role === UserRole.SERVER || previous.role === 'SERVER';
+
+    if (isServerRole) {
+      // Section-only assignment — subroom/position stays fully dynamic.
+      if (previous.isSimulated) {
+        // Preserve the simulated server's preferred-position subroom shape (e.g. "C1") for
+        // display consistency with fixture metadata; actual grid placement is unaffected.
+        const sim = SimulationService.getSimulatedPerson(personId)!;
+        const posSuffix = sim.subroomCode.replace(/^[A-Za-z]+/, '') || '1';
+        SimulationService.reassignSimulatedPerson(personId, sectionLetter, `${sectionLetter}${posSuffix}`);
+      } else {
+        const existingServerCount = await prisma.user.count({
+          where: { roomId: room.id, role: UserRole.SERVER, id: { not: personId } },
+        });
+        if (existingServerCount >= 3) {
+          throw new RoomAssignmentError(`Section ${sectionLetter} already has the maximum of 3 assigned Servers.`);
+        }
+        await prisma.user.update({
+          where: { id: personId },
+          data: {
+            roomId: room.id,
+            subroomId: null,
+            // Subroom-level location stays dynamic (supervisory position is computed,
+            // never stored) but the room-level pointer must track the new section so
+            // event-supervision boundary checks compare against the correct room.
+            ...(isPresent ? { currentLocationRoomId: room.id } : {}),
+          },
+        });
+      }
+    } else {
+      // MEMBER / TEAM_LEAD — requires a target subroom, subject to capacity.
+      const subroomCode = target.subroomCode?.toUpperCase();
+      if (!subroomCode) {
+        throw new RoomAssignmentError('subroomCode is required when assigning a member or team lead.');
+      }
+
+      const subroom = await prisma.subroom.findFirst({
+        where: { code: subroomCode, roomId: room.id, organizationId: actor.organizationId },
+      });
+      if (!subroom) {
+        throw new RoomAssignmentError(`Subroom ${subroomCode} does not exist in Section ${sectionLetter}.`, 404);
+      }
+
+      const occupancy = await this.getSubroomOccupancy(sectionLetter, subroomCode, personId);
+      if (occupancy >= subroom.memberCapacity) {
+        throw new RoomAssignmentError(
+          `Subroom ${subroomCode} is at capacity (${occupancy}/${subroom.memberCapacity}). Choose another subroom or clear a seat first.`
+        );
+      }
+
+      if (previous.isSimulated) {
+        SimulationService.reassignSimulatedPerson(personId, sectionLetter, subroomCode);
+      } else {
+        await prisma.user.update({
+          where: { id: personId },
+          data: {
+            roomId: room.id,
+            subroomId: subroom.id,
+            // A member/team-lead currently marked IN is physically present at their
+            // desk — moving that desk moves their displayed current location with it,
+            // so People Availability and the drawer never show a stale old subroom.
+            ...(isPresent
+              ? { currentLocationRoomId: room.id, currentLocationSubroomId: subroom.id, currentLocationName: subroomCode }
+              : {}),
+          },
+        });
+      }
+    }
+
+    const current = await this.getPersonAssignment(personId, actor.organizationId);
+    this.publishAssignmentChanged(personId, previous, current, actor.organizationId);
+    return { current, previousSection: previous.section, previousSubroom: previous.subroom };
+  }
+
+  private static publishAssignmentChanged(
+    personId: string,
+    previous: RoomAssignmentState,
+    current: RoomAssignmentState,
+    organizationId: string
+  ) {
+    publishDomainEvent({
+      type: 'ROOM_ASSIGNMENT_CHANGED',
+      organizationId,
+      entityId: personId,
+      targetUserId: current.isSimulated ? null : personId,
+      payload: {
+        userId: current.isSimulated ? null : personId,
+        simulatedPersonId: current.isSimulated ? personId : null,
+        personId,
+        isSimulated: current.isSimulated,
+        role: current.role,
+        previousSection: previous.section,
+        previousSubroom: previous.subroom,
+        newSection: current.section,
+        newSubroom: current.subroom,
+        timestamp: new Date().toISOString(),
+      },
+    });
   }
 }
