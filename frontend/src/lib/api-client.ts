@@ -4,6 +4,7 @@ import { Task, TaskCampaign, TaskComment, TaskPriority } from '../types/task';
 import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
 import { WeeklyAvailabilitySchedule } from '../types/availability';
+import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -481,6 +482,50 @@ export const apiClient = {
   getRoleAuditLogs: async (targetUserId?: string, token?: string) => {
     const query = targetUserId ? `?targetUserId=${targetUserId}` : '';
     return request<Array<import('../types/auth').RoleAuditLog>>(`/api/v1/hr/audit-logs${query}`, {}, token);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Organization Events & Attendance Polling
+  // ---------------------------------------------------------------------------
+  getEvents: async (status?: OrgEvent['status'], token?: string): Promise<OrgEvent[]> => {
+    const query = status ? `?status=${status}` : '';
+    return request<OrgEvent[]>(`/api/v1/events${query}`, {}, token);
+  },
+  getEvent: async (eventId: string, token?: string): Promise<OrgEvent> => {
+    return request<OrgEvent>(`/api/v1/events/${eventId}`, {}, token);
+  },
+  createEvent: async (
+    data: { title: string; description: string; date: string; time: string },
+    token?: string
+  ): Promise<OrgEvent> => {
+    return request<OrgEvent>('/api/v1/events', { method: 'POST', body: JSON.stringify(data) }, token);
+  },
+  updateEvent: async (
+    eventId: string,
+    data: Partial<{ title: string; description: string; date: string; time: string }>,
+    token?: string
+  ): Promise<OrgEvent> => {
+    return request<OrgEvent>(`/api/v1/events/${eventId}`, { method: 'PATCH', body: JSON.stringify(data) }, token);
+  },
+  cancelEvent: async (eventId: string, token?: string): Promise<OrgEvent> => {
+    return request<OrgEvent>(`/api/v1/events/${eventId}/cancel`, { method: 'POST' }, token);
+  },
+  getEventAnalytics: async (eventId: string, token?: string): Promise<OrgEventAnalytics> => {
+    return request<OrgEventAnalytics>(`/api/v1/events/${eventId}/analytics`, {}, token);
+  },
+  getEventResponses: async (eventId: string, token?: string): Promise<OrgEventResponseBreakdown> => {
+    return request<OrgEventResponseBreakdown>(`/api/v1/events/${eventId}/responses`, {}, token);
+  },
+  updateEventResponse: async (
+    eventId: string,
+    response: EventResponseChoice,
+    token?: string
+  ): Promise<{ eventId: string; userId: string; response: EventResponseChoice; respondedAt: string }> => {
+    return request(
+      `/api/v1/events/${eventId}/response`,
+      { method: 'PUT', body: JSON.stringify({ response }) },
+      token
+    );
   },
 };
 

@@ -1,17 +1,28 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { AppNotification } from '../../types/notification';
+import { OrgEvent } from '../../types/org-event';
 import { useDomainEvent } from '../../lib/realtime-context';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { apiClient } from '../../lib/api-client';
+import { EventCard } from '../../components/events/EventCard';
 import Link from 'next/link';
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [events, setEvents] = useState<OrgEvent[]>([]);
   const [tab, setTab] = useState<'ALL' | 'UNREAD'>('ALL');
+
+  const fetchEvents = useCallback(() => {
+    apiClient.getEvents().then((data) => {
+      if (Array.isArray(data)) {
+        setEvents(data.filter((e) => e.status === 'UPCOMING' || e.status === 'LIVE'));
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     apiClient.getAnnouncements().then((anns) => {
@@ -28,7 +39,9 @@ export default function NotificationsPage() {
         setNotifications(notifs);
       }
     }).catch(() => {});
-  }, []);
+
+    fetchEvents();
+  }, [fetchEvents]);
 
   // Real-Time Notification & Announcement Domain Events
   useDomainEvent<{ title?: string; content?: string }>(
@@ -56,6 +69,27 @@ export default function NotificationsPage() {
     }
   );
 
+  // Organization Events — distinct notification lane from announcements, and a
+  // dedicated live "Upcoming Events" section below (event availability polling).
+  useDomainEvent<{ event?: OrgEvent }>(['ORG_EVENT_CREATED'], (event) => {
+    const eventTitle = event.payload?.event?.title || 'Organization Event';
+    const newNotif: AppNotification = {
+      id: `notif-${event.id}`,
+      type: 'EVENT',
+      title: `Event: ${eventTitle}`,
+      message: "You're invited to this organization event. Respond below.",
+      read: false,
+      createdAt: event.timestamp || new Date().toISOString(),
+      priority: 'HIGH',
+    };
+    setNotifications((prev) => (prev.some((n) => n.id === newNotif.id) ? prev : [newNotif, ...prev]));
+    fetchEvents();
+  });
+
+  useDomainEvent(['ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_RESPONSE_CHANGED'], () => {
+    fetchEvents();
+  });
+
   const filtered = notifications.filter((n) => tab === 'ALL' || !n.read);
 
   const markAllRead = () => {
@@ -70,6 +104,8 @@ export default function NotificationsPage() {
         return 'comment';
       case 'ANNOUNCEMENT':
         return 'campaign';
+      case 'EVENT':
+        return 'event_upcoming';
       case 'CAPACITY_WARNING':
         return 'warning';
       default:
@@ -127,6 +163,27 @@ export default function NotificationsPage() {
             </span>
           </button>
         </div>
+
+        {/* Upcoming Organization Events — separate section from the announcement/notification feed */}
+        {events.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-xs font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-primary">event_upcoming</span>
+              Upcoming Events
+            </h2>
+            <div className="space-y-3">
+              {events.map((e) => (
+                <EventCard
+                  key={e.id}
+                  event={e}
+                  onResponseChange={(updated) =>
+                    setEvents((prev) => prev.map((ev) => (ev.id === updated.id ? updated : ev)))
+                  }
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Notification Feed */}
         <div className="space-y-3">
