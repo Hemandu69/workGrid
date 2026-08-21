@@ -425,4 +425,28 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
       expect(reuseRes.status).toBe(400);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 6. CORS & Cookie Header Governance
+  // ---------------------------------------------------------------------------
+  describe('CORS & Cookie Governance', () => {
+    it('OPTIONS /api/v1/auth/login should respond with valid CORS headers and allow credentials', async () => {
+      const res = await supertest(app.server)
+        .options('/api/v1/auth/login')
+        .set('Origin', 'http://localhost:3000')
+        .set('Access-Control-Request-Method', 'POST');
+
+      expect(res.status).toBe(204);
+      expect(res.headers['access-control-allow-credentials']).toBe('true');
+      expect(res.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+    });
+
+    it('GET /api/v1/auth/me should reject request without auth token with safe 401', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/auth/me');
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Authentication token required.');
+    });
+  });
 });
