@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
 import { useNotifications } from '../../lib/notifications-context';
+import { useDomainEvent } from '../../lib/realtime-context';
+import { apiClient } from '../../lib/api-client';
 import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
 
@@ -131,7 +133,6 @@ const NAV_ITEMS: NavItem[] = [
     href: '/member/tasks',
     icon: 'assignment',
     roles: ['MEMBER', 'SERVER', 'TEAM_LEAD'],
-    badge: '3',
   },
   {
     label: 'Weekly Availability',
@@ -157,6 +158,38 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
   const pathname = usePathname();
   const { user, role } = useAuth();
   const { unreadCount } = useNotifications();
+
+  // Live count of the viewer's own open tasks — the badge must reflect real
+  // assigned work, never a fixed number.
+  const [openTaskCount, setOpenTaskCount] = useState(0);
+
+  const loadOpenTaskCount = useCallback(() => {
+    if (!user?.id) return;
+    apiClient
+      .getTasks({ assigneeId: user.id })
+      .then((tasks) => {
+        setOpenTaskCount(
+          tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length
+        );
+      })
+      .catch(() => setOpenTaskCount(0));
+  }, [user?.id]);
+
+  const loadOpenTaskCountRef = useRef(loadOpenTaskCount);
+  useEffect(() => {
+    loadOpenTaskCountRef.current = loadOpenTaskCount;
+  });
+
+  useEffect(() => {
+    loadOpenTaskCount();
+  }, [loadOpenTaskCount]);
+
+  useDomainEvent(
+    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED'],
+    () => {
+      loadOpenTaskCountRef.current();
+    }
+  );
 
   const filteredNavItems = role ? NAV_ITEMS.filter((item) => item.roles.includes(role)) : [];
 
@@ -239,7 +272,16 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
 
           {filteredNavItems.map((item) => {
             const isActive = pathname === item.href;
-            const badgeValue = item.href === '/notifications' ? (unreadCount > 0 ? String(unreadCount) : undefined) : item.badge;
+            const badgeValue =
+              item.href === '/notifications'
+                ? unreadCount > 0
+                  ? String(unreadCount)
+                  : undefined
+                : item.href === '/member/tasks'
+                ? openTaskCount > 0
+                  ? String(openTaskCount)
+                  : undefined
+                : item.badge;
             return (
               <Link
                 key={item.href}

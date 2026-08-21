@@ -1,6 +1,8 @@
 import { FastifyPluginAsync } from 'fastify';
 import { AvailabilityService } from '../../services/availability.service.js';
-import { updateWeeklyScheduleSchema } from '../../schemas/availability.schema.js';
+import { updateWeeklyScheduleSchema, setAvailabilityStatusSchema } from '../../schemas/availability.schema.js';
+import { SimulationService } from '../../services/simulation.service.js';
+import { AvailabilityState } from '../../utils/availability-projection.js';
 import { requireRole } from '../../plugins/auth.js';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../../db/client.js';
@@ -165,6 +167,98 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.status(404).send({
           statusCode: 404,
           error: 'Not Found',
+          message,
+        });
+      }
+    }
+  );
+
+  // POST /api/v1/availability/status
+  // Sets the authoritative operational availability for a real account or a
+  // simulated test person. Anyone may change their own; only SUPER_ADMIN/ADMIN
+  // may change someone else's, and SERVER only within their own room.
+  fastify.post(
+    '/availability/status',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const parseResult = setAvailabilityStatusSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation failed',
+          details: parseResult.error.format(),
+        });
+      }
+
+      const { state } = parseResult.data;
+      const targetPersonId = parseResult.data.personId || request.user.id;
+      const isSelf = targetPersonId === request.user.id;
+      const actorRole = request.user.role;
+      const isAdmin = actorRole === UserRole.SUPER_ADMIN || actorRole === UserRole.ADMIN;
+
+      // Backend authorization — never rely on the UI hiding a control.
+      if (!isSelf && !isAdmin) {
+        if (actorRole !== UserRole.SERVER) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'You are only authorized to change your own availability.',
+          });
+        }
+
+        // A SERVER oversees exactly one room and may only act within it.
+        const serverUser =
+          typeof prisma.user?.findUnique === 'function'
+            ? await prisma.user.findUnique({
+                where: { id: request.user.id },
+                include: { room: true },
+              }).catch(() => null)
+            : null;
+
+        const serverRoomId = request.user.roomId || serverUser?.roomId;
+        const serverRoomLetter = serverUser?.room?.letter?.toUpperCase();
+
+        if (!serverRoomId && !serverRoomLetter) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'You are assigned as SERVER but currently have no room assignment.',
+          });
+        }
+
+        const sim = SimulationService.getSimulatedPerson(targetPersonId);
+        const inScope = sim
+          ? sim.sectionLetter.toUpperCase() === serverRoomLetter
+          : await prisma.user
+              .findUnique({ where: { id: targetPersonId } })
+              .then((u) => Boolean(u && u.roomId && u.roomId === serverRoomId))
+              .catch(() => false);
+
+        if (!inScope) {
+          return reply.status(403).send({
+            statusCode: 403,
+            error: 'Forbidden',
+            message: 'Servers can only change availability for people in their own room.',
+          });
+        }
+      }
+
+      try {
+        const result = await AvailabilityService.setAvailabilityState(
+          targetPersonId,
+          state as AvailabilityState,
+          { id: request.user.id, organizationId: request.user.organizationId }
+        );
+        return reply.send(result);
+      } catch (err: unknown) {
+        const statusCode = (err as { statusCode?: number })?.statusCode || 400;
+        const message = err instanceof Error ? err.message : 'Failed to update availability status';
+        return reply.status(statusCode).send({
+          statusCode,
+          error: statusCode === 404 ? 'Not Found' : statusCode === 409 ? 'Conflict' : 'Bad Request',
           message,
         });
       }
