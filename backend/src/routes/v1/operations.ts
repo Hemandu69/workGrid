@@ -187,8 +187,12 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/operations/simulation/toggle
   // Toggles or sets state for a simulated test person without database writes
+  // Requires authentication so the real organizationId is available for Socket.IO routing
   fastify.post(
     '/simulation/toggle',
+    {
+      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER])],
+    },
     async (request, reply) => {
       const { id, presenceState } = request.body as { id: string; presenceState?: 'IN' | 'OUT' };
 
@@ -213,30 +217,66 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
         const targetState = presenceState || (currentPerson.presenceState === 'IN' ? 'OUT' : 'IN');
         const updated = SimulationService.updateSimulatedPersonState(id, targetState);
 
-        // Emit Socket.IO realtime events across the cluster
+        // Use the authenticated user's real organizationId so events route to the
+        // correct Socket.IO room (organization:<orgId>) where all clients are subscribed.
+        const organizationId = request.user.organizationId;
+
+        // Common payload identifying this as a simulated person (no real userId)
+        const simulationPayload = {
+          userId: null,
+          simulatedPersonId: updated.id,
+          personId: updated.id,
+          name: updated.name,
+          role: updated.role,
+          section: updated.sectionLetter,
+          sectionLetter: updated.sectionLetter,
+          subroomCode: updated.subroomCode,
+          presenceState: updated.presenceState,
+          attendanceState: updated.attendanceState,
+          availabilityState: updated.availabilityState,
+          location: updated.presenceState === 'IN' ? updated.subroomCode : 'Outside',
+          isSimulated: true,
+          timestamp: new Date().toISOString(),
+        };
+
+        // Emit the same full event set as real authenticated check-in/check-out,
+        // using the real org ID so they arrive in the clients' Socket.IO room.
+        publishDomainEvent({
+          type: 'PRESENCE_CHANGED',
+          organizationId,
+          entityId: updated.id,
+          payload: simulationPayload,
+        });
+
+        publishDomainEvent({
+          type: 'ATTENDANCE_UPDATED',
+          organizationId,
+          entityId: updated.id,
+          payload: simulationPayload,
+        });
+
         publishDomainEvent({
           type: 'LOCATION_CHANGED',
-          organizationId: 'workgrid-simulation',
+          organizationId,
           entityId: updated.id,
-          payload: {
-            userId: updated.id,
-            name: updated.name,
-            presenceState: updated.presenceState,
-            section: updated.sectionLetter,
-            subroom: updated.subroomCode,
-            isSimulated: true,
-          },
+          payload: simulationPayload,
         });
 
         publishDomainEvent({
           type: 'ROOM_STATUS_CHANGED',
-          organizationId: 'workgrid-simulation',
+          organizationId,
           entityId: updated.sectionLetter,
           payload: {
+            ...simulationPayload,
             roomLetter: updated.sectionLetter,
-            subroomCode: updated.subroomCode,
-            isSimulated: true,
           },
+        });
+
+        publishDomainEvent({
+          type: 'AVAILABILITY_CHANGED',
+          organizationId,
+          entityId: updated.id,
+          payload: simulationPayload,
         });
 
         return reply.send({
@@ -256,19 +296,38 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/operations/simulation/reset
   // Restores initial test fixtures for simulated personnel
+  // Requires authentication so the real organizationId is available for Socket.IO routing
   fastify.post(
     '/simulation/reset',
-    async (_request, reply) => {
+    {
+      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])],
+    },
+    async (request, reply) => {
       try {
         const resetPersonnel = SimulationService.resetSimulation();
 
-        // Emit Socket.IO realtime event
+        const organizationId = request.user.organizationId;
+
+        // Broadcast a grid-wide reset event to all connected clients using real org ID
+        publishDomainEvent({
+          type: 'GRID_UPDATED',
+          organizationId,
+          entityId: 'simulation-reset',
+          payload: {
+            resetSimulation: true,
+            isSimulated: true,
+            timestamp: new Date().toISOString(),
+          },
+        });
+
+        // Also emit ROOM_STATUS_CHANGED so any section-scoped listeners react
         publishDomainEvent({
           type: 'ROOM_STATUS_CHANGED',
-          organizationId: 'workgrid-simulation',
+          organizationId,
           entityId: 'ALL',
           payload: {
             resetSimulation: true,
+            isSimulated: true,
           },
         });
 
