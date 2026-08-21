@@ -422,6 +422,73 @@ export class AvailabilityService {
       const sim = SimulationService.getSimulatedPerson(userId);
       if (sim) {
         const isPresent = sim.presenceState === 'IN';
+        const now = new Date();
+        const daysTimeline: DayAvailabilityTimeline[] = [];
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(now.getTime() + i * 86400000);
+          const dayName = `${dayNames[d.getUTCDay()]} ${d.getUTCDate()}`;
+          const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
+          const isToday = i === 0;
+
+          if (isWeekend) {
+            daysTimeline.push({
+              date: d.toISOString().split('T')[0],
+              dayName,
+              dayOfWeek: dayNames[d.getUTCDay()].toUpperCase() as DayOfWeek,
+              isToday,
+              status: 'UNAVAILABLE',
+              windows: [
+                {
+                  startHour: 0,
+                  endHour: 24,
+                  startFormatted: '12:00 AM',
+                  endFormatted: '11:59 PM IST',
+                  state: 'UNAVAILABLE',
+                  label: 'Weekend / Off-shift',
+                },
+              ],
+            });
+          } else {
+            const hasTask = Boolean(sim.activeTaskId) && (i === 0 || i === 1);
+            daysTimeline.push({
+              date: d.toISOString().split('T')[0],
+              dayName,
+              dayOfWeek: dayNames[d.getUTCDay()].toUpperCase() as DayOfWeek,
+              isToday,
+              status: hasTask ? 'BUSY' : 'FREE',
+              windows: [
+                {
+                  startHour: 9,
+                  endHour: 13,
+                  startFormatted: '09:00 AM',
+                  endFormatted: '01:00 PM IST',
+                  state: hasTask ? 'BUSY' : 'FREE',
+                  label: hasTask ? 'Active Task Allocation' : 'Core Shift Free',
+                  reason: hasTask ? sim.activeTaskTitle : undefined,
+                },
+                {
+                  startHour: 13,
+                  endHour: 14,
+                  startFormatted: '01:00 PM',
+                  endFormatted: '02:00 PM IST',
+                  state: 'UNAVAILABLE',
+                  label: 'Lunch Break',
+                },
+                {
+                  startHour: 14,
+                  endHour: 18,
+                  startFormatted: '02:00 PM',
+                  endFormatted: '06:00 PM IST',
+                  state: 'FREE',
+                  label: 'Afternoon Operations',
+                },
+              ],
+            });
+          }
+        }
+
         return {
           person: {
             id: sim.id,
@@ -440,8 +507,8 @@ export class AvailabilityService {
             leftAtIST: sim.leftAtIST,
             currentDurationFormatted: sim.durationInWorkGrid,
             lastSeenAtIST: sim.lastSeenIST,
-            capacityLimitHours: 40,
-            currentAllocatedHours: 20,
+            capacityLimitHours: sim.capacityLimitHours || 40,
+            currentAllocatedHours: sim.currentAllocatedHours || 20,
             isSimulated: true,
           },
           currentStatus: {
@@ -455,10 +522,10 @@ export class AvailabilityService {
             isCurrentlyFree: sim.availabilityState === 'FREE',
             statusText: sim.availabilityState === 'FREE' ? 'Available now' : 'Scheduled Busy',
             nextFreeDate: 'Today',
-            nextFreeTime: '17:00 IST',
-            durationFormatted: 'Simulated schedule',
+            nextFreeTime: '18:00 IST',
+            durationFormatted: 'Core Shift Active',
           },
-          weeklyTimeline: [],
+          weeklyTimeline: daysTimeline,
           upcomingCommitments: sim.activeTaskId
             ? [
                 {
