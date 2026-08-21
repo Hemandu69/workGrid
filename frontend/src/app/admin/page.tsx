@@ -86,7 +86,7 @@ export default function AdminDashboard() {
               Operational Administration & Dispatch
             </h1>
             <p className="text-xs text-on-surface-variant mt-1">
-              Global task allocation, room saturation monitoring, and team oversight across Sectors A through H.
+              Global task allocation, room saturation monitoring, and team oversight across Sections A through H.
             </p>
           </div>
 
@@ -212,11 +212,11 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Sector Saturation & Quick Controls (4 cols) */}
+          {/* Section Saturation & Quick Controls (4 cols) */}
           <div className="col-span-12 xl:col-span-4 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Sector Saturation Heatmap</CardTitle>
+                <CardTitle>Section Saturation Heatmap</CardTitle>
                 <Link href="/admin/rooms" className="text-xs text-secondary hover:text-primary font-medium">
                   Room Details →
                 </Link>
@@ -224,12 +224,12 @@ export default function AdminDashboard() {
 
               <div className="space-y-3 text-xs">
                 {rooms.length === 0 ? (
-                  <p className="text-xs text-on-surface-variant py-2">Loading sector data...</p>
+                  <p className="text-xs text-on-surface-variant py-2">Loading section data...</p>
                 ) : (
                   rooms.map((room) => (
                     <div key={room.letter} className="space-y-1">
                       <div className="flex justify-between items-center tabular-nums">
-                        <span className="font-semibold text-primary">Sector {room.letter}</span>
+                        <span className="font-semibold text-primary">Section {room.letter}</span>
                         <span className="font-mono text-on-surface-variant">
                           {room.totalMembers} / {room.totalCapacity} ({room.occupancyPercentage}%)
                         </span>
@@ -258,7 +258,7 @@ export default function AdminDashboard() {
                 Administrative Authorities
               </span>
               <p className="text-on-surface-variant leading-relaxed">
-                Admins possess global scope across all Sectors A–H. Room membership changes and capacity overrides are recorded as append-only audit events.
+                Admins possess global scope across all Sections A–H. Room membership changes and capacity overrides are recorded as append-only audit events.
               </p>
             </div>
           </div>

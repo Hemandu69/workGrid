@@ -45,7 +45,7 @@ export default function AdminRoomsPage() {
         {/* Header */}
         <div className="border-b border-surface-outline pb-4">
           <h1 className="text-xl font-bold text-primary tracking-tight">
-            Rooms & Subrooms Topology (Sectors A–H)
+            Rooms & Subrooms Topology (Sections A–H)
           </h1>
           <p className="text-xs text-on-surface-variant mt-1">
             Monitor real-time capacity and occupancy across all 64 subrooms. Default capacity is 2 members + 1 lead server per subroom.

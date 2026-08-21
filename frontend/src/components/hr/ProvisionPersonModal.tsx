@@ -65,7 +65,7 @@ export function ProvisionPersonModal({
   const roleOptions: Array<{ role: UserRole; label: string; allowed: boolean }> = [
     { role: 'MEMBER', label: 'Member (Default Contributor)', allowed: true },
     { role: 'TEAM_LEAD', label: 'Team Lead', allowed: true },
-    { role: 'SERVER', label: 'Server (Sector Supervisor)', allowed: true },
+    { role: 'SERVER', label: 'Server (Section Supervisor)', allowed: true },
     {
       role: 'HR',
       label: 'HR (People Management)',

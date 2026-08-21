@@ -63,6 +63,13 @@ export class DashboardService {
       activeCampaigns: campaignsCount,
       announcementsCount,
       overdueRiskPercentage,
+      sectionBreakdown: roomsData.map((r) => ({
+        letter: r.letter,
+        name: r.name,
+        totalMembers: r.totalMembers,
+        totalCapacity: r.totalCapacity,
+        occupancyPercentage: r.occupancyPercentage,
+      })),
       sectorBreakdown: roomsData.map((r) => ({
         letter: r.letter,
         name: r.name,

@@ -72,12 +72,14 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
 
         // If client specified a room query, ensure it matches the server's assigned room
         if (query.room && query.room !== 'ALL') {
-          const requestedLetter = query.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').trim();
-          if (requestedLetter !== assignedRoomLetter) {
-            return reply.status(403).send({
+          const requestedLetter = query.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').replace('SECTION', '').trim();
+          const assignedRoomLetterMatch = assignedRoomLetter ? assignedRoomLetter.toUpperCase().replace('ROOM', '').replace('SECTOR', '').replace('SECTION', '').trim() : '';
+
+          if (assignedRoomLetterMatch && requestedLetter !== assignedRoomLetterMatch) {
+            return reply.code(403).send({
               statusCode: 403,
               error: 'Forbidden',
-              message: `As a Server for Sector ${assignedRoomLetter}, you cannot access availability for Sector ${requestedLetter}.`,
+              message: `As a Server for Section ${assignedRoomLetterMatch}, you cannot access availability for Section ${requestedLetter}.`,
             });
           }
         }

@@ -124,7 +124,7 @@ export default function SuperAdminDashboard() {
           <StatMetricCard
             label="Global Room Saturation"
             value={`${globalSaturation}%`}
-            subtext="Sectors A through H"
+            subtext="Sections A through H"
             trend="Balanced Load"
             icon="grid_view"
             indicatorColor="available"

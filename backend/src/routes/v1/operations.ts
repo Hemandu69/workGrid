@@ -73,12 +73,14 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
         }
 
         if (query.room && query.room !== 'ALL') {
-          const requestedLetter = query.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').trim();
-          if (requestedLetter !== assignedRoomLetter) {
+          const requestedLetter = query.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').replace('SECTION', '').trim();
+          const assignedRoomLetterMatch = assignedRoomLetter ? assignedRoomLetter.toUpperCase().replace('ROOM', '').replace('SECTOR', '').replace('SECTION', '').trim() : '';
+
+          if (assignedRoomLetterMatch && requestedLetter !== assignedRoomLetterMatch) {
             return reply.status(403).send({
               statusCode: 403,
               error: 'Forbidden',
-              message: `As a Server for Sector ${assignedRoomLetter}, you cannot access operations for Sector ${requestedLetter}.`,
+              message: `As a Server for Section ${assignedRoomLetterMatch}, you cannot access operations for Section ${requestedLetter}.`,
             });
           }
         }

@@ -22,15 +22,15 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const scopeOptions = [
-    { value: 'GLOBAL', label: 'Global (All 2,000 Members)' },
+    { value: 'GLOBAL', label: 'Global (All Members)' },
     { value: 'ADMINS_ONLY', label: 'Admins & Leadership Only' },
     { value: 'SERVERS_AND_MEMBERS', label: 'Servers & Members' },
-    { value: 'ROOM_SPECIFIC', label: 'Specific Sector / Room' },
+    { value: 'ROOM_SPECIFIC', label: 'Specific Section / Room' },
   ];
 
   const roomOptions = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((l) => ({
     value: `Room ${l}`,
-    label: `Sector ${l}`,
+    label: `Section ${l}`,
   }));
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -50,7 +50,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
       isOpen={isOpen}
       onClose={onClose}
       title="Create Organization Announcement"
-      description="Broadcast official announcements and operational notices across organizational sectors."
+      description="Broadcast official announcements and operational notices across organizational sections."
       maxWidth="lg"
       footer={
         <>
@@ -102,7 +102,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
 
           {scope === 'ROOM_SPECIFIC' && (
             <Select
-              label="Target Sector"
+              label="Target Section"
               options={roomOptions}
               value={targetRoom}
               onChange={(e) => setTargetRoom(e.target.value)}

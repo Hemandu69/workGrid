@@ -112,7 +112,7 @@ export class RoomService {
     const all = await this.getAllRooms(organizationId);
     const room = all.find((r) => r.letter.toUpperCase() === letter.toUpperCase());
     if (!room) {
-      throw new Error(`Room Sector ${letter} not found`);
+      throw new Error(`Room Section ${letter} not found`);
     }
     return room;
   }
@@ -196,7 +196,7 @@ export class RoomService {
     });
 
     if (existingServerCount >= 3) {
-      throw new Error(`Room Sector ${room.letter} already has the maximum of 3 assigned Servers.`);
+      throw new Error(`Room Section ${room.letter} already has the maximum of 3 assigned Servers.`);
     }
 
     // Update user roomId

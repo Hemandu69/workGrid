@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
@@ -89,7 +89,7 @@ export default function ServerDashboard() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: `Sector ${serverRoomLetter}`, href: '#' },
+        { label: `Section ${serverRoomLetter}`, href: '#' },
         { label: 'Server & Room Command' },
       ]}
     >
@@ -102,7 +102,7 @@ export default function ServerDashboard() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-xl font-bold text-primary tracking-tight">
-                Sector {serverRoomLetter} Operational Command
+                Section {serverRoomLetter} Operational Command
               </h1>
               <Badge role="Server" variant="role" />
             </div>
@@ -133,7 +133,7 @@ export default function ServerDashboard() {
         {/* Operational Scope Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatMetricCard
-            label={`Sector ${serverRoomLetter} Members`}
+            label={`Section ${serverRoomLetter} Members`}
             value={`${totalMembers} / ${totalCap}`}
             subtext={`Across 8 Subrooms (${serverRoomLetter}1-${serverRoomLetter}8)`}
             trend={totalCap > 0 ? `${Math.round((totalMembers / totalCap) * 100)}% Capacity` : 'Active'}
@@ -143,7 +143,7 @@ export default function ServerDashboard() {
           <StatMetricCard
             label="Active Assignments"
             value={tasks.length}
-            subtext="Tracked tasks in sector"
+            subtext="Tracked tasks in section"
             trend="Live Queue"
             icon="assignment"
             indicatorColor="busy"
@@ -173,13 +173,13 @@ export default function ServerDashboard() {
           <div className="col-span-12 lg:col-span-5 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Sector {serverRoomLetter} Team Members</CardTitle>
+                <CardTitle>Section {serverRoomLetter} Team Members</CardTitle>
                 <Badge variant="outline">{roomMembers.length} Active</Badge>
               </CardHeader>
 
               <div className="space-y-3">
                 {roomMembers.length === 0 ? (
-                  <p className="text-xs text-on-surface-variant py-2">No members registered in this sector.</p>
+                  <p className="text-xs text-on-surface-variant py-2">No members registered in this section.</p>
                 ) : (
                   roomMembers.map((member) => {
                     const currentHours = member.currentAllocatedHours ?? 0;
@@ -235,18 +235,18 @@ export default function ServerDashboard() {
                 Server Hierarchy Boundaries
               </div>
               <p className="text-on-surface-variant leading-relaxed">
-                As Sector {serverRoomLetter} Lead, task assignment is scoped strictly to active members within Sector {serverRoomLetter}. Cross-room assignment to other sectors requires Admin authorization.
+                As Section {serverRoomLetter} Lead, task assignment is scoped strictly to active members within Section {serverRoomLetter}. Cross-room assignment to other sections requires Admin authorization.
               </p>
             </div>
           </div>
 
-          {/* Sector Task Queue Column (7 cols) */}
+          {/* Section Task Queue Column (7 cols) */}
           <div className="col-span-12 lg:col-span-7 space-y-6">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-xs font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[16px] text-primary">task</span>
-                  Sector {serverRoomLetter} Active Tasks & Campaigns
+                  Section {serverRoomLetter} Active Tasks & Campaigns
                 </h2>
                 <span className="font-mono text-xs text-on-surface-variant tabular-nums">
                   {tasks.length} Tasks Tracked
@@ -260,11 +260,11 @@ export default function ServerDashboard() {
               />
             </div>
 
-            {/* Active Subrooms in Sector */}
+            {/* Active Subrooms in Section */}
             {room && room.subrooms && (
               <div>
                 <h3 className="text-xs font-bold text-on-surface uppercase tracking-wider mb-3">
-                  Sector {serverRoomLetter} Subrooms
+                  Section {serverRoomLetter} Subrooms
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {room.subrooms.slice(0, 4).map((subroom) => (

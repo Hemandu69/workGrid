@@ -160,7 +160,7 @@ export default function MemberDashboard() {
               <div className="p-4 border-b border-surface-outline bg-surface-container-low flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-primary">Subroom {user.subroom || 'B3'}</h3>
-                  <p className="text-[11px] text-on-surface-variant">{user.room || 'Sector B'} • Core Operations</p>
+                  <p className="text-[11px] text-on-surface-variant">{user.room || 'Section B'} • Core Operations</p>
                 </div>
                 <Badge status="AVAILABLE">Subroom Unit</Badge>
               </div>

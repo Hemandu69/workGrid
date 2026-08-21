@@ -1,10 +1,11 @@
-import { prisma } from '../db/client.js';
+﻿import { prisma } from '../db/client.js';
 import { EventScope, EventStatus, PresenceState, UserRole } from '@prisma/client';
 import {
   formatToISTTime,
   formatToISTDate,
   formatToISTDateTime,
 } from '../utils/time.js';
+import { calculateServerPositions, SupervisoryPosition } from '../utils/server-positioning.js';
 
 export type SupervisionState =
   | 'PRESENT_IN_EVENT'
@@ -41,6 +42,7 @@ export interface GridServerItem {
   presenceState: PresenceState;
   currentLocation: string; // e.g. "B4", "UNKNOWN", "Outside"
   isCurrentlyInSubroom: boolean;
+  supervisoryPosition?: SupervisoryPosition;
   arrivedAtIST?: string;
   lastSeenIST: string;
 }
@@ -73,6 +75,8 @@ export interface GridRoomColumn {
     name: string;
     presenceState: PresenceState;
     currentLocation: string;
+    preferredPosition?: SupervisoryPosition;
+    assignedPosition?: SupervisoryPosition;
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;
@@ -115,7 +119,7 @@ export class OperationsService {
     const roomWhere: any = {};
     if (filters.organizationId) roomWhere.organizationId = filters.organizationId;
     if (filters.room && filters.room !== 'ALL') {
-      const letter = filters.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').trim();
+      const letter = filters.room.toUpperCase().replace('ROOM', '').replace('SECTOR', '').replace('SECTION', '').trim();
       roomWhere.letter = letter;
     }
 
@@ -140,6 +144,7 @@ export class OperationsService {
         },
         members: {
           where: { role: UserRole.SERVER },
+          orderBy: { createdAt: 'asc' },
         },
       },
     });
@@ -202,10 +207,25 @@ export class OperationsService {
       const serverPresenceCount = roomServers.filter((s) => s.presenceState === PresenceState.IN).length;
       const serverTotalCount = roomServers.length;
 
+      // Calculate dynamic server positioning for supervisory positions [1, 3, 5]
+      const serverPositionResults = calculateServerPositions(
+        roomServers.map((srv, idx) => ({
+          id: srv.id,
+          name: srv.name,
+          presenceState: srv.presenceState as 'IN' | 'OUT' | 'UNKNOWN',
+          preferredSlot: (idx === 0 ? 1 : idx === 1 ? 3 : 5) as SupervisoryPosition,
+        }))
+      );
+
+      const serverPositionMap = new Map<string, SupervisoryPosition>();
+      serverPositionResults.forEach((pos) => {
+        serverPositionMap.set(pos.server.id, pos.position);
+      });
+
       const subrooms: GridSubroomCell[] = room.subrooms.map((subroom) => {
         totalSubrooms++;
 
-        // Map occupying members
+        // Map occupying members (up to 2 per subroom)
         const members: GridMemberItem[] = subroom.members.map((m) => {
           if (m.presenceState === PresenceState.IN) {
             totalPeoplePresent++;
@@ -239,14 +259,21 @@ export class OperationsService {
           };
         });
 
-        // Find supervisory servers currently located in this specific subroom
+        // Find supervisory servers currently assigned to this position slot or located in this subroom
+        const supervisoryServerForSlot = serverPositionResults.find((p) => p.position === subroom.number);
+
         const serversPresentInSubroom: GridServerItem[] = roomServers
           .filter(
             (s) =>
-              s.presenceState === PresenceState.IN &&
-              s.currentLocation.toUpperCase().trim() === subroom.code.toUpperCase().trim()
+              (s.presenceState === PresenceState.IN &&
+                s.currentLocation.toUpperCase().trim() === subroom.code.toUpperCase().trim()) ||
+              (supervisoryServerForSlot && supervisoryServerForSlot.server.id === s.id && s.presenceState === PresenceState.IN)
           )
-          .map((s) => ({ ...s, isCurrentlyInSubroom: true }));
+          .map((s) => ({
+            ...s,
+            isCurrentlyInSubroom: true,
+            supervisoryPosition: serverPositionMap.get(s.id),
+          }));
 
         // Check if there is an active event in this subroom
         const activeSubroomEvent = activeRoomEvents.find(
@@ -279,11 +306,13 @@ export class OperationsService {
         id: room.id,
         letter: room.letter,
         name: room.name,
-        assignedServers: roomServers.map((s) => ({
+        assignedServers: roomServers.map((s, idx) => ({
           id: s.id,
           name: s.name,
           presenceState: s.presenceState,
           currentLocation: s.currentLocation,
+          preferredPosition: (idx === 0 ? 1 : idx === 1 ? 3 : 5) as SupervisoryPosition,
+          assignedPosition: serverPositionMap.get(s.id),
         })),
         serverPresenceCount,
         serverTotalCount,
@@ -451,7 +480,7 @@ export class OperationsService {
         name: srv.name,
         email: srv.email,
         avatarUrl: srv.avatarUrl || undefined,
-        assignedRoom: srv.room ? `Sector ${srv.room.letter}` : '—',
+        assignedRoom: srv.room ? `Section ${srv.room.letter}` : '—',
         currentLocation: srv.currentLocationName || 'UNKNOWN',
         presenceState: srv.presenceState,
         supervisionState,
@@ -471,7 +500,7 @@ export class OperationsService {
       description: event.description,
       scope: event.scope,
       status: event.status,
-      room: event.room ? `Sector ${event.room.letter} (${event.room.name})` : undefined,
+      room: event.room ? `Section ${event.room.letter} (${event.room.name})` : undefined,
       subroom: event.subroom?.code,
       locations: event.locations.map((l) => l.name),
       startTimeIST: formatToISTDateTime(event.startTime),
@@ -483,7 +512,7 @@ export class OperationsService {
         name: p.user.name,
         role: p.user.role,
         avatarUrl: p.user.avatarUrl,
-        room: p.user.room ? `Sector ${p.user.room.letter}` : '—',
+        room: p.user.room ? `Section ${p.user.room.letter}` : '—',
         subroom: p.user.subroom?.code || '—',
         currentLocation: p.user.currentLocationName || 'UNKNOWN',
         presenceState: p.user.presenceState,

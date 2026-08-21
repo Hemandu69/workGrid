@@ -7,11 +7,11 @@ interface AnnouncementCardProps {
 }
 
 export function AnnouncementCard({ announcement }: AnnouncementCardProps) {
-  const scopeLabels = {
-    GLOBAL: 'Global All Sectors',
-    ADMINS_ONLY: 'Admins Only',
-    SERVERS_AND_MEMBERS: 'Servers & Members',
-    ROOM_SPECIFIC: `Sector ${announcement.targetRoom || 'Specific'}`,
+  const scopeLabels: Record<string, string> = {
+    GLOBAL: 'Global All Sections',
+    ADMINS_ONLY: 'Administrators Only',
+    HR_ONLY: 'HR Management',
+    ROOM_SPECIFIC: `Section ${announcement.targetRoom || 'Specific'}`,
   };
 
   return (

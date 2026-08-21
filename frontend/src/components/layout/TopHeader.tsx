@@ -28,7 +28,7 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
 
   const defaultBreadcrumbs = [
     { label: 'WorkGrid', href: '/' },
-    { label: user.room || 'Sector Operations', href: '#' },
+    { label: user.room || 'Section Operations', href: '#' },
     { label: user.subroom ? `Subroom ${user.subroom}` : (role ? role.replace('_', ' ') : 'Pending Review') },
   ];
 
@@ -36,10 +36,10 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
 
   const roleOptions: Array<{ role: UserRole; label: string; desc: string }> = [
     { role: 'SUPER_ADMIN', label: 'Super Admin', desc: 'Global monitoring, announcements & org health' },
-    { role: 'ADMIN', label: 'Admin', desc: 'Operational administration & sector oversight' },
+    { role: 'ADMIN', label: 'Admin', desc: 'Operational administration & section oversight' },
     { role: 'HR', label: 'HR', desc: 'People management, onboarding & role governance' },
     { role: 'TEAM_LEAD', label: 'Team Lead', desc: 'Team-level task and workload coordination' },
-    { role: 'SERVER', label: 'Server', desc: 'Room & event supervision (Sector B)' },
+    { role: 'SERVER', label: 'Server', desc: 'Room & event supervision (Section B)' },
     { role: 'MEMBER', label: 'Member', desc: 'Task execution & weekly availability' },
   ];
 
