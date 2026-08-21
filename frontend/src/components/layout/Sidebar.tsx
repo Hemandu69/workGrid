@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
+import { useNotifications } from '../../lib/notifications-context';
 import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
 
@@ -143,7 +144,6 @@ const NAV_ITEMS: NavItem[] = [
     href: '/notifications',
     icon: 'notifications',
     roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'HR', 'ADMIN', 'SUPER_ADMIN'],
-    badge: '2',
   },
 ];
 
@@ -156,6 +156,7 @@ interface SidebarProps {
 export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
   const { user, role } = useAuth();
+  const { unreadCount } = useNotifications();
 
   const filteredNavItems = role ? NAV_ITEMS.filter((item) => item.roles.includes(role)) : [];
 
@@ -238,6 +239,7 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
 
           {filteredNavItems.map((item) => {
             const isActive = pathname === item.href;
+            const badgeValue = item.href === '/notifications' ? (unreadCount > 0 ? String(unreadCount) : undefined) : item.badge;
             return (
               <Link
                 key={item.href}
@@ -260,9 +262,9 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
                   <span>{item.label}</span>
                 </div>
 
-                {item.badge && (
+                {badgeValue && (
                   <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-secondary-container text-on-secondary-container">
-                    {item.badge}
+                    {badgeValue}
                   </span>
                 )}
               </Link>
