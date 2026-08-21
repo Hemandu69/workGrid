@@ -234,9 +234,13 @@ export function useDomainEvent<T = unknown>(
   const realtime = useContext(RealtimeContext);
   const cbRef = useRef(callback);
 
+  // Always keep the callback ref fresh so the subscription closure is never stale
   useEffect(() => {
     cbRef.current = callback;
-  }, [callback]);
+  });
+
+  // Stabilize the subscription key: only re-subscribe when the event types actually change
+  const eventTypeKey = Array.isArray(eventType) ? eventType.slice().sort().join(',') : eventType;
 
   useEffect(() => {
     if (!realtime) return;
@@ -244,5 +248,7 @@ export function useDomainEvent<T = unknown>(
     return realtime.subscribe(types, (event) => {
       cbRef.current(event as DomainEvent<T>);
     });
-  }, [realtime, eventType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [realtime, eventTypeKey]);
 }
+

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
 import { TaskTable } from '../../components/tasks/TaskTable';
@@ -50,15 +50,25 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  // Keep a stable ref to the latest loadData for real-time event handlers
+  const loadDataRef = useRef(loadData);
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  });
+
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Real-Time Domain Event Subscriptions
+  // Real-Time Domain Event Subscriptions — silent background refresh
   useDomainEvent(
-    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED', 'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED'],
+    [
+      'TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED',
+      'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED',
+      'EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED',
+    ],
     () => {
-      loadData();
+      loadDataRef.current();
     }
   );
 
