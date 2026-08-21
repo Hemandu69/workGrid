@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { AnnouncementCard } from '../../../components/announcements/AnnouncementCard';
 import { CreateAnnouncementModal } from '../../../components/announcements/CreateAnnouncementModal';
+import { EventFormModal } from '../../../components/events/EventFormModal';
 import { Button } from '../../../components/ui/Button';
 import { Announcement } from '../../../types/announcement';
 import { apiClient } from '../../../lib/api-client';
@@ -12,6 +13,7 @@ import { useDomainEvent } from '../../../lib/realtime-context';
 export default function SuperAdminAnnouncementsPage() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'PUBLISHED' | 'DRAFT'>('ALL');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -61,14 +63,24 @@ export default function SuperAdminAnnouncementsPage() {
             </p>
           </div>
 
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => setIsCreateOpen(true)}
-            leftIcon={<span className="material-symbols-outlined text-[16px]">add</span>}
-          >
-            New Announcement
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setIsCreateOpen(true)}
+              leftIcon={<span className="material-symbols-outlined text-[16px]">add</span>}
+            >
+              New Announcement
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setIsCreateEventOpen(true)}
+              leftIcon={<span className="material-symbols-outlined text-[16px]">event_upcoming</span>}
+            >
+              New Event
+            </Button>
+          </div>
         </div>
 
         {/* Filter Tabs */}
@@ -110,6 +122,9 @@ export default function SuperAdminAnnouncementsPage() {
         onClose={() => setIsCreateOpen(false)}
         onCreated={() => fetchAnnouncements()}
       />
+
+      {/* Create Event Modal — separate domain from announcements */}
+      <EventFormModal isOpen={isCreateEventOpen} onClose={() => setIsCreateEventOpen(false)} />
     </AppShell>
   );
 }

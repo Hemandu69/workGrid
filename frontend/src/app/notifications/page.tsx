@@ -1,66 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { AppNotification } from '../../types/notification';
-import { useDomainEvent } from '../../lib/realtime-context';
+import { useNotifications } from '../../lib/notifications-context';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { apiClient } from '../../lib/api-client';
+import { EventCard } from '../../components/events/EventCard';
 import Link from 'next/link';
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const { notifications, events, markAllRead, refreshEvents } = useNotifications();
   const [tab, setTab] = useState<'ALL' | 'UNREAD'>('ALL');
 
-  useEffect(() => {
-    apiClient.getAnnouncements().then((anns) => {
-      if (Array.isArray(anns)) {
-        const notifs: AppNotification[] = anns.map((a) => ({
-          id: `ann-${a.id}`,
-          type: 'ANNOUNCEMENT',
-          title: `Announcement: ${a.title}`,
-          message: a.content,
-          read: false,
-          createdAt: a.createdAt,
-          priority: 'NORMAL',
-        }));
-        setNotifications(notifs);
-      }
-    }).catch(() => {});
-  }, []);
-
-  // Real-Time Notification & Announcement Domain Events
-  useDomainEvent<{ title?: string; content?: string }>(
-    ['NOTIFICATION_CREATED', 'ANNOUNCEMENT_CREATED', 'TASK_ASSIGNED', 'EMPLOYEE_APPROVED'],
-    (event) => {
-      const payload = event.payload || {};
-      const newNotif: AppNotification = {
-        id: `notif-${event.id}`,
-        type: event.type === 'ANNOUNCEMENT_CREATED' ? 'ANNOUNCEMENT' : 'TASK_ASSIGNED',
-        title:
-          event.type === 'ANNOUNCEMENT_CREATED'
-            ? `Announcement: ${payload.title || 'Company Notice'}`
-            : 'Task Assignment / System Update',
-        message: payload.content || payload.title || 'You have a new real-time notification.',
-        read: false,
-        createdAt: event.timestamp || new Date().toISOString(),
-        priority: 'HIGH',
-      };
-
-      setNotifications((prev) => {
-        const exists = prev.some((n) => n.id === newNotif.id);
-        if (exists) return prev;
-        return [newNotif, ...prev];
-      });
-    }
-  );
-
   const filtered = notifications.filter((n) => tab === 'ALL' || !n.read);
-
-  const markAllRead = () => {
-    setNotifications(notifications.map((n) => ({ ...n, read: true })));
-  };
 
   const getIconForType = (type: AppNotification['type']) => {
     switch (type) {
@@ -70,6 +23,8 @@ export default function NotificationsPage() {
         return 'comment';
       case 'ANNOUNCEMENT':
         return 'campaign';
+      case 'EVENT':
+        return 'event_upcoming';
       case 'CAPACITY_WARNING':
         return 'warning';
       default:
@@ -127,6 +82,21 @@ export default function NotificationsPage() {
             </span>
           </button>
         </div>
+
+        {/* Upcoming Organization Events — separate section from the announcement/notification feed */}
+        {events.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-xs font-bold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-primary">event_upcoming</span>
+              Upcoming Events
+            </h2>
+            <div className="space-y-3">
+              {events.map((e) => (
+                <EventCard key={e.id} event={e} onResponseChange={() => refreshEvents()} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* Notification Feed */}
         <div className="space-y-3">

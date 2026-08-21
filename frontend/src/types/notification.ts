@@ -3,6 +3,7 @@ export type NotificationType =
   | 'TASK_STATUS_CHANGED'
   | 'TASK_COMMENT'
   | 'ANNOUNCEMENT'
+  | 'EVENT'
   | 'CAPACITY_WARNING'
   | 'ROOM_CHANGE';
 
