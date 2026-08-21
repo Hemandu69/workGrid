@@ -480,6 +480,75 @@ describe('Operations Grid Stateful Simulation & Real Authenticated Users Real-Ti
     expect(secB.serverPresenceCount).toBe(1);
     expect(secB.assignedServers.find((s) => s.id === 'server-david-id')?.presenceState).toBe('OUT');
   });
+
+  it('16. Preeti Mishra IN→OUT: D1 grid cell must not keep stale Preeti (P1)•IN', async () => {
+    // Fixture: Section D — Preeti (pos1) IN, Amit (pos3) IN, Komal (pos5) OUT
+    const preetiId = 'sim-server-d-01';
+    const amitId = 'sim-server-d-03';
+    expect(SimulationService.getSimulatedPerson(preetiId)!.name).toBe('Preeti Mishra');
+    expect(SimulationService.getSimulatedPerson(preetiId)!.presenceState).toBe('IN');
+
+    let grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    let secD = grid.rooms.find((r) => r.letter === 'D')!;
+    let d1 = secD.subrooms.find((s) => s.code === 'D1')!;
+
+    expect(secD.serverCoverageSummary).toBe('2 / 3 Present');
+    expect(d1.serversPresent.some((s) => s.id === preetiId && s.presenceState === 'IN')).toBe(true);
+    expect(d1.serversPresent.every((s) => s.presenceState === 'IN')).toBe(true);
+
+    // Preeti → OUT
+    SimulationService.updateSimulatedPersonState(preetiId, 'OUT');
+
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+    d1 = secD.subrooms.find((s) => s.code === 'D1')!;
+
+    // Coverage + KPI agree
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.presenceState).toBe('OUT');
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.assignedPosition).toBeUndefined();
+    expect(secD.serverPresenceCount).toBe(1);
+    expect(secD.serverCoverageSummary).toBe('1 / 3 Present');
+
+    // D1 must NOT still show Preeti as an IN overseer
+    expect(d1.serversPresent.find((s) => s.id === preetiId)).toBeUndefined();
+    expect(d1.serversPresent.every((s) => s.presenceState === 'IN')).toBe(true);
+
+    // Amit compacts into position 1 and appears in D1
+    const amitCoverage = secD.assignedServers.find((s) => s.id === amitId)!;
+    expect(amitCoverage.presenceState).toBe('IN');
+    expect(amitCoverage.assignedPosition).toBe(1);
+    expect(d1.serversPresent.some((s) => s.id === amitId && s.supervisoryPosition === 1)).toBe(true);
+
+    // Drawer projection agrees
+    const detail = await AvailabilityService.getPersonDetailedAvailability(preetiId);
+    expect(detail.person.presenceState).toBe('OUT');
+    expect(detail.person.attendanceState).toBe('OUT');
+
+    // Reverse OUT→IN restores Preeti as active overseer
+    SimulationService.updateSimulatedPersonState(preetiId, 'IN');
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+    d1 = secD.subrooms.find((s) => s.code === 'D1')!;
+    expect(secD.serverCoverageSummary).toBe('2 / 3 Present');
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.presenceState).toBe('IN');
+    expect(d1.serversPresent.some((s) => s.id === preetiId && s.presenceState === 'IN')).toBe(true);
+  });
+
+  it('17. No OUT server may appear in any subroom serversPresent array', async () => {
+    SimulationService.updateSimulatedPersonState('sim-server-d-01', 'OUT');
+    SimulationService.updateSimulatedPersonState('sim-server-d-03', 'OUT');
+
+    const grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    const secD = grid.rooms.find((r) => r.letter === 'D')!;
+    for (const cell of secD.subrooms) {
+      for (const srv of cell.serversPresent) {
+        expect(srv.presenceState).toBe('IN');
+        expect(srv.id).not.toBe('sim-server-d-01');
+        expect(srv.id).not.toBe('sim-server-d-03');
+      }
+    }
+    expect(secD.serverPresenceCount).toBe(0);
+  });
 });
 
 describe('Simulation toggle/reset HTTP domain-event propagation', () => {

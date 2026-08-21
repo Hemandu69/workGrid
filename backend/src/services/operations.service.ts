@@ -111,6 +111,30 @@ export interface OperationalGridResponse {
   rooms: GridRoomColumn[];
 }
 
+/** Normalize presence so Prisma enums and simulation strings compare consistently. */
+function isPresenceIn(state: PresenceState | string | null | undefined): boolean {
+  return state === PresenceState.IN || state === 'IN';
+}
+
+/**
+ * Resolve the authoritative current presence for a server.
+ * Simulated servers always re-read SimulationService (never fixture/metadata leftovers).
+ */
+function resolveAuthoritativePresence(
+  personId: string,
+  fallback: PresenceState | string
+): 'IN' | 'OUT' | 'UNKNOWN' {
+  const sim = SimulationService.getSimulatedPerson(personId);
+  if (sim) {
+    if (sim.presenceState === 'IN') return 'IN';
+    if (sim.presenceState === 'OUT') return 'OUT';
+    return 'UNKNOWN';
+  }
+  if (isPresenceIn(fallback)) return 'IN';
+  if (fallback === PresenceState.OUT || fallback === 'OUT') return 'OUT';
+  return 'UNKNOWN';
+}
+
 export class OperationsService {
   /**
    * Builds the Operational Room Grid dynamically from database Rooms and Subrooms
@@ -188,6 +212,7 @@ export class OperationsService {
       },
     });
 
+    // Fresh read of simulation roster for this projection (authoritative live state)
     const simPersonnel = SimulationService.getSimulatedPersons();
 
     let totalPeoplePresent = 0;
@@ -196,57 +221,69 @@ export class OperationsService {
 
     const roomColumns: GridRoomColumn[] = rooms.map((room) => {
       // 1. Real database servers for this room
-      const dbServers: GridServerItem[] = room.members.map((srv) => ({
-        id: srv.id,
-        name: srv.name,
-        email: srv.email,
-        avatarUrl: srv.avatarUrl || undefined,
-        assignedRoomLetter: room.letter,
-        presenceState: srv.presenceState,
-        currentLocation: srv.currentLocationName || 'UNKNOWN',
-        isCurrentlyInSubroom: false,
-        arrivedAtIST: srv.arrivedAt ? formatToISTTime(srv.arrivedAt) : undefined,
-        lastSeenIST: srv.lastSeenAt ? formatToISTTime(srv.lastSeenAt) : formatToISTTime(now),
-        isSimulated: false,
-      }));
-
-      // 2. Simulated servers for this room
-      const simServers: GridServerItem[] = simPersonnel
-        .filter((p) => p.role === 'SERVER' && p.sectionLetter.toUpperCase() === room.letter.toUpperCase())
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          email: p.email,
-          avatarUrl: p.avatarUrl,
-          assignedRoomLetter: room.letter,
-          presenceState: p.presenceState,
-          currentLocation: p.presenceState === 'IN' ? p.subroomCode : 'Outside',
-          isCurrentlyInSubroom: false,
-          arrivedAt: p.checkedInAt ? p.checkedInAt.toISOString() : undefined,
-          arrivedAtIST: p.checkedInAt ? formatToISTTime(p.checkedInAt) : undefined,
-          leftAt: p.checkedOutAt ? p.checkedOutAt.toISOString() : undefined,
-          leftAtIST: p.checkedOutAt ? formatToISTTime(p.checkedOutAt) : undefined,
-          lastSeenIST: formatToISTTime(p.lastSeenAt),
-          isSimulated: true,
-        }));
-
-      // Combined server roster
-      const allRoomServers = [...dbServers, ...simServers];
-
-      // Format for server positioning algorithm
-      const serverPositionInputs = allRoomServers.map((srv, idx) => {
-        const simMatch = simPersonnel.find((p) => p.id === srv.id);
-        const preferredSlot = (simMatch?.preferredServerPosition || (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+      const dbServers: GridServerItem[] = room.members.map((srv) => {
+        const presenceState = resolveAuthoritativePresence(srv.id, srv.presenceState);
         return {
           id: srv.id,
           name: srv.name,
-          presenceState: srv.presenceState as 'IN' | 'OUT' | 'UNKNOWN',
+          email: srv.email,
+          avatarUrl: srv.avatarUrl || undefined,
+          assignedRoomLetter: room.letter,
+          presenceState,
+          currentLocation:
+            presenceState === 'IN' ? srv.currentLocationName || 'UNKNOWN' : presenceState === 'OUT' ? 'Outside' : srv.currentLocationName || 'UNKNOWN',
+          isCurrentlyInSubroom: false,
+          arrivedAtIST: srv.arrivedAt ? formatToISTTime(srv.arrivedAt) : undefined,
+          lastSeenIST: srv.lastSeenAt ? formatToISTTime(srv.lastSeenAt) : formatToISTTime(now),
+          isSimulated: false,
+        };
+      });
+
+      // 2. Simulated servers for this room — presence ALWAYS from SimulationService
+      const simServers: GridServerItem[] = simPersonnel
+        .filter((p) => p.role === 'SERVER' && p.sectionLetter.toUpperCase() === room.letter.toUpperCase())
+        .map((p) => {
+          // Re-read by id so we never project a stale fixture/metadata presence
+          const live = SimulationService.getSimulatedPerson(p.id) ?? p;
+          const presenceState = resolveAuthoritativePresence(live.id, live.presenceState);
+          return {
+            id: live.id,
+            name: live.name,
+            email: live.email,
+            avatarUrl: live.avatarUrl,
+            assignedRoomLetter: room.letter,
+            presenceState,
+            // Preferred home subroom is metadata only; location follows CURRENT presence
+            currentLocation: presenceState === 'IN' ? live.subroomCode : 'Outside',
+            isCurrentlyInSubroom: false,
+            arrivedAt: live.checkedInAt ? live.checkedInAt.toISOString() : undefined,
+            arrivedAtIST: live.checkedInAt ? formatToISTTime(live.checkedInAt) : undefined,
+            leftAt: live.checkedOutAt ? live.checkedOutAt.toISOString() : undefined,
+            leftAtIST: live.checkedOutAt ? formatToISTTime(live.checkedOutAt) : undefined,
+            lastSeenIST: formatToISTTime(live.lastSeenAt),
+            isSimulated: true,
+          };
+        });
+
+      // Combined server roster (real + simulated). One authoritative presenceState each.
+      const allRoomServers = [...dbServers, ...simServers];
+
+      // Format for server positioning algorithm — ONLY current presence participates
+      const serverPositionInputs = allRoomServers.map((srv, idx) => {
+        const simMatch = SimulationService.getSimulatedPerson(srv.id);
+        const preferredSlot = (simMatch?.preferredServerPosition ||
+          (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+        const presenceState = resolveAuthoritativePresence(srv.id, srv.presenceState);
+        return {
+          id: srv.id,
+          name: srv.name,
+          presenceState,
           preferredSlot,
           isSimulated: srv.isSimulated,
         };
       });
 
-      // Calculate dynamic server positions based on currently PRESENT servers
+      // Calculate dynamic server positions based on currently PRESENT servers only
       const serverPositionResults = calculateServerPositions(serverPositionInputs);
 
       const serverPositionMap = new Map<string, SupervisoryPosition>();
@@ -254,7 +291,20 @@ export class OperationsService {
         serverPositionMap.set(pos.server.id, pos.position);
       });
 
-      const serverPresenceCount = allRoomServers.filter((s) => s.presenceState === PresenceState.IN || s.presenceState === 'IN').length;
+      // After positioning: operational location for IN servers is their ASSIGNED slot, not preferred home
+      for (const srv of allRoomServers) {
+        const presenceState = resolveAuthoritativePresence(srv.id, srv.presenceState);
+        srv.presenceState = presenceState;
+        if (presenceState === 'IN') {
+          const assigned = serverPositionMap.get(srv.id);
+          srv.currentLocation = assigned ? `${room.letter}${assigned}` : srv.currentLocation;
+        } else if (presenceState === 'OUT') {
+          srv.currentLocation = 'Outside';
+          // OUT servers must never carry a supervisory seat
+        }
+      }
+
+      const serverPresenceCount = allRoomServers.filter((s) => isPresenceIn(s.presenceState)).length;
       const serverTotalCount = allRoomServers.length;
       totalServersPresent += serverPresenceCount;
 
@@ -296,7 +346,7 @@ export class OperationsService {
           };
         });
 
-        // 2. Simulated members assigned to this subroom
+        // 2. Simulated members assigned to this subroom — presence from live SimulationService
         const simMembers: GridMemberItem[] = simPersonnel
           .filter(
             (p) =>
@@ -305,57 +355,62 @@ export class OperationsService {
               p.subroomCode.toUpperCase() === subroom.code.toUpperCase()
           )
           .map((p) => {
-            if (p.presenceState === 'IN') {
+            const live = SimulationService.getSimulatedPerson(p.id) ?? p;
+            const presenceState = resolveAuthoritativePresence(live.id, live.presenceState);
+            if (presenceState === 'IN') {
               totalPeoplePresent++;
             }
 
             return {
-              id: p.id,
-              name: p.name,
-              role: p.role,
-              title: p.title,
-              avatarUrl: p.avatarUrl,
-              presenceState: p.presenceState,
-              presenceLabel: p.presenceState === 'IN' ? 'In Subroom' : 'Outside',
-              currentLocation: p.presenceState === 'IN' ? p.subroomCode : 'Outside',
-              arrivedAt: p.checkedInAt ? p.checkedInAt.toISOString() : undefined,
-              arrivedAtIST: p.checkedInAt ? formatToISTTime(p.checkedInAt) : undefined,
-              leftAt: p.checkedOutAt ? p.checkedOutAt.toISOString() : undefined,
-              leftAtIST: p.checkedOutAt ? formatToISTTime(p.checkedOutAt) : undefined,
-              durationInWorkGrid: SimulationService.getFormattedDuration(p, now),
-              lastSeenIST: formatToISTTime(p.lastSeenAt),
-              activeTaskId: p.activeTaskId,
-              activeTaskTitle: p.activeTaskTitle,
+              id: live.id,
+              name: live.name,
+              role: live.role,
+              title: live.title,
+              avatarUrl: live.avatarUrl,
+              presenceState,
+              presenceLabel: presenceState === 'IN' ? 'In Subroom' : 'Outside',
+              currentLocation: presenceState === 'IN' ? live.subroomCode : 'Outside',
+              arrivedAt: live.checkedInAt ? live.checkedInAt.toISOString() : undefined,
+              arrivedAtIST: live.checkedInAt ? formatToISTTime(live.checkedInAt) : undefined,
+              leftAt: live.checkedOutAt ? live.checkedOutAt.toISOString() : undefined,
+              leftAtIST: live.checkedOutAt ? formatToISTTime(live.checkedOutAt) : undefined,
+              durationInWorkGrid: SimulationService.getFormattedDuration(live, now),
+              lastSeenIST: formatToISTTime(live.lastSeenAt),
+              activeTaskId: live.activeTaskId,
+              activeTaskTitle: live.activeTaskTitle,
               isSimulated: true,
             };
           });
 
         const allSubroomMembers = [...dbMembers, ...simMembers];
 
-        // Find supervisory server dynamically assigned to this position slot (positions 1, 3, 5)
-        const supervisoryServerForSlot = serverPositionResults.find((p) => p.position === subroom.number);
+        // Supervisory overseer for this cell: ONLY the server currently assigned to this slot (1/3/5)
+        // and currently IN. Preferred home subroom / fixture metadata must NEVER place an OUT server here.
+        const assignedPositionForCell = [1, 3, 5].includes(subroom.number)
+          ? (subroom.number as SupervisoryPosition)
+          : undefined;
 
-        const serversPresentInSubroom: GridServerItem[] = allRoomServers
-          .filter(
-            (s) =>
-              ((s.presenceState === PresenceState.IN || s.presenceState === 'IN') &&
-                s.currentLocation.toUpperCase().trim() === subroom.code.toUpperCase().trim()) ||
-              (supervisoryServerForSlot &&
-                supervisoryServerForSlot.server.id === s.id &&
-                (s.presenceState === PresenceState.IN || s.presenceState === 'IN'))
-          )
-          .map((s) => ({
-            ...s,
-            isCurrentlyInSubroom: true,
-            supervisoryPosition: serverPositionMap.get(s.id),
-          }));
+        const serversPresentInSubroom: GridServerItem[] = assignedPositionForCell
+          ? allRoomServers
+              .filter((s) => {
+                const presence = resolveAuthoritativePresence(s.id, s.presenceState);
+                const assigned = serverPositionMap.get(s.id);
+                return presence === 'IN' && assigned === assignedPositionForCell;
+              })
+              .map((s) => ({
+                ...s,
+                presenceState: resolveAuthoritativePresence(s.id, s.presenceState),
+                isCurrentlyInSubroom: true,
+                supervisoryPosition: serverPositionMap.get(s.id),
+              }))
+          : [];
 
         // Check if there is an active event in this subroom
         const activeSubroomEvent = activeRoomEvents.find(
           (e) => e.subroomId === subroom.id || (e.roomId === room.id && e.locations.some((l) => l.subroomId === subroom.id || l.name === subroom.code))
         );
 
-        const occupancyCount = allSubroomMembers.filter((m) => m.presenceState === PresenceState.IN || m.presenceState === 'IN').length;
+        const occupancyCount = allSubroomMembers.filter((m) => isPresenceIn(m.presenceState)).length;
 
         return {
           id: subroom.id,
@@ -384,15 +439,18 @@ export class OperationsService {
         letter: room.letter,
         name: room.name,
         assignedServers: allRoomServers.map((s, idx) => {
-          const simMatch = simPersonnel.find((p) => p.id === s.id);
-          const preferredPosition = (simMatch?.preferredServerPosition || (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+          const simMatch = SimulationService.getSimulatedPerson(s.id);
+          const preferredPosition = (simMatch?.preferredServerPosition ||
+            (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+          const presenceState = resolveAuthoritativePresence(s.id, s.presenceState);
           return {
             id: s.id,
             name: s.name,
-            presenceState: s.presenceState,
-            currentLocation: s.currentLocation,
+            presenceState,
+            currentLocation: presenceState === 'IN' ? s.currentLocation : 'Outside',
             preferredPosition,
-            assignedPosition: serverPositionMap.get(s.id),
+            // Only IN servers receive an assigned supervisory position
+            assignedPosition: presenceState === 'IN' ? serverPositionMap.get(s.id) : undefined,
             isSimulated: s.isSimulated,
           };
         }),
