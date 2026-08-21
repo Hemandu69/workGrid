@@ -95,6 +95,7 @@ export default function PeopleAvailabilityPage() {
       'ATTENDANCE_UPDATED',
       'LOCATION_CHANGED',
       'ROLE_CHANGED',
+      'ROOM_ASSIGNMENT_CHANGED',
     ],
     () => {
       fetchAvailabilityRef.current(false);
