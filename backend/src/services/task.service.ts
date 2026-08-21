@@ -2,6 +2,7 @@ import { prisma } from '../db/client.js';
 import { CreateTaskInput, UpdateTaskStatusInput, AddTaskCommentInput } from '../schemas/task.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { TaskPriority, TaskStatus, UserRole } from '@prisma/client';
+import { publishDomainEvent } from '../events/domain-events.js';
 
 export class TaskService {
   static async getTasks(filters: {
@@ -199,7 +200,34 @@ export class TaskService {
       },
     });
 
-    return this.getTaskById(task.id);
+    const fullTask = await this.getTaskById(task.id);
+
+    // Publish Real-Time Domain Events (Organization Scoped)
+    publishDomainEvent({
+      type: 'TASK_CREATED',
+      organizationId: user.organizationId,
+      entityId: task.id,
+      targetUserId: assignee.id,
+      actorId: user.id,
+      payload: fullTask,
+    });
+
+    publishDomainEvent({
+      type: 'TASK_ASSIGNED',
+      organizationId: user.organizationId,
+      entityId: task.id,
+      targetUserId: assignee.id,
+      actorId: user.id,
+      payload: {
+        taskId: task.id,
+        taskIdDisplay: task.taskIdDisplay,
+        title: task.title,
+        assigneeId: assignee.id,
+        assigneeName: assignee.name,
+      },
+    });
+
+    return fullTask;
   }
 
   static async updateTaskStatus(idOrDisplayId: string, input: UpdateTaskStatusInput) {
@@ -221,7 +249,24 @@ export class TaskService {
       },
     });
 
-    return this.getTaskById(updated.id);
+    const fullTask = await this.getTaskById(updated.id);
+
+    // Publish Real-Time Domain Events (Organization Scoped)
+    publishDomainEvent({
+      type: input.status === TaskStatus.COMPLETED ? 'TASK_COMPLETED' : 'TASK_STATUS_CHANGED',
+      organizationId: task.organizationId,
+      entityId: task.id,
+      targetUserId: task.assigneeId,
+      payload: {
+        taskId: task.id,
+        taskIdDisplay: task.taskIdDisplay,
+        previousStatus: task.status,
+        newStatus: input.status,
+        task: fullTask,
+      },
+    });
+
+    return fullTask;
   }
 
   static async addTaskComment(idOrDisplayId: string, input: AddTaskCommentInput, user: AuthUserPayload) {

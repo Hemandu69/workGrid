@@ -1,6 +1,7 @@
 import { prisma } from '../db/client.js';
 import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
 import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, PresenceState } from '@prisma/client';
+import { publishDomainEvent } from '../events/domain-events.js';
 import {
   APP_TIMEZONE,
   TIMEZONE_LABEL,
@@ -191,6 +192,19 @@ export class AvailabilityService {
           },
         });
       }
+    });
+
+    // Publish Real-Time Domain Event (Organization Scoped)
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: userId,
+      payload: {
+        userId: user.id,
+        slotsUpdatedCount: input.slots.length,
+      },
     });
 
     return this.getUserAvailability(userId);

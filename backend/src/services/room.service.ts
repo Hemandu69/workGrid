@@ -1,5 +1,6 @@
 import { prisma } from '../db/client.js';
 import { UserRole } from '@prisma/client';
+import { publishDomainEvent } from '../events/domain-events.js';
 
 export class RoomService {
   static async getAllRooms(organizationId?: string) {
@@ -123,6 +124,7 @@ export class RoomService {
       },
       include: {
         members: true,
+        room: true,
       },
     });
 
@@ -142,6 +144,17 @@ export class RoomService {
     const updated = await prisma.subroom.update({
       where: { id: subroom.id },
       data: {
+        memberCapacity: newCapacity,
+      },
+    });
+
+    publishDomainEvent({
+      type: 'SUBROOM_STATUS_CHANGED',
+      organizationId: subroom.room.organizationId,
+      entityId: subroom.id,
+      payload: {
+        subroomId: subroom.id,
+        subroomCode: subroom.code,
         memberCapacity: newCapacity,
       },
     });
@@ -190,6 +203,18 @@ export class RoomService {
     const updated = await prisma.user.update({
       where: { id: userId },
       data: { roomId },
+    });
+
+    publishDomainEvent({
+      type: 'ROOM_ASSIGNMENT_CHANGED',
+      organizationId: room.organizationId,
+      entityId: room.id,
+      targetUserId: userId,
+      payload: {
+        roomId: room.id,
+        roomLetter: room.letter,
+        serverUserId: userId,
+      },
     });
 
     return updated;

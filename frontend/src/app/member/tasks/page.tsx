@@ -1,18 +1,49 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { TaskTable } from '../../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../../components/tasks/TaskDetailDrawer';
 import { MOCK_TASKS } from '../../../lib/mock-data';
 import { Task } from '../../../types/task';
+import { useAuth } from '../../../lib/auth-context';
+import { apiClient } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function MemberTasksPage() {
+  const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>(MOCK_TASKS);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      const data = await apiClient.getTasks({
+        assigneeId: user?.id,
+        status: statusFilter !== 'ALL' ? statusFilter : undefined,
+        priority: priorityFilter !== 'ALL' ? priorityFilter : undefined,
+        search: searchQuery.trim() || undefined,
+      });
+      if (data && Array.isArray(data)) {
+        setTasks(data);
+      }
+    } catch {
+      // Fallback
+    }
+  }, [user?.id, statusFilter, priorityFilter, searchQuery]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // Real-Time Task Domain Events
+  useDomainEvent(['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED'], (event) => {
+    if (!event.targetUserId || event.targetUserId === user?.id) {
+      fetchTasks();
+    }
+  });
 
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =

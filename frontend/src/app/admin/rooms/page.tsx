@@ -1,11 +1,39 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { RoomOverviewGrid } from '../../../components/rooms/RoomOverviewGrid';
 import { MOCK_ROOMS } from '../../../lib/mock-data';
+import { Room } from '../../../types/room';
+import { apiClient } from '../../../lib/api-client';
+import { useDomainEvent } from '../../../lib/realtime-context';
 
 export default function AdminRoomsPage() {
+  const [rooms, setRooms] = useState<Room[]>(MOCK_ROOMS);
+
+  const fetchRooms = useCallback(async () => {
+    try {
+      const data = await apiClient.getRooms();
+      if (data && Array.isArray(data)) {
+        setRooms(data);
+      }
+    } catch {
+      // Fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRooms();
+  }, [fetchRooms]);
+
+  // Real-Time Room & Subroom Domain Events
+  useDomainEvent(
+    ['ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED', 'ROOM_ASSIGNMENT_CHANGED', 'LOCATION_CHANGED'],
+    () => {
+      fetchRooms();
+    }
+  );
+
   return (
     <AppShell
       breadcrumbs={[
@@ -26,7 +54,7 @@ export default function AdminRoomsPage() {
         </div>
 
         {/* Room Topology Grid */}
-        <RoomOverviewGrid rooms={MOCK_ROOMS} selectedRoomLetter="B" />
+        <RoomOverviewGrid rooms={rooms} selectedRoomLetter="B" />
       </div>
     </AppShell>
   );

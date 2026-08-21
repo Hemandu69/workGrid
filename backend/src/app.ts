@@ -5,6 +5,7 @@ import { registerAuthPlugin } from './plugins/auth.js';
 import { setupErrorHandler } from './plugins/error-handler.js';
 import { healthRoutes } from './routes/health.js';
 import { v1Routes } from './routes/v1/index.js';
+import { setupSocketIO } from './realtime/socket.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -48,6 +49,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // JWT & Authentication Plugin
   await registerAuthPlugin(app);
+
+  // Initialize Socket.IO Real-Time Transport (Single WorkGrid Real-Time Layer)
+  setupSocketIO(app);
 
   // Route Registrations
   await app.register(healthRoutes);

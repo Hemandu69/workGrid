@@ -1,4 +1,4 @@
-﻿import { EventEmitter } from 'events';
+import { EventEmitter } from 'events';
 
 export type HREventType =
   | 'EMPLOYEE_REGISTERED'
@@ -46,6 +46,8 @@ export interface HREvent {
   createdAt: string;
 }
 
+import { domainEventBus } from './domain-events.js';
+
 class HREventEmitter extends EventEmitter {
   constructor() {
     super();
@@ -54,6 +56,17 @@ class HREventEmitter extends EventEmitter {
 
   emitHREvent(organizationId: string, event: HREvent): boolean {
     const channel = `hr-events:${organizationId}`;
+    domainEventBus.publishDomainEvent({
+      type: event.type,
+      organizationId,
+      entityId: event.user?.id,
+      targetUserId: event.user?.id,
+      payload: {
+        user: event.user,
+        audit: event.audit,
+      },
+      timestamp: event.createdAt,
+    });
     return this.emit(channel, event);
   }
 

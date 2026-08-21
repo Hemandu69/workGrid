@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../lib/auth-context';
 import { apiClient } from '../../lib/api-client';
+import { useDomainEvent } from '../../lib/realtime-context';
 import { AttendanceMeResponse, AttendanceDayGroup } from '../../types/attendance';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -73,6 +74,13 @@ export function AttendanceCard() {
   useEffect(() => {
     fetchAttendance();
   }, [fetchAttendance]);
+
+  // Real-Time Domain Event Subscription: instant update when attendance changes
+  useDomainEvent(['EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED'], (event) => {
+    if (!event.targetUserId || event.targetUserId === user?.id) {
+      fetchAttendance();
+    }
+  });
 
   // Live 1-second dynamic clock for continuous working duration calculation
   useEffect(() => {

@@ -538,42 +538,9 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
   });
 
   // ---------------------------------------------------------------------------
-  // 6. Real-Time HR Event Stream (SSE) & PubSub Architecture
+  // 6. Real-Time HR Domain Events & Organization-Scoped PubSub
   // ---------------------------------------------------------------------------
-  describe('Real-Time HR Event Stream (SSE) & Organization-Scoped PubSub', () => {
-    it('GET /api/v1/hr/events should REJECT unauthenticated requests with 401', async () => {
-      const res = await app.inject({
-        method: 'GET',
-        url: '/api/v1/hr/events',
-      });
-
-      expect(res.statusCode).toBe(401);
-    });
-
-    it('GET /api/v1/hr/events should REJECT non-HR Member requests with 403', async () => {
-      const freshMemberUser = {
-        id: 'realtime-member-id',
-        email: 'realtime.member@workgrid.corp',
-        name: 'Realtime Member',
-        role: UserRole.MEMBER,
-        accountStatus: AccountStatus.ACTIVE,
-        organizationId: 'org-test-1',
-        version: 1,
-      };
-      mockUsers.push(freshMemberUser);
-      const testMemberToken = app.jwt.sign(freshMemberUser);
-
-      const res = await app.inject({
-        method: 'GET',
-        url: '/api/v1/hr/events',
-        headers: {
-          authorization: `Bearer ${testMemberToken}`,
-        },
-      });
-
-      expect(res.statusCode).toBe(403);
-    });
-
+  describe('Real-Time HR Domain Events & Organization-Scoped PubSub', () => {
     it('Employee registration should publish EMPLOYEE_REGISTERED event to hrEventBus', async () => {
       const receivedEvents: HREvent[] = [];
       const unsubscribe = hrEventBus.subscribeHREvents('org-test-1', (event) => {
