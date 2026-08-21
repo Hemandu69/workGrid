@@ -1,9 +1,16 @@
 import { FastifyPluginAsync } from 'fastify';
 import { RoomService } from '../../services/room.service.js';
-import { updateSubroomCapacitySchema } from '../../schemas/room.schema.js';
+import { updateSubroomCapacitySchema, assignRoomSchema } from '../../schemas/room.schema.js';
 import { requireRole } from '../../plugins/auth.js';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../../db/client.js';
+
+function sendAssignmentError(reply: any, err: unknown, fallbackMessage: string) {
+  const statusCode = (err as any)?.statusCode || 400;
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const error = statusCode === 404 ? 'Not Found' : statusCode === 403 ? 'Forbidden' : 'Bad Request';
+  return reply.status(statusCode).send({ statusCode, error, message });
+}
 
 export const roomRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/rooms
@@ -139,6 +146,72 @@ export const roomRoutes: FastifyPluginAsync = async (fastify) => {
           error: 'Bad Request',
           message,
         });
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Dynamic Room/Subroom Assignment — single authoritative source, works for
+  // both real (PostgreSQL) users and simulated in-memory test personnel.
+  // Protected: SUPER_ADMIN and ADMIN only (existing people/operations
+  // management boundary — matches POST /:id/servers above).
+  // ---------------------------------------------------------------------------
+
+  // GET /api/v1/rooms/assignment/:personId
+  fastify.get(
+    '/assignment/:personId',
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])] },
+    async (request, reply) => {
+      const { personId } = request.params as { personId: string };
+      try {
+        const assignment = await RoomService.getPersonAssignment(personId, request.user.organizationId);
+        return reply.send(assignment);
+      } catch (err: unknown) {
+        return sendAssignmentError(reply, err, 'Failed to fetch assignment');
+      }
+    }
+  );
+
+  // PATCH /api/v1/rooms/assignment/:personId — assign or reassign
+  fastify.patch(
+    '/assignment/:personId',
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])] },
+    async (request, reply) => {
+      const { personId } = request.params as { personId: string };
+      const parseResult = assignRoomSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation failed',
+          details: parseResult.error.format(),
+        });
+      }
+
+      try {
+        const result = await RoomService.setPersonAssignment(
+          personId,
+          { sectionLetter: parseResult.data.sectionLetter, subroomCode: parseResult.data.subroomCode },
+          request.user
+        );
+        return reply.send(result);
+      } catch (err: unknown) {
+        return sendAssignmentError(reply, err, 'Failed to assign room');
+      }
+    }
+  );
+
+  // DELETE /api/v1/rooms/assignment/:personId — clear assignment
+  fastify.delete(
+    '/assignment/:personId',
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])] },
+    async (request, reply) => {
+      const { personId } = request.params as { personId: string };
+      try {
+        const result = await RoomService.setPersonAssignment(personId, { sectionLetter: null }, request.user);
+        return reply.send(result);
+      } catch (err: unknown) {
+        return sendAssignmentError(reply, err, 'Failed to clear assignment');
       }
     }
   );

@@ -3,9 +3,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { PersonAvailabilityDetailResponse, apiClient } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
+import { useAuth } from '../../lib/auth-context';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
+import { RoomAssignmentModal } from './RoomAssignmentModal';
 
 interface PersonAvailabilityDrawerProps {
   userId: string | null;
@@ -23,6 +25,9 @@ export function PersonAvailabilityDrawer({
   const [error, setError] = useState<string | null>(null);
   const [isUpdatingPresence, setIsUpdatingPresence] = useState(false);
   const [liveDuration, setLiveDuration] = useState<string>('');
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const { role: viewerRole } = useAuth();
+  const canManageAssignment = viewerRole === 'SUPER_ADMIN' || viewerRole === 'ADMIN';
 
   // Monotonic fetch counter to prevent stale responses from overwriting newer ones
   const fetchSeq = useRef(0);
@@ -62,6 +67,7 @@ export function PersonAvailabilityDrawer({
       'AVAILABILITY_CHANGED',
       'PRESENCE_CHANGED',
       'GRID_UPDATED',
+      'ROOM_ASSIGNMENT_CHANGED',
     ],
     (event) => {
       if (!userId) return;
@@ -251,16 +257,28 @@ export function PersonAvailabilityDrawer({
                     {data.person.title && (
                       <p className="text-xs text-on-surface mt-0.5">{data.person.title}</p>
                     )}
-                    {data.person.room && (
-                      <div className="flex items-center gap-1.5 mt-2 text-[11px] font-mono text-on-surface-variant">
-                        <span className="material-symbols-outlined text-[14px] text-secondary">
-                          meeting_room
-                        </span>
-                        <span>
-                          {data.person.subroom ? `${data.person.subroom} (${data.person.room})` : data.person.room}
-                        </span>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-2 text-[11px] font-mono text-on-surface-variant">
+                      <span className="material-symbols-outlined text-[14px] text-secondary">
+                        meeting_room
+                      </span>
+                      <span>
+                        {data.person.room
+                          ? data.person.subroom
+                            ? `${data.person.subroom} (${data.person.room})`
+                            : data.person.room
+                          : 'Unassigned'}
+                      </span>
+                      {canManageAssignment && (
+                        <button
+                          type="button"
+                          onClick={() => setIsAssignModalOpen(true)}
+                          className="ml-1 px-1.5 py-0.2 rounded text-[10px] font-semibold text-secondary hover:text-primary hover:bg-surface-container transition-colors"
+                          title="Reassign room"
+                        >
+                          Reassign
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -540,6 +558,19 @@ export function PersonAvailabilityDrawer({
           )}
         </div>
       </aside>
+
+      {data && canManageAssignment && (
+        <RoomAssignmentModal
+          isOpen={isAssignModalOpen}
+          onClose={() => setIsAssignModalOpen(false)}
+          personId={userId}
+          personName={data.person.name}
+          role={data.person.role || 'MEMBER'}
+          currentSection={data.person.room?.match(/Section\s+([A-H])/i)?.[1] ?? data.person.room?.match(/Room\s+([A-H])/i)?.[1] ?? null}
+          currentSubroom={data.person.subroom ?? null}
+          onAssigned={() => refreshDrawer(true)}
+        />
+      )}
     </div>
   );
 }

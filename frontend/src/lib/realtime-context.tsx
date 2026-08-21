@@ -103,13 +103,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // If event impacts current user's role or status, update session
+      // If event impacts current user's role, status, or room assignment, update session
       if (
         (event.type === 'ROLE_CHANGED' ||
           event.type === 'ACCOUNT_STATUS_CHANGED' ||
           event.type === 'USER_SESSION_INVALIDATED' ||
           event.type === 'SESSION_REVOKED' ||
-          event.type === 'EMPLOYEE_APPROVED') &&
+          event.type === 'EMPLOYEE_APPROVED' ||
+          event.type === 'ROOM_ASSIGNMENT_CHANGED') &&
         event.targetUserId === user?.id
       ) {
         refreshUser().catch(() => null);
