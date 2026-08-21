@@ -3,6 +3,7 @@ import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import supertest from 'supertest';
 import { AccountStatus, UserRole } from '@prisma/client';
+import { hrEventBus, HREvent } from '../src/events/hr-events.js';
 
 // Mock in-memory state for testing HR & RBAC boundaries
 const mockUsers: any[] = [
@@ -533,6 +534,122 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
       expect(meRes.body.accountStatus).toBe(AccountStatus.ACTIVE);
       expect(meRes.body.role).toBe(UserRole.MEMBER);
       expect(meRes.body.email).toBe(employeeEmail);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. Real-Time HR Event Stream (SSE) & PubSub Architecture
+  // ---------------------------------------------------------------------------
+  describe('Real-Time HR Event Stream (SSE) & Organization-Scoped PubSub', () => {
+    it('GET /api/v1/hr/events should REJECT unauthenticated requests with 401', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/hr/events',
+      });
+
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('GET /api/v1/hr/events should REJECT non-HR Member requests with 403', async () => {
+      const freshMemberUser = {
+        id: 'realtime-member-id',
+        email: 'realtime.member@workgrid.corp',
+        name: 'Realtime Member',
+        role: UserRole.MEMBER,
+        accountStatus: AccountStatus.ACTIVE,
+        organizationId: 'org-test-1',
+        version: 1,
+      };
+      mockUsers.push(freshMemberUser);
+      const testMemberToken = app.jwt.sign(freshMemberUser);
+
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/v1/hr/events',
+        headers: {
+          authorization: `Bearer ${testMemberToken}`,
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('Employee registration should publish EMPLOYEE_REGISTERED event to hrEventBus', async () => {
+      const receivedEvents: HREvent[] = [];
+      const unsubscribe = hrEventBus.subscribeHREvents('org-test-1', (event) => {
+        receivedEvents.push(event);
+      });
+
+      await supertest(app.server)
+        .post('/api/v1/auth/register')
+        .send({
+          email: 'realtime.hire@workgrid.corp',
+          password: 'password123',
+          name: 'Realtime Hire',
+          title: 'QA Specialist',
+        });
+
+      unsubscribe();
+
+      expect(receivedEvents.length).toBeGreaterThanOrEqual(1);
+      const regEvent = receivedEvents.find((e) => e.user.email === 'realtime.hire@workgrid.corp');
+      expect(regEvent).toBeDefined();
+      expect(regEvent?.type).toBe('EMPLOYEE_REGISTERED');
+      expect(regEvent?.organizationId).toBe('org-test-1');
+      expect(regEvent?.user.accountStatus).toBe(AccountStatus.PENDING);
+    });
+
+    it('Role change should publish ROLE_CHANGED or EMPLOYEE_APPROVED with audit log', async () => {
+      const receivedEvents: HREvent[] = [];
+      const unsubscribe = hrEventBus.subscribeHREvents('org-test-1', (event) => {
+        receivedEvents.push(event);
+      });
+
+      const targetUser = mockUsers.find((u) => u.email === 'realtime.hire@workgrid.corp');
+      expect(targetUser).toBeDefined();
+
+      const patchRes = await supertest(app.server)
+        .patch(`/api/v1/hr/users/${targetUser!.id}/role`)
+        .set('Authorization', `Bearer ${hrToken}`)
+        .send({
+          role: UserRole.TEAM_LEAD,
+          reason: 'Promoted to Lead',
+        });
+
+      unsubscribe();
+
+      expect(patchRes.status).toBe(200);
+      const roleEvent = receivedEvents.find((e) => e.user.id === targetUser!.id);
+      expect(roleEvent).toBeDefined();
+      expect(roleEvent?.type).toBe('EMPLOYEE_APPROVED');
+      expect(roleEvent?.user.role).toBe(UserRole.TEAM_LEAD);
+      expect(roleEvent?.audit).toBeDefined();
+      expect(roleEvent?.audit?.newRole).toBe(UserRole.TEAM_LEAD);
+    });
+
+    it('Events should never leak across different organizations', () => {
+      const org2Events: HREvent[] = [];
+      const unsubscribeOrg2 = hrEventBus.subscribeHREvents('org-external-99', (event) => {
+        org2Events.push(event);
+      });
+
+      // Emit event strictly on org-test-1
+      hrEventBus.emitHREvent('org-test-1', {
+        type: 'EMPLOYEE_REGISTERED',
+        organizationId: 'org-test-1',
+        user: {
+          id: 'test-user-id',
+          name: 'Internal Org User',
+          email: 'internal@workgrid.corp',
+          accountStatus: 'PENDING',
+        },
+        createdAt: new Date().toISOString(),
+      });
+
+      unsubscribeOrg2();
+
+      // Org 2 should receive 0 events
+      expect(org2Events.length).toBe(0);
     });
   });
 });

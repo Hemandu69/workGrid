@@ -5,6 +5,7 @@ import { AppShell } from '../../components/layout/AppShell';
 import { User, UserRole, AccountStatus, RoleAuditLog } from '../../types/auth';
 import { MOCK_PEOPLE_DIRECTORY, MOCK_ROLE_AUDIT_LOGS } from '../../lib/mock-data';
 import { apiClient } from '../../lib/api-client';
+import { useHREvents, HREvent } from '../../lib/useHREvents';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -70,6 +71,49 @@ export default function HRDashboardPage() {
   React.useEffect(() => {
     fetchHRData();
   }, [fetchHRData]);
+
+  // Real-Time Server-Sent Event handler (Incremental state updates without reload)
+  const handleRealtimeEvent = React.useCallback((event: HREvent) => {
+    if (!event.user) return;
+    const eventUser = event.user;
+
+    setPeople((prevPeople) => {
+      const existingIndex = prevPeople.findIndex((u) => u.id === eventUser.id);
+      if (existingIndex >= 0) {
+        const updated = [...prevPeople];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          ...eventUser,
+        };
+        return updated;
+      } else {
+        // Prepend new pending employee without duplicates
+        return [eventUser, ...prevPeople];
+      }
+    });
+
+    if (event.audit) {
+      setAuditLogs((prevLogs) => {
+        const exists = prevLogs.some((l) => l.id === event.audit?.id);
+        if (exists) return prevLogs;
+        return [event.audit!, ...prevLogs];
+      });
+    }
+
+    // Refresh live stats from backend seamlessly
+    apiClient
+      .getHRDashboardStats()
+      .then((latestStats) => {
+        if (latestStats) setStats(latestStats);
+      })
+      .catch(() => null);
+  }, []);
+
+  useHREvents({
+    onEvent: handleRealtimeEvent,
+    onReconnect: fetchHRData,
+    enabled: true,
+  });
 
   // Computed metric counts
   const totalEmployees = stats?.totalEmployees ?? people.length;
