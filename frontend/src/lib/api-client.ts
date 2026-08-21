@@ -556,6 +556,7 @@ export interface PersonAvailabilityDetailResponse {
     lastSeenAtIST?: string;
     capacityLimitHours: number;
     currentAllocatedHours: number;
+    isSimulated?: boolean;
   };
   currentStatus: {
     state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';

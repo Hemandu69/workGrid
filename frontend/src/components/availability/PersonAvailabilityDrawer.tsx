@@ -20,6 +20,7 @@ export function PersonAvailabilityDrawer({
   const [data, setData] = useState<PersonAvailabilityDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isUpdatingPresence, setIsUpdatingPresence] = useState(false);
 
   useEffect(() => {
     if (!userId) {
@@ -51,6 +52,29 @@ export function PersonAvailabilityDrawer({
     };
   }, [userId]);
 
+  const handleTogglePresence = async (targetState: 'IN' | 'OUT') => {
+    if (!userId || !data) return;
+    try {
+      setIsUpdatingPresence(true);
+      if (userId.startsWith('sim-') || data.person.isSimulated) {
+        await apiClient.toggleSimulatedPresence(userId, targetState);
+      } else {
+        await apiClient.updatePresence({
+          userId,
+          presenceState: targetState,
+          currentLocationName: targetState === 'IN' ? (data.person.subroom || 'B1') : 'Outside',
+        });
+      }
+
+      const refreshed = await apiClient.getPersonAvailabilityDetail(userId);
+      setData(refreshed);
+    } catch (err) {
+      console.error('Failed to toggle presence:', err);
+    } finally {
+      setIsUpdatingPresence(false);
+    }
+  };
+
   if (!userId) return null;
 
   return (
@@ -79,24 +103,24 @@ export function PersonAvailabilityDrawer({
             className="p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
             title="Close drawer"
           >
-            <span className="material-symbols-outlined text-[20px]">close</span>
+            <span className="material-symbols-outlined text-[18px]">close</span>
           </button>
         </div>
 
         {/* Content Body */}
         <div className="p-5 space-y-6 flex-1">
           {isLoading && (
-            <div className="flex flex-col items-center justify-center py-16 text-xs text-on-surface-variant space-y-3">
-              <span className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              <span>Calculating 7-day availability matrix...</span>
+            <div className="flex flex-col items-center justify-center py-16 space-y-3 text-on-surface-variant">
+              <span className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-mono">Loading availability timeline...</p>
             </div>
           )}
 
-          {error && (
-            <div className="p-4 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 space-y-2">
-              <div className="font-semibold flex items-center gap-1.5">
+          {error && !isLoading && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded text-rose-800 text-xs space-y-2">
+              <div className="flex items-center gap-1.5 font-bold">
                 <span className="material-symbols-outlined text-[16px]">error</span>
-                Error Loading Schedule
+                <span>Error loading person details</span>
               </div>
               <p>{error}</p>
               <Button
@@ -159,7 +183,7 @@ export function PersonAvailabilityDrawer({
 
               {/* Attendance & Physical Presence Card */}
               <div className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
                     <span className="material-symbols-outlined text-[14px] text-secondary">
                       sensor_occupied
@@ -167,21 +191,35 @@ export function PersonAvailabilityDrawer({
                     Real-time Presence & Attendance
                   </span>
 
-                  {/* Attendance State Badge */}
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide border ${
-                      data.person.attendanceState === 'IN'
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                        : 'bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                  >
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        data.person.attendanceState === 'IN' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                  {/* Presence State Controls (IN / OUT) */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={isUpdatingPresence}
+                      onClick={() => handleTogglePresence('IN')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all border ${
+                        data.person.attendanceState === 'IN'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                          : 'bg-surface-bright text-on-surface-variant border-surface-outline hover:bg-surface-container'
                       }`}
-                    />
-                    {data.person.attendanceState === 'IN' ? 'IN WORKGRID' : 'OUT OF WORKGRID'}
-                  </span>
+                      title="Set attendance to IN"
+                    >
+                      [ IN ]
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isUpdatingPresence}
+                      onClick={() => handleTogglePresence('OUT')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all border ${
+                        data.person.attendanceState === 'OUT'
+                          ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                          : 'bg-surface-bright text-on-surface-variant border-surface-outline hover:bg-surface-container'
+                      }`}
+                      title="Set attendance to OUT"
+                    >
+                      [ OUT ]
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -199,7 +237,7 @@ export function PersonAvailabilityDrawer({
                     </span>
                     <span className="font-bold text-primary">
                       {data.person.attendanceState === 'IN'
-                        ? (data.person.arrivedAtIST || '09:15 AM IST')
+                        ? (data.person.arrivedAtIST || '08:30 AM IST')
                         : (data.person.leftAtIST || data.person.lastSeenAtIST || '—')}
                     </span>
                   </div>
@@ -218,192 +256,202 @@ export function PersonAvailabilityDrawer({
               {/* Current Status Box */}
               <div className="space-y-2">
                 <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
-                  Current Status
+                  Live Operations Status
                 </span>
-                <div className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Badge
-                      status={
+                <div
+                  className={`p-3 rounded border text-xs flex items-center justify-between ${
+                    data.currentStatus.state === 'FREE'
+                      ? 'bg-status-available-container/30 border-status-available/30 text-emerald-900'
+                      : data.currentStatus.state === 'BUSY'
+                      ? 'bg-status-busy-container/30 border-status-busy/30 text-amber-900'
+                      : 'bg-surface-container-low border-surface-outline text-on-surface-variant'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
                         data.currentStatus.state === 'FREE'
-                          ? 'AVAILABLE'
+                          ? 'bg-status-available'
                           : data.currentStatus.state === 'BUSY'
-                          ? 'BUSY'
-                          : data.currentStatus.state === 'PARTIALLY_AVAILABLE'
-                          ? 'PREFERRED'
-                          : 'UNAVAILABLE'
-                      }
-                    >
-                      {data.currentStatus.state === 'FREE'
-                        ? 'Currently Free'
-                        : data.currentStatus.state === 'BUSY'
-                        ? 'Currently Busy'
-                        : data.currentStatus.state === 'PARTIALLY_AVAILABLE'
-                        ? 'Partially Available'
-                        : 'Currently Unavailable'}
-                    </Badge>
-
-                    <span className="font-mono text-[11px] text-on-surface-variant">
-                      All times in IST
-                    </span>
-                  </div>
-
-                  <p className="text-on-surface font-medium leading-relaxed">
-                    {data.currentStatus.reason}
-                  </p>
-
-                  <div className="pt-2 border-t border-surface-outline flex items-center justify-between text-[11px] text-on-surface-variant">
-                    <span>Workload Allocation:</span>
-                    <span className="font-mono font-semibold text-primary">
-                      {data.person.currentAllocatedHours} / {data.person.capacityLimitHours} Hours
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Next Free Window Banner */}
-              <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded text-xs text-emerald-950 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px] text-emerald-700">
-                      schedule
-                    </span>
-                    Next Free Window
-                  </span>
-                  {data.nextFree.durationFormatted && (
-                    <span className="px-1.5 py-0.2 bg-emerald-200/80 text-emerald-900 rounded font-mono text-[10px] font-semibold">
-                      {data.nextFree.durationFormatted}
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm font-bold text-emerald-900 pt-0.5">
-                  {data.nextFree.statusText}
-                </p>
-              </div>
-
-              {/* 7-Day Weekly Availability Timeline */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                    7-Day Availability Timeline
-                  </span>
-                  <span className="text-[10px] font-mono text-outline">All times in IST (Asia/Kolkata)</span>
-                </div>
-
-                <div className="space-y-2">
-                  {data.weeklyTimeline.map((day) => (
-                    <div
-                      key={day.date}
-                      className={`p-3 rounded border text-xs transition-all ${
-                        day.isToday
-                          ? 'bg-surface-bright border-primary ring-1 ring-primary/10 shadow-2xs'
-                          : 'bg-surface-container-low/60 border-surface-outline'
+                          ? 'bg-status-busy'
+                          : 'bg-slate-400'
                       }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-primary text-xs">{day.dayName}</span>
-                          {day.isToday && (
-                            <span className="px-1.5 py-0.2 bg-primary text-on-primary rounded text-[9px] font-bold uppercase">
-                              Today
-                            </span>
-                          )}
-                        </div>
-                        <Badge
-                          status={
-                            day.status === 'FREE'
-                              ? 'AVAILABLE'
-                              : day.status === 'BUSY'
-                              ? 'BUSY'
-                              : day.status === 'PARTIALLY_AVAILABLE'
-                              ? 'PREFERRED'
-                              : 'UNAVAILABLE'
-                          }
-                        >
-                          {day.status === 'FREE'
-                            ? 'Open'
-                            : day.status === 'BUSY'
-                            ? 'Full'
-                            : day.status === 'PARTIALLY_AVAILABLE'
-                            ? 'Partial'
-                            : 'Off'}
-                        </Badge>
-                      </div>
-
-                      {/* Hourly Interval Blocks */}
-                      <div className="space-y-1 pt-1 border-t border-surface-outline/60">
-                        {day.windows.map((win, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between py-1 text-[11px] font-mono"
-                          >
-                            <span className="text-on-surface-variant font-medium">
-                              {win.startFormatted} – {win.endFormatted}
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                                win.state === 'FREE'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : win.state === 'BUSY'
-                                  ? 'bg-rose-100 text-rose-800'
-                                  : 'bg-slate-100 text-slate-700'
-                              }`}
-                            >
-                              {win.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                    />
+                    <div>
+                      <span className="font-bold block uppercase tracking-wide text-[11px]">
+                        {data.currentStatus.state}
+                      </span>
+                      <span className="text-[11px] opacity-80">{data.currentStatus.reason}</span>
                     </div>
-                  ))}
+                  </div>
+
+                  <span className="text-[11px] font-mono font-semibold">
+                    Until {data.currentStatus.until}
+                  </span>
                 </div>
               </div>
 
-              {/* Upcoming Commitments */}
-              <div className="space-y-2.5 pt-2">
+              {/* Next Free Indicator */}
+              <div className="p-3 bg-surface-container-low border border-surface-outline rounded text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-primary">schedule</span>
+                  <div>
+                    <span className="text-[10px] text-outline uppercase block">Next Free Window</span>
+                    <span className="font-bold text-primary">{data.nextFree.statusText}</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono text-on-surface-variant bg-surface-bright px-2 py-1 rounded border border-surface-outline">
+                  {data.nextFree.durationFormatted}
+                </span>
+              </div>
+
+              {/* 7-Day Weekly Availability Schedule */}
+              {data.weeklyTimeline && data.weeklyTimeline.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px] text-secondary">
+                        calendar_view_week
+                      </span>
+                      7-Day Availability Schedule (IST)
+                    </span>
+                    <span className="text-[10px] font-mono text-outline">Asia/Kolkata (IST)</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {data.weeklyTimeline.map((day) => (
+                      <div
+                        key={day.date}
+                        className={`p-2.5 rounded border text-xs transition-colors ${
+                          day.isToday
+                            ? 'bg-surface-bright border-primary/40 ring-1 ring-primary/20'
+                            : 'bg-surface-container-low/40 border-surface-outline/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-primary text-xs">{day.dayName}</span>
+                            {day.isToday && (
+                              <span className="px-1.5 py-0.2 bg-primary text-on-primary text-[9px] font-mono font-semibold rounded uppercase">
+                                Today
+                              </span>
+                            )}
+                          </div>
+                          <span
+                            className={`text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded ${
+                              day.status === 'FREE'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : day.status === 'BUSY'
+                                ? 'bg-amber-100 text-amber-800'
+                                : day.status === 'PARTIALLY_AVAILABLE'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {day.status}
+                          </span>
+                        </div>
+
+                        {/* Schedule Windows */}
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {day.windows.map((win, idx) => (
+                            <div
+                              key={idx}
+                              className={`px-2 py-1 rounded text-[11px] font-mono flex items-center gap-1.5 border ${
+                                win.state === 'FREE'
+                                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                                  : win.state === 'BUSY'
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}
+                              title={win.reason || win.label}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${
+                                  win.state === 'FREE'
+                                    ? 'bg-emerald-500'
+                                    : win.state === 'BUSY'
+                                    ? 'bg-amber-500'
+                                    : 'bg-slate-400'
+                                }`}
+                              />
+                              <span>
+                                {win.startFormatted} – {win.endFormatted}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Upcoming Tasks & Commitments */}
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
+                  <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px] text-secondary">
+                      assignment
+                    </span>
                     Assigned Tasks & Commitments
                   </span>
-                  <span className="font-mono text-xs text-on-surface-variant tabular-nums">
+                  <span className="text-[10px] font-mono text-on-surface-variant font-semibold">
                     {data.upcomingCommitments.length} Active
                   </span>
                 </div>
 
-                {data.upcomingCommitments.length === 0 ? (
-                  <div className="p-4 bg-surface-container-low border border-surface-outline rounded text-center text-xs text-on-surface-variant">
-                    No conflicting commitments or active tasks assigned.
-                  </div>
-                ) : (
+                {data.upcomingCommitments.length > 0 ? (
                   <div className="space-y-2">
                     {data.upcomingCommitments.map((task) => (
                       <div
                         key={task.id}
                         onClick={() => onSelectTask?.(task.id)}
-                        className="p-3 bg-surface rounded border border-surface-outline hover:border-slate-400 cursor-pointer transition-colors text-xs space-y-1.5"
+                        className="p-3 bg-surface-bright border border-surface-outline rounded text-xs space-y-1.5 hover:border-primary/50 transition-colors cursor-pointer"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-primary">{task.id}</span>
-                          <Badge priority={task.priority} />
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[10px] font-bold text-primary bg-surface-container px-1 rounded">
+                              {task.id}
+                            </span>
+                            <span className="font-semibold text-primary">{task.title}</span>
+                          </div>
+                          <span
+                            className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded uppercase ${
+                              task.priority === 'CRITICAL'
+                                ? 'bg-rose-100 text-rose-800'
+                                : task.priority === 'HIGH'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {task.priority}
+                          </span>
                         </div>
-                        <p className="font-semibold text-primary">{task.title}</p>
-                        <div className="flex items-center justify-between pt-1 border-t border-surface-outline text-[11px] text-on-surface-variant font-mono">
-                          <span>Due: {task.dueDateFormatted}</span>
-                          <span>{task.allocatedHours}h / {task.estimatedHours}h</span>
+
+                        {task.description && (
+                          <p className="text-[11px] text-on-surface-variant line-clamp-2">
+                            {task.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10px] font-mono text-outline pt-1 border-t border-surface-outline/40">
+                          <span>Due: {task.dueDateFormatted || 'Flexible'}</span>
+                          <span>
+                            Allocated: {task.allocatedHours}h / {task.estimatedHours}h
+                          </span>
                         </div>
                       </div>
                     ))}
+                  </div>
+                ) : (
+                  <div className="p-4 bg-surface-container-low border border-surface-outline rounded text-center text-xs text-outline italic">
+                    No active tasks assigned
                   </div>
                 )}
               </div>
             </>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-surface-outline bg-surface-container-low flex justify-end sticky bottom-0 z-20">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Close Panel
-          </Button>
         </div>
       </aside>
     </div>
