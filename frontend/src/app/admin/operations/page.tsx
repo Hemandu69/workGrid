@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../../lib/auth-context';
 import { useDomainEvent } from '../../../lib/realtime-context';
 import { apiClient, OperationalGridResponse } from '../../../lib/api-client';
@@ -56,47 +56,65 @@ export default function AdminOperationsPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const fetchGrid = useCallback(() => {
-    setIsLoading(true);
+  // Monotonic fetch counter so overlapping real-time refreshes cannot apply stale grid data
+  const fetchSeq = useRef(0);
+
+  // fetchGrid: with showSpinner=true for user-initiated, false for real-time background refresh
+  const fetchGrid = useCallback((showSpinner = true) => {
+    const seq = ++fetchSeq.current;
+    if (showSpinner) setIsLoading(true);
 
     const targetRoom = isServer ? serverRoomLetter || 'B' : roomFilter;
 
     apiClient
       .getOperationalGrid({ room: targetRoom !== 'ALL' ? targetRoom : undefined, search: searchQuery.trim() || undefined })
       .then((res) => {
+        if (seq !== fetchSeq.current) return;
         setGridData(res);
         setIsLoading(false);
       })
       .catch(() => {
+        if (seq !== fetchSeq.current) return;
         setIsLoading(false);
       });
   }, [isServer, serverRoomLetter, roomFilter, searchQuery]);
 
+  // Keep a stable ref to the latest fetchGrid for real-time event handlers
+  const fetchGridRef = useRef(fetchGrid);
   useEffect(() => {
-    fetchGrid();
+    fetchGridRef.current = fetchGrid;
+  });
+
+  useEffect(() => {
+    fetchGrid(true);
   }, [fetchGrid]);
 
-  // Real-Time Domain Event Subscription (Operations Grid, Attendance, Presence, Room Changes)
+  // Real-Time Domain Event Subscription — silently refresh grid on any operational state change
+  // (real attendance OR simulated personnel). Uses eventTypeKey stabilization in useDomainEvent.
   useDomainEvent(
     [
       'GRID_UPDATED',
       'EMPLOYEE_CHECKED_IN',
       'EMPLOYEE_CHECKED_OUT',
+      'ATTENDANCE_UPDATED',
       'PRESENCE_CHANGED',
       'LOCATION_CHANGED',
+      'AVAILABILITY_CHANGED',
       'ROOM_STATUS_CHANGED',
       'SUBROOM_STATUS_CHANGED',
       'ROOM_ASSIGNMENT_CHANGED',
     ],
     () => {
-      fetchGrid();
+      // Silent background refresh — no loading spinner flash; keeps current grid visible
+      fetchGridRef.current(false);
     }
   );
 
   const handleToggleSimulated = async (id: string, presenceState?: 'IN' | 'OUT') => {
     try {
       await apiClient.toggleSimulatedPresence(id, presenceState);
-      fetchGrid();
+      // Silent refresh so KPIs/coverage update immediately even if Socket.IO is briefly delayed
+      fetchGrid(false);
     } catch (err) {
       console.error('Failed to toggle simulated presence:', err);
     }
@@ -106,7 +124,7 @@ export default function AdminOperationsPage() {
     try {
       setIsResettingSim(true);
       await apiClient.resetSimulation();
-      fetchGrid();
+      fetchGrid(false);
     } catch (err) {
       console.error('Failed to reset simulation:', err);
     } finally {
@@ -189,7 +207,7 @@ export default function AdminOperationsPage() {
             <Button
               variant="primary"
               size="sm"
-              onClick={fetchGrid}
+              onClick={() => fetchGrid(true)}
               isLoading={isLoading}
               leftIcon={<span className="material-symbols-outlined text-[16px]">refresh</span>}
             >
