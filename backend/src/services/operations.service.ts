@@ -1,4 +1,4 @@
-﻿import { prisma } from '../db/client.js';
+import { prisma } from '../db/client.js';
 import { EventScope, EventStatus, PresenceState, UserRole } from '@prisma/client';
 import {
   formatToISTTime,
@@ -7,6 +7,8 @@ import {
 } from '../utils/time.js';
 import { calculateServerPositions, SupervisoryPosition } from '../utils/server-positioning.js';
 import { SimulationService, SimulatedPerson } from './simulation.service.js';
+import { AvailabilityService } from './availability.service.js';
+import { publishDomainEvent } from '../events/domain-events.js';
 
 export type SupervisionState =
   | 'PRESENT_IN_EVENT'
@@ -208,7 +210,7 @@ export class OperationsService {
         isSimulated: false,
       }));
 
-      // 2. Simulated servers for this room (e.g. Maya Lin, Alex Mercer for Section B)
+      // 2. Simulated servers for this room
       const simServers: GridServerItem[] = simPersonnel
         .filter((p) => p.role === 'SERVER' && p.sectionLetter.toUpperCase() === room.letter.toUpperCase())
         .map((p) => ({
@@ -220,8 +222,11 @@ export class OperationsService {
           presenceState: p.presenceState,
           currentLocation: p.presenceState === 'IN' ? p.subroomCode : 'Outside',
           isCurrentlyInSubroom: false,
-          arrivedAtIST: p.arrivedAtIST,
-          lastSeenIST: p.lastSeenIST,
+          arrivedAt: p.checkedInAt ? p.checkedInAt.toISOString() : undefined,
+          arrivedAtIST: p.checkedInAt ? formatToISTTime(p.checkedInAt) : undefined,
+          leftAt: p.checkedOutAt ? p.checkedOutAt.toISOString() : undefined,
+          leftAtIST: p.checkedOutAt ? formatToISTTime(p.checkedOutAt) : undefined,
+          lastSeenIST: formatToISTTime(p.lastSeenAt),
           isSimulated: true,
         }));
 
@@ -313,10 +318,12 @@ export class OperationsService {
               presenceState: p.presenceState,
               presenceLabel: p.presenceState === 'IN' ? 'In Subroom' : 'Outside',
               currentLocation: p.presenceState === 'IN' ? p.subroomCode : 'Outside',
-              arrivedAtIST: p.arrivedAtIST,
-              leftAtIST: p.leftAtIST,
-              durationInWorkGrid: p.durationInWorkGrid,
-              lastSeenIST: p.lastSeenIST,
+              arrivedAt: p.checkedInAt ? p.checkedInAt.toISOString() : undefined,
+              arrivedAtIST: p.checkedInAt ? formatToISTTime(p.checkedInAt) : undefined,
+              leftAt: p.checkedOutAt ? p.checkedOutAt.toISOString() : undefined,
+              leftAtIST: p.checkedOutAt ? formatToISTTime(p.checkedOutAt) : undefined,
+              durationInWorkGrid: SimulationService.getFormattedDuration(p, now),
+              lastSeenIST: formatToISTTime(p.lastSeenAt),
               activeTaskId: p.activeTaskId,
               activeTaskTitle: p.activeTaskTitle,
               isSimulated: true,
@@ -432,53 +439,7 @@ export class OperationsService {
    * Retrieves person detail drawer information (handles both real DB users and simulated personnel)
    */
   static async getPersonDetail(personId: string) {
-    const simPerson = SimulationService.getSimulatedPerson(personId);
-    if (simPerson) {
-      return {
-        person: {
-          id: simPerson.id,
-          name: simPerson.name,
-          email: simPerson.email,
-          role: simPerson.role,
-          title: simPerson.title,
-          avatarUrl: simPerson.avatarUrl,
-          room: `Section ${simPerson.sectionLetter}`,
-          subroom: simPerson.subroomCode,
-          currentLocation: simPerson.presenceState === 'IN' ? simPerson.subroomCode : 'Outside',
-          attendanceState: simPerson.attendanceState,
-          presenceState: simPerson.presenceState,
-          arrivedAtIST: simPerson.arrivedAtIST,
-          leftAtIST: simPerson.leftAtIST,
-          currentDurationFormatted: simPerson.durationInWorkGrid,
-          lastSeenAtIST: simPerson.lastSeenIST,
-          isSimulated: true,
-        },
-        currentStatus: {
-          state: simPerson.availabilityState,
-          reason: simPerson.activeTaskId ? `Active Task: ${simPerson.activeTaskId} — ${simPerson.activeTaskTitle}` : 'Ready for work',
-          room: `Section ${simPerson.sectionLetter}`,
-          subroom: simPerson.subroomCode,
-          until: 'End of Shift',
-        },
-        upcomingCommitments: simPerson.activeTaskId
-          ? [
-              {
-                id: simPerson.activeTaskId,
-                title: simPerson.activeTaskTitle || 'Assigned task',
-                status: 'IN_PROGRESS',
-                priority: 'HIGH',
-                estimatedHours: 8,
-                allocatedHours: 4,
-                dueDateFormatted: 'Today',
-                room: `Section ${simPerson.sectionLetter}`,
-                subroom: simPerson.subroomCode,
-              },
-            ]
-          : [],
-      };
-    }
-
-    return null;
+    return AvailabilityService.getPersonDetailedAvailability(personId);
   }
 
   /**
@@ -699,6 +660,66 @@ export class OperationsService {
     const updated = await prisma.user.update({
       where: { id: userId },
       data: updatePayload,
+    });
+
+    publishDomainEvent({
+      type: 'LOCATION_CHANGED',
+      organizationId: updated.organizationId,
+      entityId: updated.id,
+      targetUserId: updated.id,
+      actorId: userId,
+      payload: {
+        userId: updated.id,
+        userName: updated.name,
+        userRole: updated.role,
+        currentLocation: updated.currentLocationName,
+        presenceState: updated.presenceState,
+        roomId: updated.roomId,
+        subroomId: updated.subroomId,
+        timestamp: now.toISOString(),
+      },
+    });
+
+    publishDomainEvent({
+      type: 'ROOM_STATUS_CHANGED',
+      organizationId: updated.organizationId,
+      entityId: updated.roomId || updated.id,
+      targetUserId: updated.id,
+      actorId: userId,
+      payload: {
+        userId: updated.id,
+        roomId: updated.roomId,
+        subroomId: updated.subroomId,
+        presenceState: updated.presenceState,
+      },
+    });
+
+    publishDomainEvent({
+      type: 'ATTENDANCE_UPDATED',
+      organizationId: updated.organizationId,
+      entityId: updated.id,
+      targetUserId: updated.id,
+      actorId: userId,
+      payload: {
+        userId: updated.id,
+        state: updated.presenceState === PresenceState.IN ? 'IN' : 'OUT',
+        presenceState: updated.presenceState,
+        arrivedAt: updated.arrivedAt?.toISOString(),
+        leftAt: updated.leftAt?.toISOString(),
+      },
+    });
+
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: updated.organizationId,
+      entityId: updated.id,
+      targetUserId: updated.id,
+      actorId: userId,
+      payload: {
+        userId: updated.id,
+        presenceState: updated.presenceState,
+        status: updated.presenceState === PresenceState.IN ? 'ONLINE' : 'OFFLINE',
+      },
     });
 
     return {

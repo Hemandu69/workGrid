@@ -197,6 +197,51 @@ export class AttendanceService {
       },
     });
 
+    publishDomainEvent({
+      type: 'LOCATION_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        currentLocation: user.currentLocationName,
+        presenceState: PresenceState.IN,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
+        timestamp: now.toISOString(),
+      },
+    });
+
+    publishDomainEvent({
+      type: 'ROOM_STATUS_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.roomId || user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
+        presenceState: PresenceState.IN,
+      },
+    });
+
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        presenceState: PresenceState.IN,
+        status: 'ONLINE',
+      },
+    });
+
     return {
       state: 'IN' as const,
       presenceState: PresenceState.IN,
@@ -332,6 +377,51 @@ export class AttendanceService {
         state: 'OUT',
         presenceState: PresenceState.OUT,
         leftAt: now.toISOString(),
+      },
+    });
+
+    publishDomainEvent({
+      type: 'LOCATION_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        currentLocation: 'Outside',
+        presenceState: PresenceState.OUT,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
+        timestamp: now.toISOString(),
+      },
+    });
+
+    publishDomainEvent({
+      type: 'ROOM_STATUS_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.roomId || user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
+        presenceState: PresenceState.OUT,
+      },
+    });
+
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: user.id,
+      payload: {
+        userId: user.id,
+        presenceState: PresenceState.OUT,
+        status: 'OFFLINE',
       },
     });
 

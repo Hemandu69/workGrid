@@ -500,30 +500,37 @@ export class AvailabilityService {
             title: sim.title,
             room: `Section ${sim.sectionLetter}`,
             subroom: sim.subroomCode,
-            currentLocation: isPresent ? sim.subroomCode : 'Outside',
+            currentLocation: isPresent ? (sim.role === 'SERVER' ? sim.subroomCode : `Subroom ${sim.subroomCode}`) : 'Outside',
             attendanceState: sim.attendanceState,
             presenceState: sim.presenceState,
-            arrivedAtIST: sim.arrivedAtIST,
-            leftAtIST: sim.leftAtIST,
-            currentDurationFormatted: sim.durationInWorkGrid,
-            lastSeenAtIST: sim.lastSeenIST,
+            arrivedAt: sim.checkedInAt ? sim.checkedInAt.toISOString() : undefined,
+            arrivedAtIST: sim.checkedInAt ? formatToISTTime(sim.checkedInAt) : undefined,
+            leftAt: sim.checkedOutAt ? sim.checkedOutAt.toISOString() : undefined,
+            leftAtIST: sim.checkedOutAt ? formatToISTTime(sim.checkedOutAt) : undefined,
+            currentDurationFormatted: SimulationService.getFormattedDuration(sim, now),
+            lastSeenAtIST: formatToISTTime(sim.lastSeenAt),
             capacityLimitHours: sim.capacityLimitHours || 40,
             currentAllocatedHours: sim.currentAllocatedHours || 20,
             isSimulated: true,
           },
           currentStatus: {
             state: sim.availabilityState,
-            reason: sim.activeTaskId ? `Active Task: ${sim.activeTaskId} — ${sim.activeTaskTitle}` : 'Simulated Test Person',
+            reason:
+              sim.presenceState === 'OUT'
+                ? 'Checked Out / Off-duty'
+                : sim.activeTaskId
+                ? `Active Task: ${sim.activeTaskId} — ${sim.activeTaskTitle}`
+                : 'Available for assignments',
             room: `Section ${sim.sectionLetter}`,
             subroom: sim.subroomCode,
-            until: 'End of Shift',
+            until: isPresent ? 'End of Shift' : 'Next Shift',
           },
           nextFree: {
             isCurrentlyFree: sim.availabilityState === 'FREE',
-            statusText: sim.availabilityState === 'FREE' ? 'Available now' : 'Scheduled Busy',
+            statusText: sim.availabilityState === 'FREE' ? 'Available now' : isPresent ? 'Scheduled Busy' : 'Off-duty',
             nextFreeDate: 'Today',
             nextFreeTime: '18:00 IST',
-            durationFormatted: 'Core Shift Active',
+            durationFormatted: isPresent ? 'Core Shift Active' : 'Off-duty',
           },
           weeklyTimeline: daysTimeline,
           upcomingCommitments: sim.activeTaskId
