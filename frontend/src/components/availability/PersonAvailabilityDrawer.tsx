@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { PersonAvailabilityDetailResponse, apiClient } from '../../lib/api-client';
+import { useDomainEvent } from '../../lib/realtime-context';
 import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -21,6 +22,29 @@ export function PersonAvailabilityDrawer({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isUpdatingPresence, setIsUpdatingPresence] = useState(false);
+  const [liveDuration, setLiveDuration] = useState<string>('');
+
+  // Real-time synchronization: refresh drawer whenever the displayed person or room changes
+  useDomainEvent(
+    [
+      'LOCATION_CHANGED',
+      'ROOM_STATUS_CHANGED',
+      'ATTENDANCE_UPDATED',
+      'EMPLOYEE_CHECKED_IN',
+      'EMPLOYEE_CHECKED_OUT',
+      'AVAILABILITY_CHANGED',
+    ],
+    (event) => {
+      if (!userId) return;
+      const target = (event.payload as { userId?: string })?.userId || event.targetUserId || event.entityId;
+      if (!target || target === userId || event.type === 'ROOM_STATUS_CHANGED') {
+        apiClient
+          .getPersonAvailabilityDetail(userId)
+          .then(setData)
+          .catch((err) => console.error('Failed to sync person availability drawer:', err));
+      }
+    }
+  );
 
   useEffect(() => {
     if (!userId) {
@@ -51,6 +75,41 @@ export function PersonAvailabilityDrawer({
       isMounted = false;
     };
   }, [userId]);
+
+  // Live client-side duration timer against authoritative arrivedAt timestamp
+  useEffect(() => {
+    if (!data?.person) {
+      setLiveDuration('');
+      return;
+    }
+
+    const computeCurrentDuration = () => {
+      if (data.person.attendanceState !== 'IN' || !data.person.arrivedAt) {
+        setLiveDuration(data.person.currentDurationFormatted || (data.person.attendanceState === 'IN' ? 'Active' : 'Stopped'));
+        return;
+      }
+
+      const arrivedMs = new Date(data.person.arrivedAt).getTime();
+      const diffMs = Math.max(0, Date.now() - arrivedMs);
+      const hours = Math.floor(diffMs / 3600000);
+      const mins = Math.floor((diffMs % 3600000) / 60000);
+      const secs = Math.floor((diffMs % 60000) / 1000);
+
+      if (hours > 0) {
+        setLiveDuration(`${hours}h ${mins}m ${secs}s`);
+      } else if (mins > 0) {
+        setLiveDuration(`${mins}m ${secs}s`);
+      } else {
+        setLiveDuration(`0m ${secs}s`);
+      }
+    };
+
+    computeCurrentDuration();
+    if (data.person.attendanceState === 'IN') {
+      const interval = setInterval(computeCurrentDuration, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [data?.person]);
 
   const handleTogglePresence = async (targetState: 'IN' | 'OUT') => {
     if (!userId || !data) return;
@@ -246,7 +305,7 @@ export function PersonAvailabilityDrawer({
                 <div className="flex items-center justify-between text-[11px] font-mono text-on-surface-variant pt-1 border-t border-surface-outline/50">
                   <span>Assigned Scope: <strong className="text-primary">{data.person.room || '—'}</strong></span>
                   {data.person.attendanceState === 'IN' ? (
-                    <span>Current Duration: <strong className="text-emerald-700 font-semibold">{data.person.currentDurationFormatted || 'Active'}</strong></span>
+                    <span>Live Duration: <strong className="text-emerald-700 font-semibold">{liveDuration || data.person.currentDurationFormatted || 'Active'}</strong></span>
                   ) : (
                     <span>Last Seen: <strong className="text-primary">{data.person.lastSeenAtIST || 'Earlier Today'}</strong></span>
                   )}

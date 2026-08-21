@@ -74,7 +74,19 @@ export default function ServerDashboard() {
 
   // Real-Time Domain Events
   useDomainEvent(
-    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_STATUS_CHANGED', 'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED'],
+    [
+      'TASK_CREATED',
+      'TASK_ASSIGNED',
+      'TASK_UPDATED',
+      'TASK_STATUS_CHANGED',
+      'ROOM_STATUS_CHANGED',
+      'SUBROOM_STATUS_CHANGED',
+      'LOCATION_CHANGED',
+      'EMPLOYEE_CHECKED_IN',
+      'EMPLOYEE_CHECKED_OUT',
+      'ATTENDANCE_UPDATED',
+      'AVAILABILITY_CHANGED',
+    ],
     () => {
       loadServerData();
     }

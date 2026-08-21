@@ -1,4 +1,5 @@
 ﻿import { SupervisoryPosition } from '../utils/server-positioning.js';
+import { formatToISTTime } from '../utils/time.js';
 
 export type SimulatedRole = 'SERVER' | 'MEMBER' | 'TEAM_LEAD';
 export type SimulatedPresenceState = 'IN' | 'OUT' | 'UNKNOWN';
@@ -13,18 +14,24 @@ export interface SimulatedPerson {
   subroomCode: string; // e.g. 'A1' .. 'H8'
   avatarUrl?: string;
   title: string;
+
+  // Authoritative mutable state
   presenceState: SimulatedPresenceState;
   attendanceState: 'IN' | 'OUT';
   availabilityState: SimulatedAvailabilityState;
-  preferredServerPosition?: SupervisoryPosition;
+
+  // Authoritative timestamps (Date objects)
+  checkedInAt: Date | null;
+  checkedOutAt: Date | null;
+  lastSeenAt: Date;
+
+  // Task & Workload metadata
   activeTaskId?: string;
   activeTaskTitle?: string;
-  arrivedAtIST?: string;
-  leftAtIST?: string;
-  lastSeenIST: string;
-  durationInWorkGrid?: string;
   capacityLimitHours: number;
   currentAllocatedHours: number;
+
+  preferredServerPosition?: SupervisoryPosition;
   isSimulated: true;
 }
 
@@ -88,16 +95,11 @@ const AVATAR_URLS = [
 ];
 
 /**
- * Builds the complete deterministic simulation dataset:
- * - 128 Simulated Members (8 sections x 8 subrooms x 2 members)
- * - 24 Simulated Servers (8 sections x 3 servers @ positions 1, 3, 5)
+ * Builds the initial stateful simulation dataset relative to wall-clock time
  */
-function buildInitialSimulationDataset(): SimulatedPerson[] {
+function buildInitialSimulationDataset(now: Date = new Date()): SimulatedPerson[] {
   const sections = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
   const dataset: SimulatedPerson[] = [];
-
-  let memberIndex = 0;
-  let serverIndex = 0;
 
   for (const [secIdx, section] of sections.entries()) {
     // 1. Generate 3 Simulated Servers per Section (Positions 1, 3, 5)
@@ -110,7 +112,6 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
       const email = `server.${section.toLowerCase()}${pos}@workgrid.corp`;
       const avatarUrl = AVATAR_URLS[(secIdx * 3 + posIdx) % AVATAR_URLS.length];
 
-      // Specific named supervisors for Section B
       let displayName = fullName;
       if (section === 'B') {
         if (pos === 1) displayName = 'Karan Shah';
@@ -118,11 +119,16 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
         if (pos === 5) displayName = 'Alex Mercer';
       }
 
-      // Initial presence: almost all IN for rich initial state
-      const isOut = (secIdx === 3 && pos === 5) || (secIdx === 6 && pos === 3); // 2 servers initially OUT for variety
+      // Initial presence configuration
+      const isOut = (secIdx === 3 && pos === 5) || (secIdx === 6 && pos === 3);
       const presenceState: SimulatedPresenceState = isOut ? 'OUT' : 'IN';
       const attendanceState: 'IN' | 'OUT' = isOut ? 'OUT' : 'IN';
       const availabilityState: SimulatedAvailabilityState = isOut ? 'UNAVAILABLE' : 'FREE';
+
+      const initialElapsedMs = (180 + posIdx * 20) * 60 * 1000;
+      const checkedInAt = isOut ? new Date(now.getTime() - 4 * 3600000) : new Date(now.getTime() - initialElapsedMs);
+      const checkedOutAt = isOut ? new Date(now.getTime() - 1 * 3600000) : null;
+      const lastSeenAt = isOut ? checkedOutAt! : now;
 
       dataset.push({
         id: srvId,
@@ -137,15 +143,13 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
         attendanceState,
         availabilityState,
         preferredServerPosition: pos,
-        arrivedAtIST: isOut ? undefined : `08:${(posIdx * 15).toString().padStart(2, '0')} AM`,
-        leftAtIST: isOut ? '11:00 AM' : undefined,
-        lastSeenIST: isOut ? '11:00 AM' : 'Just now',
-        durationInWorkGrid: isOut ? undefined : `${4 + posIdx}h 15m`,
+        checkedInAt,
+        checkedOutAt,
+        lastSeenAt,
         capacityLimitHours: 40,
         currentAllocatedHours: 20 + posIdx * 4,
         isSimulated: true,
       });
-      serverIndex++;
     }
 
     // 2. Generate 16 Simulated Members per Section (2 members per subroom x 8 subrooms)
@@ -162,7 +166,6 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
         const avatarUrl = AVATAR_URLS[(nameIdx + slotNum) % AVATAR_URLS.length];
         const title = MEMBER_TITLES[(secIdx + subroomNum + slotNum) % MEMBER_TITLES.length];
 
-        // Specific named fixtures for Section B to preserve familiar test personas
         let displayName = fullName;
         if (section === 'B') {
           if (subroomNum === 2 && slotNum === 1) displayName = 'Maya Patel';
@@ -170,8 +173,6 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
           if (subroomNum === 4 && slotNum === 1) displayName = 'Liam Vance';
         }
 
-        // Realistic deterministic presence mixture:
-        // ~80% IN (mixture of BUSY and FREE), ~20% OUT
         const isOut = (subroomNum === 4 && slotNum === 1) || ((secIdx + subroomNum + slotNum) % 7 === 0);
         const presenceState: SimulatedPresenceState = isOut ? 'OUT' : 'IN';
         const attendanceState: 'IN' | 'OUT' = isOut ? 'OUT' : 'IN';
@@ -188,8 +189,10 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
           availabilityState = (secIdx + subroomNum) % 3 === 0 ? 'PARTIALLY_AVAILABLE' : 'BUSY';
         }
 
-        const arrMin = ((subroomNum * 7 + slotNum * 13) % 45).toString().padStart(2, '0');
-        const arrivedAtIST = isOut ? undefined : `08:${arrMin} AM`;
+        const initialElapsedMs = (120 + ((subroomNum * 13 + slotNum * 17) % 150)) * 60 * 1000;
+        const checkedInAt = isOut ? new Date(now.getTime() - 4 * 3600000) : new Date(now.getTime() - initialElapsedMs);
+        const checkedOutAt = isOut ? new Date(now.getTime() - 1 * 3600000) : null;
+        const lastSeenAt = isOut ? checkedOutAt! : now;
 
         dataset.push({
           id: memId,
@@ -205,16 +208,13 @@ function buildInitialSimulationDataset(): SimulatedPerson[] {
           availabilityState,
           activeTaskId: taskId,
           activeTaskTitle: taskTitle,
-          arrivedAtIST,
-          leftAtIST: isOut ? '11:15 AM' : undefined,
-          lastSeenIST: isOut ? '11:15 AM' : 'Just now',
-          durationInWorkGrid: isOut ? undefined : `${3 + (subroomNum % 3)}h ${arrMin}m`,
+          checkedInAt,
+          checkedOutAt,
+          lastSeenAt,
           capacityLimitHours: 40,
           currentAllocatedHours: hasTask ? 28 : 12,
           isSimulated: true,
         });
-
-        memberIndex++;
       }
     }
   }
@@ -229,9 +229,9 @@ class SimulationStore {
     this.reset();
   }
 
-  reset(): SimulatedPerson[] {
+  reset(now: Date = new Date()): SimulatedPerson[] {
     this.personnel.clear();
-    const dataset = buildInitialSimulationDataset();
+    const dataset = buildInitialSimulationDataset(now);
     for (const p of dataset) {
       this.personnel.set(p.id, { ...p });
     }
@@ -246,23 +246,25 @@ class SimulationStore {
     return this.personnel.get(id);
   }
 
-  updatePresence(id: string, presenceState: SimulatedPresenceState): SimulatedPerson {
+  updatePresence(id: string, presenceState: SimulatedPresenceState, asOf: Date = new Date()): SimulatedPerson {
     const person = this.personnel.get(id);
     if (!person) {
       throw new Error(`Simulated person with ID ${id} not found.`);
     }
 
-    person.presenceState = presenceState;
-    person.attendanceState = presenceState === 'IN' ? 'IN' : 'OUT';
     if (presenceState === 'IN') {
+      person.presenceState = 'IN';
+      person.attendanceState = 'IN';
       person.availabilityState = person.activeTaskId ? 'BUSY' : 'FREE';
-      person.arrivedAtIST = person.arrivedAtIST || 'Just now';
-      person.leftAtIST = undefined;
-      person.lastSeenIST = 'Just now';
+      person.checkedInAt = asOf;
+      person.checkedOutAt = null;
+      person.lastSeenAt = asOf;
     } else {
+      person.presenceState = 'OUT';
+      person.attendanceState = 'OUT';
       person.availabilityState = 'UNAVAILABLE';
-      person.leftAtIST = 'Just now';
-      person.lastSeenIST = 'Just now';
+      person.checkedOutAt = asOf;
+      person.lastSeenAt = asOf;
     }
 
     return { ...person };
@@ -280,11 +282,39 @@ export class SimulationService {
     return simulationStore.getById(id);
   }
 
-  static updateSimulatedPersonState(id: string, presenceState: SimulatedPresenceState): SimulatedPerson {
-    return simulationStore.updatePresence(id, presenceState);
+  static updateSimulatedPersonState(id: string, presenceState: SimulatedPresenceState, asOf?: Date): SimulatedPerson {
+    return simulationStore.updatePresence(id, presenceState, asOf);
   }
 
-  static resetSimulation(): SimulatedPerson[] {
-    return simulationStore.reset();
+  static resetSimulation(now?: Date): SimulatedPerson[] {
+    return simulationStore.reset(now);
+  }
+
+  /**
+   * Computes live duration string dynamically based on checkedInAt and checkedOutAt relative to now
+   */
+  static getFormattedDuration(person: SimulatedPerson, now: Date = new Date()): string | undefined {
+    if (!person.checkedInAt) return undefined;
+
+    let diffMs = 0;
+    if (person.presenceState === 'IN') {
+      diffMs = Math.max(0, now.getTime() - person.checkedInAt.getTime());
+    } else if (person.checkedOutAt) {
+      diffMs = Math.max(0, person.checkedOutAt.getTime() - person.checkedInAt.getTime());
+    } else {
+      return undefined;
+    }
+
+    const hours = Math.floor(diffMs / 3600000);
+    const mins = Math.floor((diffMs % 3600000) / 60000);
+    const secs = Math.floor((diffMs % 60000) / 1000);
+
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    if (mins > 0) {
+      return `${mins}m ${secs}s`;
+    }
+    return `0m ${secs}s`;
   }
 }
