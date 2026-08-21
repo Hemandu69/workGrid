@@ -105,6 +105,9 @@ export async function registerAuthPlugin(app: FastifyInstance): Promise<void> {
 
   // Fastify Authenticate Decorator with Dynamic Database Verification
   app.decorate('authenticate', async (request: FastifyRequest, reply: FastifyReply) => {
+    const hasAuthCookie = Boolean(request.cookies?.[AUTH_COOKIE_NAME]);
+    const hasAuthHeader = Boolean(request.headers.authorization);
+
     let token = request.cookies?.[AUTH_COOKIE_NAME];
 
     if (!token && request.headers.authorization) {
@@ -115,6 +118,7 @@ export async function registerAuthPlugin(app: FastifyInstance): Promise<void> {
     }
 
     if (!token) {
+      request.log.debug(`[Auth] Authentication token missing (auth cookie present: ${hasAuthCookie}, auth header present: ${hasAuthHeader})`);
       return reply.status(401).send({
         statusCode: 401,
         error: 'Unauthorized',

@@ -16,15 +16,34 @@ export async function registerSecurityPlugins(app: FastifyInstance): Promise<voi
   });
 
   // CORS Configuration
-  const allowedOrigins = config.CORS_ORIGIN.split(',').map((o) => o.trim());
+  const rawOrigins = config.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+  const allowedOrigins = rawOrigins.map((o) => o.replace(/\/+$/, ''));
+
   await app.register(cors, {
     origin: (origin, cb) => {
-      // Allow requests with no origin (like mobile apps, curl, server-to-server)
+      // Allow requests with no origin (like mobile apps, curl, server-to-server, health checks)
       if (!origin) return cb(null, true);
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*') || config.NODE_ENV === 'development') {
+
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+
+      // In development or test, allow local origins and configured origins
+      if (config.NODE_ENV === 'development' || config.NODE_ENV === 'test') {
+        if (
+          normalizedOrigin.startsWith('http://localhost') ||
+          normalizedOrigin.startsWith('http://127.0.0.1') ||
+          allowedOrigins.includes(normalizedOrigin) ||
+          allowedOrigins.includes(origin)
+        ) {
+          return cb(null, true);
+        }
+      }
+
+      // In production, strictly match against configured frontend origins
+      if (allowedOrigins.includes(normalizedOrigin) || allowedOrigins.includes(origin)) {
         return cb(null, true);
       }
-      return cb(new Error('Not allowed by CORS'), false);
+
+      return cb(new Error(`Not allowed by CORS: ${origin}`), false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

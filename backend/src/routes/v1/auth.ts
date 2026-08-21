@@ -25,13 +25,14 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const payload = await AuthService.validateCredentials(parseResult.data, request.ip);
       const token = fastify.jwt.sign(payload);
+      const isProduction = config.NODE_ENV === 'production';
 
-      // Set secure HttpOnly cookie for browser sessions
+      // Set secure HttpOnly cookie for browser sessions (SameSite=None in production for cross-site Vercel <-> Render)
       reply.setCookie(AUTH_COOKIE_NAME, token, {
         path: '/',
         httpOnly: true,
-        secure: config.NODE_ENV === 'production',
-        sameSite: 'lax',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
         maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
       });
 
@@ -97,11 +98,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
 
   // POST /api/v1/auth/logout (Clears session cookie & logs audit event)
   fastify.post('/logout', async (request, reply) => {
+    const isProduction = config.NODE_ENV === 'production';
     reply.clearCookie(AUTH_COOKIE_NAME, {
       path: '/',
       httpOnly: true,
-      secure: config.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
     });
 
     if (request.cookies?.[AUTH_COOKIE_NAME] || request.headers.authorization) {
