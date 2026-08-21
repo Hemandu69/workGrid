@@ -5,6 +5,10 @@ export interface SupervisoryServerInput {
   id: string;
   name: string;
   presenceState: 'IN' | 'OUT' | 'UNKNOWN';
+  /**
+   * Stable supervisory identity / preferred home slot.
+   * S1 → 1, S2 → 3, S3 → 5. This is NOT the current assigned operational position.
+   */
   preferredSlot?: SupervisoryPosition;
 }
 
@@ -14,24 +18,19 @@ export interface CalculatedServerPosition<T extends SupervisoryServerInput> {
 }
 
 /**
- * Calculates dynamic server supervisory positions [1, 3, 5] based on present servers and compaction rules.
+ * Calculates dynamic server supervisory positions [1, 3, 5] based on present servers
+ * and compaction / replacement rules.
  *
- * Rules:
- * 1. Each configured supervisory server has a stable preferred slot (Server 0 -> 1, Server 1 -> 3, Server 2 -> 5).
- * 2. Filter to servers currently PRESENT on duty (presenceState === 'IN').
- * 3. All 3 present: [1, 3, 5].
- * 4. 2 servers present:
- *    - If first server (preferred 1) is present:
- *      - Server at index 0 gets 1.
- *      - Server at index 1 gets 3 (if present), or Server at index 2 gets 5 (if present).
- *      (e.g., A + B -> 1, 3; A + C -> 1, 5).
- *    - If first server (preferred 1) is absent (e.g. B + C present):
- *      - Compact remaining servers toward the beginning slots [1, 3]:
- *        Server at index 1 -> 1, Server at index 2 -> 3.
- * 5. 1 server present:
- *    - The single present server compacts to position 1.
- * 6. 0 servers present:
- *    - Returns empty array [].
+ * preferredSlot = server identity (S1/S2/S3)
+ * returned position = current operational assignedPosition
+ *
+ * Rules (by which preferred identities are currently IN):
+ * 1. All three (S1,S2,S3) → P1, P3, P5
+ * 2. S1 OUT, S2+S3 IN → S2=P1, S3=P3   (compact / replace missing first)
+ * 3. S2 OUT, S1+S3 IN → S1=P1, S3=P5   (preserve P5 when middle absent)
+ * 4. S3 OUT, S1+S2 IN → S1=P1, S2=P3
+ * 5. Only one IN → that server = P1
+ * 6. None IN → []
  */
 export function calculateServerPositions<T extends SupervisoryServerInput>(
   configuredServers: T[]
@@ -40,67 +39,90 @@ export function calculateServerPositions<T extends SupervisoryServerInput>(
     return [];
   }
 
-  // Filter present servers while preserving configured ordering
-  const presentWithIndices = configuredServers
-    .map((server, index) => ({
-      server,
-      originalIndex: index,
-      preferredSlot: server.preferredSlot ?? AVAILABLE_SUPERVISORY_SLOTS[index] ?? 1,
-      isPresent: server.presenceState === 'IN',
-    }))
-    .filter((item) => item.isPresent);
+  // Resolve each server's stable identity (preferred slot). A server with no
+  // preferredSlot (or whose slot is already claimed by another server) has no
+  // primary identity — it is only ever seated via the extras pool below, never
+  // guessed from array position (that would risk colliding with — and silently
+  // stealing — another server's real preferred identity).
+  const withIdentity = configuredServers.map((server) => ({
+    server,
+    preferredSlot: server.preferredSlot,
+    isPresent: server.presenceState === 'IN',
+  }));
 
-  if (presentWithIndices.length === 0) {
-    return [];
-  }
-
-  // Case: Only 1 server present -> compacts to position 1
-  if (presentWithIndices.length === 1) {
-    return [
-      {
-        server: presentWithIndices[0].server,
-        position: 1,
-      },
-    ];
-  }
-
-  // Case: 2 servers present
-  if (presentWithIndices.length === 2) {
-    const firstPresent = presentWithIndices[0];
-    const secondPresent = presentWithIndices[1];
-
-    // If the first configured server (index 0 / preferred 1) is present
-    if (firstPresent.originalIndex === 0 || firstPresent.preferredSlot === 1) {
-      return [
-        {
-          server: firstPresent.server,
-          position: 1,
-        },
-        {
-          server: secondPresent.server,
-          position: secondPresent.preferredSlot === 5 || secondPresent.originalIndex === 2 ? 5 : 3,
-        },
-      ];
+  // One primary server per preferred identity (first wins if duplicates exist)
+  const byPreferred = new Map<SupervisoryPosition, (typeof withIdentity)[number]>();
+  for (const item of withIdentity) {
+    if (item.preferredSlot !== undefined && !byPreferred.has(item.preferredSlot)) {
+      byPreferred.set(item.preferredSlot, item);
     }
-
-    // If the first configured server is ABSENT (e.g. index 1 and index 2 are present)
-    // Compact remaining servers toward the beginning slots 1 and 3
-    return [
-      {
-        server: firstPresent.server,
-        position: 1,
-      },
-      {
-        server: secondPresent.server,
-        position: 3,
-      },
-    ];
   }
 
-  // Case: 3 or more servers present -> sequential assignment to 1, 3, 5
-  return [
-    { server: presentWithIndices[0].server, position: 1 },
-    { server: presentWithIndices[1].server, position: 3 },
-    { server: presentWithIndices[2].server, position: 5 },
-  ];
+  const presentS1 = byPreferred.get(1)?.isPresent ? byPreferred.get(1) : undefined;
+  const presentS2 = byPreferred.get(3)?.isPresent ? byPreferred.get(3) : undefined;
+  const presentS3 = byPreferred.get(5)?.isPresent ? byPreferred.get(5) : undefined;
+
+  // Extra present servers beyond the primary S1/S2/S3 identities (e.g. 4th server)
+  const primaryIds = new Set(
+    [presentS1, presentS2, presentS3].filter(Boolean).map((p) => p!.server.id)
+  );
+  const extrasPresent = withIdentity.filter(
+    (item) => item.isPresent && !primaryIds.has(item.server.id)
+  );
+
+  // --- Identity-based assignment ---
+  let assigned: CalculatedServerPosition<T>[] = [];
+
+  if (presentS1 && presentS2 && presentS3) {
+    // CASE 1: three present
+    assigned = [
+      { server: presentS1.server, position: 1 },
+      { server: presentS2.server, position: 3 },
+      { server: presentS3.server, position: 5 },
+    ];
+  } else if (presentS1 && presentS2 && !presentS3) {
+    // CASE 4 / 10: S3 out → P1, P3
+    assigned = [
+      { server: presentS1.server, position: 1 },
+      { server: presentS2.server, position: 3 },
+    ];
+  } else if (presentS1 && !presentS2 && presentS3) {
+    // CASE 3 / 5 / 9: middle absent — keep S3 at P5 (do NOT compact to P3)
+    assigned = [
+      { server: presentS1.server, position: 1 },
+      { server: presentS3.server, position: 5 },
+    ];
+  } else if (!presentS1 && presentS2 && presentS3) {
+    // CASE 2 / 6 / 8: first absent — compact S2→P1, S3→P3
+    assigned = [
+      { server: presentS2.server, position: 1 },
+      { server: presentS3.server, position: 3 },
+    ];
+  } else if (presentS1 && !presentS2 && !presentS3) {
+    assigned = [{ server: presentS1.server, position: 1 }];
+  } else if (!presentS1 && presentS2 && !presentS3) {
+    assigned = [{ server: presentS2.server, position: 1 }];
+  } else if (!presentS1 && !presentS2 && presentS3) {
+    assigned = [{ server: presentS3.server, position: 1 }];
+  } else if (extrasPresent.length > 0) {
+    // No primary identities present — compact extras into 1, 3, 5
+    assigned = extrasPresent.slice(0, 3).map((item, idx) => ({
+      server: item.server,
+      position: AVAILABLE_SUPERVISORY_SLOTS[idx]!,
+    }));
+  }
+
+  // Seat remaining extras into unused slots (section with >3 servers)
+  if (extrasPresent.length > 0 && assigned.length > 0 && assigned.length < 3) {
+    const usedIds = new Set(assigned.map((a) => a.server.id));
+    const usedSeats = new Set(assigned.map((a) => a.position));
+    const freeSeats = AVAILABLE_SUPERVISORY_SLOTS.filter((s) => !usedSeats.has(s));
+    for (const extra of extrasPresent) {
+      if (freeSeats.length === 0) break;
+      if (usedIds.has(extra.server.id)) continue;
+      assigned.push({ server: extra.server, position: freeSeats.shift()! });
+    }
+  }
+
+  return assigned;
 }

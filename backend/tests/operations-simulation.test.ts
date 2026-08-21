@@ -549,6 +549,77 @@ describe('Operations Grid Stateful Simulation & Real Authenticated Users Real-Ti
     }
     expect(secD.serverPresenceCount).toBe(0);
   });
+
+  it('18. Section D full compaction: Preeti OUT with all three previously IN → Amit P1, Komal P3', async () => {
+    const preetiId = 'sim-server-d-01';
+    const amitId = 'sim-server-d-03';
+    const komalId = 'sim-server-d-05';
+
+    // Ensure all three IN (fixture starts Komal OUT)
+    SimulationService.updateSimulatedPersonState(preetiId, 'IN');
+    SimulationService.updateSimulatedPersonState(amitId, 'IN');
+    SimulationService.updateSimulatedPersonState(komalId, 'IN');
+
+    let grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    let secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.serverPresenceCount).toBe(3);
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.assignedPosition).toBe(1);
+    expect(secD.assignedServers.find((s) => s.id === amitId)?.assignedPosition).toBe(3);
+    expect(secD.assignedServers.find((s) => s.id === komalId)?.assignedPosition).toBe(5);
+    expect(secD.subrooms.find((s) => s.code === 'D1')!.serversPresent[0]?.id).toBe(preetiId);
+    expect(secD.subrooms.find((s) => s.code === 'D3')!.serversPresent[0]?.id).toBe(amitId);
+    expect(secD.subrooms.find((s) => s.code === 'D5')!.serversPresent[0]?.id).toBe(komalId);
+
+    // Preeti → OUT: remaining must REPLACE/COMPACT — Amit→P1, Komal→P3 (not stay at P3/P5)
+    SimulationService.updateSimulatedPersonState(preetiId, 'OUT');
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.presenceState).toBe('OUT');
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.assignedPosition).toBeUndefined();
+    expect(secD.assignedServers.find((s) => s.id === amitId)?.assignedPosition).toBe(1);
+    expect(secD.assignedServers.find((s) => s.id === komalId)?.assignedPosition).toBe(3);
+    expect(secD.serverCoverageSummary).toBe('2 / 3 Present');
+
+    expect(secD.subrooms.find((s) => s.code === 'D1')!.serversPresent.map((s) => s.id)).toEqual([amitId]);
+    expect(secD.subrooms.find((s) => s.code === 'D3')!.serversPresent.map((s) => s.id)).toEqual([komalId]);
+    expect(secD.subrooms.find((s) => s.code === 'D5')!.serversPresent).toEqual([]);
+
+    // Amit → OUT: only Komal → P1
+    SimulationService.updateSimulatedPersonState(amitId, 'OUT');
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.assignedServers.find((s) => s.id === komalId)?.assignedPosition).toBe(1);
+    expect(secD.subrooms.find((s) => s.code === 'D1')!.serversPresent[0]?.id).toBe(komalId);
+    expect(secD.subrooms.find((s) => s.code === 'D3')!.serversPresent).toEqual([]);
+
+    // Restore all three → original positions
+    SimulationService.updateSimulatedPersonState(preetiId, 'IN');
+    SimulationService.updateSimulatedPersonState(amitId, 'IN');
+    SimulationService.updateSimulatedPersonState(komalId, 'IN');
+    grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.assignedPosition).toBe(1);
+    expect(secD.assignedServers.find((s) => s.id === amitId)?.assignedPosition).toBe(3);
+    expect(secD.assignedServers.find((s) => s.id === komalId)?.assignedPosition).toBe(5);
+  });
+
+  it('19. S2 OUT keeps S3 at P5 (do not compact middle-absent case to P3)', async () => {
+    const preetiId = 'sim-server-d-01';
+    const amitId = 'sim-server-d-03';
+    const komalId = 'sim-server-d-05';
+    SimulationService.updateSimulatedPersonState(preetiId, 'IN');
+    SimulationService.updateSimulatedPersonState(amitId, 'IN');
+    SimulationService.updateSimulatedPersonState(komalId, 'IN');
+
+    SimulationService.updateSimulatedPersonState(amitId, 'OUT');
+    const grid = await OperationsService.getOperationalGrid({ room: 'D' });
+    const secD = grid.rooms.find((r) => r.letter === 'D')!;
+    expect(secD.assignedServers.find((s) => s.id === preetiId)?.assignedPosition).toBe(1);
+    expect(secD.assignedServers.find((s) => s.id === komalId)?.assignedPosition).toBe(5);
+    expect(secD.subrooms.find((s) => s.code === 'D5')!.serversPresent[0]?.id).toBe(komalId);
+    expect(secD.subrooms.find((s) => s.code === 'D3')!.serversPresent).toEqual([]);
+  });
 });
 
 describe('Simulation toggle/reset HTTP domain-event propagation', () => {
