@@ -375,6 +375,79 @@ export const apiClient = {
       token
     );
   },
+
+  // --- HR Operations ---
+  getHRDashboardStats: async (token?: string) => {
+    return request<{
+      totalEmployees: number;
+      activeCount: number;
+      pendingCount: number;
+      suspendedCount: number;
+      deactivatedCount: number;
+      recentPending: Array<import('../types/auth').User>;
+    }>('/api/v1/hr/dashboard', {}, token);
+  },
+
+  getPeopleDirectory: async (
+    filters: { role?: string; accountStatus?: string; search?: string } = {},
+    token?: string
+  ) => {
+    const searchParams = new URLSearchParams();
+    if (filters.role && filters.role !== 'ALL') searchParams.append('role', filters.role);
+    if (filters.accountStatus && filters.accountStatus !== 'ALL') searchParams.append('accountStatus', filters.accountStatus);
+    if (filters.search) searchParams.append('search', filters.search);
+
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return request<Array<import('../types/auth').User>>(`/api/v1/hr/people${query}`, {}, token);
+  },
+
+  provisionUser: async (
+    data: {
+      name: string;
+      email: string;
+      title?: string;
+      initialRole?: import('../types/auth').UserRole;
+      capacityLimitHours?: number;
+    },
+    token?: string
+  ) => {
+    return request<import('../types/auth').User>('/api/v1/hr/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }, token);
+  },
+
+  updateUserRole: async (
+    userId: string,
+    role: import('../types/auth').UserRole,
+    reason?: string,
+    token?: string
+  ) => {
+    return request<{
+      user: import('../types/auth').User;
+      audit: import('../types/auth').RoleAuditLog;
+    }>(`/api/v1/hr/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role, reason }),
+    }, token);
+  },
+
+  updateUserStatus: async (
+    userId: string,
+    accountStatus: import('../types/auth').AccountStatus,
+    reason?: string,
+    token?: string
+  ) => {
+    return request<import('../types/auth').User>(`/api/v1/hr/users/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ accountStatus, reason }),
+    }, token);
+  },
+
+  getRoleAuditLogs: async (targetUserId?: string, token?: string) => {
+    const query = targetUserId ? `?targetUserId=${targetUserId}` : '';
+    return request<Array<import('../types/auth').RoleAuditLog>>(`/api/v1/hr/audit-logs${query}`, {}, token);
+  },
 };
 
 export interface PeopleAvailabilityResponse {

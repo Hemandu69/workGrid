@@ -74,8 +74,8 @@ const { mockPrisma } = vi.hoisted(() => ({
         if (where?.organizationId) {
           res = res.filter((u) => u.organizationId === where.organizationId);
         }
-        if (where?.role) {
-          res = res.filter((u) => u.role === where.role);
+        if (where?.role !== undefined) {
+          res = res.filter((u) => (u.role || null) === (where.role ?? null));
         }
         if (where?.accountStatus) {
           res = res.filter((u) => u.accountStatus === where.accountStatus);
@@ -84,7 +84,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       }),
       findUnique: vi.fn().mockImplementation(async ({ where }) => {
         if (where?.id) return mockUsers.find((u) => u.id === where.id) || null;
-        if (where?.email) return mockUsers.find((u) => u.email === where.email) || null;
+        if (where?.email) return mockUsers.find((u) => u.email.toLowerCase() === where.email.toLowerCase()) || null;
         return null;
       }),
       findFirst: vi.fn().mockImplementation(async ({ where }) => {
@@ -99,14 +99,15 @@ const { mockPrisma } = vi.hoisted(() => ({
       count: vi.fn().mockImplementation(async ({ where }) => {
         let list = [...mockUsers];
         if (where?.organizationId) list = list.filter((u) => u.organizationId === where.organizationId);
-        if (where?.role) list = list.filter((u) => u.role === where.role);
+        if (where?.role !== undefined) list = list.filter((u) => (u.role || null) === (where.role ?? null));
         if (where?.accountStatus) list = list.filter((u) => u.accountStatus === where.accountStatus);
         return list.length;
       }),
       create: vi.fn().mockImplementation(async ({ data }) => {
         const newUser = {
-          id: `usr-${Date.now()}`,
+          id: `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           ...data,
+          version: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
@@ -116,8 +117,19 @@ const { mockPrisma } = vi.hoisted(() => ({
       update: vi.fn().mockImplementation(async ({ where, data }) => {
         const index = mockUsers.findIndex((u) => u.id === where.id);
         if (index === -1) throw new Error('User not found');
+        if (data.version?.increment) {
+          mockUsers[index].version = (mockUsers[index].version || 1) + data.version.increment;
+          delete data.version;
+        }
         mockUsers[index] = { ...mockUsers[index], ...data, updatedAt: new Date() };
         return mockUsers[index];
+      }),
+    },
+    organization: {
+      findFirst: vi.fn().mockResolvedValue({
+        id: 'org-test-1',
+        name: 'WorkGrid Corp',
+        slug: 'workgrid',
       }),
     },
     roleAuditLog: {
@@ -135,7 +147,7 @@ const { mockPrisma } = vi.hoisted(() => ({
       }),
     },
     auditEvent: {
-      create: vi.fn().mockResolvedValue({ id: 'mock-ae-1' }),
+      create: vi.fn().mockResolvedValue({ id: 'audit-event-1' }),
     },
     $transaction: vi.fn().mockImplementation(async (callback) => {
       return callback(mockPrisma);
@@ -384,6 +396,143 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Complete Employee Self-Registration -> HR Visibility -> Role Assignment Flow
+  // ---------------------------------------------------------------------------
+  describe('Employee Self-Registration, HR Pending Visibility & Approval Lifecycle', () => {
+    let pendingEmployeeId: string;
+    const employeeEmail = 'new.hire@workgrid.corp';
+
+    it('POST /api/v1/auth/register should create a persisted employee in PENDING status', async () => {
+      const res = await supertest(app.server)
+        .post('/api/v1/auth/register')
+        .send({
+          email: employeeEmail,
+          password: 'password123',
+          name: 'New Hire',
+          title: 'Junior Analyst',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.user).toHaveProperty('id');
+      expect(res.body.user.email).toBe(employeeEmail);
+      expect(res.body.user.accountStatus).toBe(AccountStatus.PENDING);
+      expect(res.body.user.role).toBeNull();
+
+      pendingEmployeeId = res.body.user.id;
+    });
+
+    it('GET /api/v1/hr/people should include the newly registered PENDING employee in HR directory', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/hr/people')
+        .set('Authorization', `Bearer ${hrToken}`);
+
+      expect(res.status).toBe(200);
+      const found = res.body.find((u: any) => u.id === pendingEmployeeId);
+      expect(found).toBeDefined();
+      expect(found.accountStatus).toBe(AccountStatus.PENDING);
+      expect(found.role || null).toBeNull();
+      expect(found.title).toBe('Junior Analyst');
+    });
+
+    it('GET /api/v1/hr/people?accountStatus=PENDING should return the pending employee', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/hr/people?accountStatus=PENDING')
+        .set('Authorization', `Bearer ${hrToken}`);
+
+      expect(res.status).toBe(200);
+      const allPending = res.body.every((u: any) => u.accountStatus === AccountStatus.PENDING);
+      expect(allPending).toBe(true);
+      const found = res.body.find((u: any) => u.id === pendingEmployeeId);
+      expect(found).toBeDefined();
+    });
+
+    it('GET /api/v1/hr/dashboard should accurately count PENDING review headcount', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/hr/dashboard')
+        .set('Authorization', `Bearer ${hrToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.pendingCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('GET /api/v1/hr/people should strictly enforce organization isolation', async () => {
+      // Add a mock user belonging to a different organization
+      mockUsers.push({
+        id: 'other-org-user-id',
+        email: 'other.org@external.corp',
+        name: 'Foreign Org User',
+        role: null,
+        accountStatus: AccountStatus.PENDING,
+        organizationId: 'org-external-99',
+        passwordHash: 'hash',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await supertest(app.server)
+        .get('/api/v1/hr/people')
+        .set('Authorization', `Bearer ${hrToken}`);
+
+      expect(res.status).toBe(200);
+      const foreignFound = res.body.find((u: any) => u.id === 'other-org-user-id');
+      expect(foreignFound).toBeUndefined();
+    });
+
+    it('PATCH /api/v1/hr/users/:id/role should REJECT HR attempting to assign privileged SUPER_ADMIN/ADMIN/HR', async () => {
+      const res = await supertest(app.server)
+        .patch(`/api/v1/hr/users/${pendingEmployeeId}/role`)
+        .set('Authorization', `Bearer ${hrToken}`)
+        .send({
+          role: UserRole.ADMIN,
+          reason: 'Illegal privilege escalation',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Forbidden');
+    });
+
+    it('PATCH /api/v1/hr/users/:id/role should allow HR to assign MEMBER role and auto-activate account', async () => {
+      const res = await supertest(app.server)
+        .patch(`/api/v1/hr/users/${pendingEmployeeId}/role`)
+        .set('Authorization', `Bearer ${hrToken}`)
+        .send({
+          role: UserRole.MEMBER,
+          reason: 'Verified credentials, onboarded to team',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.user.role).toBe(UserRole.MEMBER);
+      expect(res.body.user.accountStatus).toBe(AccountStatus.ACTIVE);
+      expect(res.body.audit).toHaveProperty('id');
+      expect(res.body.audit.newRole).toBe(UserRole.MEMBER);
+      expect(res.body.audit.changedById).toBe('hr-user-id');
+    });
+
+    it('GET /api/v1/auth/me should return ACTIVE status and assigned role for the approved employee', async () => {
+      // Login as the employee
+      const loginRes = await supertest(app.server)
+        .post('/api/v1/auth/login')
+        .send({
+          email: employeeEmail,
+          password: 'password123',
+        });
+
+      expect(loginRes.status).toBe(200);
+      const employeeToken = loginRes.body.token;
+
+      // Call /api/v1/auth/me
+      const meRes = await supertest(app.server)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${employeeToken}`);
+
+      expect(meRes.status).toBe(200);
+      expect(meRes.body.accountStatus).toBe(AccountStatus.ACTIVE);
+      expect(meRes.body.role).toBe(UserRole.MEMBER);
+      expect(meRes.body.email).toBe(employeeEmail);
     });
   });
 });

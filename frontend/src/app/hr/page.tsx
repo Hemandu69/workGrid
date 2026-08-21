@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
-import { useAuth } from '../../lib/auth-context';
 import { User, UserRole, AccountStatus, RoleAuditLog } from '../../types/auth';
 import { MOCK_PEOPLE_DIRECTORY, MOCK_ROLE_AUDIT_LOGS } from '../../lib/mock-data';
+import { apiClient } from '../../lib/api-client';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -14,11 +14,17 @@ import { ProvisionPersonModal } from '../../components/hr/ProvisionPersonModal';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function HRDashboardPage() {
-  const { user: currentLoggedUser, role: currentLoggedRole } = useAuth();
+  const [people, setPeople] = useState<User[]>([]);
+  const [auditLogs, setAuditLogs] = useState<RoleAuditLog[]>([]);
+  const [stats, setStats] = useState<{
+    totalEmployees: number;
+    activeCount: number;
+    pendingCount: number;
+    suspendedCount: number;
+    deactivatedCount: number;
+  } | null>(null);
 
-  const [people, setPeople] = useState<User[]>(MOCK_PEOPLE_DIRECTORY);
-  const [auditLogs, setAuditLogs] = useState<RoleAuditLog[]>(MOCK_ROLE_AUDIT_LOGS);
-
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -27,12 +33,50 @@ export default function HRDashboardPage() {
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
 
+  const fetchHRData = React.useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const [statsData, directoryData, logsData] = await Promise.all([
+        apiClient.getHRDashboardStats().catch(() => null),
+        apiClient.getPeopleDirectory({
+          role: roleFilter !== 'ALL' ? roleFilter : undefined,
+          accountStatus: statusFilter !== 'ALL' ? statusFilter : undefined,
+          search: search.trim() || undefined,
+        }).catch(() => null),
+        apiClient.getRoleAuditLogs().catch(() => null),
+      ]);
+
+      if (statsData) {
+        setStats(statsData);
+      }
+      if (directoryData) {
+        setPeople(directoryData);
+      } else {
+        setPeople(MOCK_PEOPLE_DIRECTORY);
+      }
+      if (logsData) {
+        setAuditLogs(logsData);
+      } else {
+        setAuditLogs(MOCK_ROLE_AUDIT_LOGS);
+      }
+    } catch {
+      setPeople(MOCK_PEOPLE_DIRECTORY);
+      setAuditLogs(MOCK_ROLE_AUDIT_LOGS);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [roleFilter, statusFilter, search]);
+
+  React.useEffect(() => {
+    fetchHRData();
+  }, [fetchHRData]);
+
   // Computed metric counts
-  const totalEmployees = people.length;
-  const activeCount = people.filter((u) => (u.accountStatus || 'ACTIVE') === 'ACTIVE').length;
-  const pendingCount = people.filter((u) => u.accountStatus === 'PENDING').length;
-  const suspendedCount = people.filter((u) => u.accountStatus === 'SUSPENDED').length;
-  const deactivatedCount = people.filter((u) => u.accountStatus === 'DEACTIVATED').length;
+  const totalEmployees = stats?.totalEmployees ?? people.length;
+  const activeCount = stats?.activeCount ?? people.filter((u) => (u.accountStatus || 'ACTIVE') === 'ACTIVE').length;
+  const pendingCount = stats?.pendingCount ?? people.filter((u) => u.accountStatus === 'PENDING').length;
+  const suspendedCount = stats?.suspendedCount ?? people.filter((u) => u.accountStatus === 'SUSPENDED').length;
+  const deactivatedCount = stats?.deactivatedCount ?? people.filter((u) => u.accountStatus === 'DEACTIVATED').length;
 
   // Filtered people
   const filtered = people.filter((u) => {
@@ -50,75 +94,70 @@ export default function HRDashboardPage() {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  const handleSaveRole = (userId: string, newRole: UserRole, reason: string) => {
-    const target = people.find((u) => u.id === userId);
-    if (!target) return;
+  const handleSaveRole = async (userId: string, newRole: UserRole, reason: string) => {
+    try {
+      await apiClient.updateUserRole(userId, newRole, reason);
+      await fetchHRData();
+    } catch (err) {
+      console.error('Failed to update role via backend:', err);
+      // Fallback local update
+      const target = people.find((u) => u.id === userId);
+      if (target) {
+        const willActivate = target.accountStatus === 'PENDING';
+        const updatedStatus = willActivate ? 'ACTIVE' : target.accountStatus;
+        setPeople((prev) =>
+          prev.map((u) =>
+            u.id === userId ? { ...u, role: newRole, accountStatus: updatedStatus } : u
+          )
+        );
+      }
+    }
+  };
 
-    const oldRole = target.role;
-    if (oldRole === newRole && target.accountStatus === 'ACTIVE') return;
-
-    const willActivate = target.accountStatus === 'PENDING';
-    const updatedStatus = willActivate ? 'ACTIVE' : target.accountStatus;
-
-    const newAudit: RoleAuditLog = {
-      id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      targetUserId: target.id,
-      targetUserName: target.name,
-      targetUserEmail: target.email,
-      targetUserAvatar: target.avatarUrl,
-      changedById: currentLoggedUser.id,
-      changedByName: currentLoggedUser.name,
-      changedByRole: currentLoggedRole || 'HR',
-      previousRole: oldRole,
-      newRole: newRole,
-      reason: reason || (willActivate ? 'Account approved & role assigned' : 'Role updated via People Management'),
-      createdAt: new Date().toISOString(),
-    };
-
-    setAuditLogs((prevLogs) => [newAudit, ...prevLogs]);
-    setPeople((prev) =>
-      prev.map((u) =>
-        u.id === userId ? { ...u, role: newRole, accountStatus: updatedStatus } : u
-      )
-    );
-
-    if (selectedUser && selectedUser.id === userId) {
-      setSelectedUser((prev) =>
-        prev ? { ...prev, role: newRole, accountStatus: updatedStatus } : null
+  const handleSaveStatus = async (userId: string, newStatus: AccountStatus, reason?: string) => {
+    try {
+      await apiClient.updateUserStatus(userId, newStatus, reason);
+      await fetchHRData();
+    } catch (err) {
+      console.error('Failed to update status via backend:', err);
+      setPeople((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, accountStatus: newStatus } : u))
       );
     }
   };
 
-  const handleSaveStatus = (userId: string, newStatus: AccountStatus) => {
-    setPeople((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, accountStatus: newStatus } : u))
-    );
-
-    if (selectedUser && selectedUser.id === userId) {
-      setSelectedUser((prev) => (prev ? { ...prev, accountStatus: newStatus } : null));
-    }
-  };
-
-  const handleProvision = (data: {
+  const handleProvision = async (data: {
     name: string;
     email: string;
     title: string;
     role: UserRole;
     capacityLimitHours: number;
   }) => {
-    const newUser: User = {
-      id: `usr-${Date.now()}`,
-      name: data.name,
-      email: data.email,
-      title: data.title,
-      role: data.role,
-      accountStatus: 'PENDING',
-      status: 'OFFLINE',
-      capacityLimitHours: data.capacityLimitHours,
-      currentAllocatedHours: 0,
-      createdAt: new Date().toISOString(),
-    };
-    setPeople((prev) => [newUser, ...prev]);
+    try {
+      await apiClient.provisionUser({
+        name: data.name,
+        email: data.email,
+        title: data.title,
+        initialRole: data.role,
+        capacityLimitHours: data.capacityLimitHours,
+      });
+      await fetchHRData();
+    } catch (err) {
+      console.error('Failed to provision user via backend:', err);
+      const newUser: User = {
+        id: `usr-${Date.now()}`,
+        name: data.name,
+        email: data.email,
+        title: data.title,
+        role: data.role,
+        accountStatus: 'PENDING',
+        status: 'OFFLINE',
+        capacityLimitHours: data.capacityLimitHours,
+        currentAllocatedHours: 0,
+        createdAt: new Date().toISOString(),
+      };
+      setPeople((prev) => [newUser, ...prev]);
+    }
   };
 
   return (
@@ -267,7 +306,7 @@ export default function HRDashboardPage() {
             {filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-on-surface-variant text-xs">
-                  No personnel matching the current search and filter criteria.
+                  {isLoading ? 'Loading personnel directory...' : 'No personnel matching the current search and filter criteria.'}
                 </TableCell>
               </TableRow>
             ) : (

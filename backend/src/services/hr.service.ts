@@ -49,15 +49,23 @@ export class HRService {
   static async getPeopleDirectory(
     organizationId: string,
     filters: {
-      role?: UserRole;
+      role?: UserRole | 'UNASSIGNED';
       accountStatus?: AccountStatus;
       search?: string;
     }
   ) {
     const where: any = { organizationId };
 
-    if (filters.role) where.role = filters.role;
-    if (filters.accountStatus) where.accountStatus = filters.accountStatus;
+    if (filters.role) {
+      if (filters.role === 'UNASSIGNED') {
+        where.role = null;
+      } else {
+        where.role = filters.role;
+      }
+    }
+    if (filters.accountStatus) {
+      where.accountStatus = filters.accountStatus;
+    }
 
     if (filters.search) {
       where.OR = [
