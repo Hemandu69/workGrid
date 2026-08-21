@@ -300,10 +300,44 @@ export const apiClient = {
     },
     token?: string
   ): Promise<{ userId: string; presenceState: string; currentLocation: string; arrivedAtIST?: string; lastSeenIST: string }> => {
-    return request('/api/v1/operations/presence', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }, token);
+    return request(
+      '/api/v1/operations/presence',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+      token
+    );
+  },
+
+  // Operations Grid Test Personnel Simulation
+  toggleSimulatedPresence: async (
+    id: string,
+    presenceState?: 'IN' | 'OUT',
+    token?: string
+  ): Promise<{ success: boolean; person: GridMemberItem | GridServerItem }> => {
+    return request(
+      '/api/v1/operations/simulation/toggle',
+      {
+        method: 'POST',
+        body: JSON.stringify({ id, presenceState }),
+      },
+      token
+    );
+  },
+
+  resetSimulation: async (token?: string): Promise<{ success: boolean; message: string }> => {
+    return request(
+      '/api/v1/operations/simulation/reset',
+      {
+        method: 'POST',
+      },
+      token
+    );
+  },
+
+  getPersonDetail: async (personId: string, token?: string): Promise<PersonAvailabilityDetailResponse> => {
+    return request<PersonAvailabilityDetailResponse>(`/api/v1/operations/person/${personId}`, {}, token);
   },
 
   // ---------------------------------------------------------------------------
@@ -592,6 +626,7 @@ export interface GridMemberItem {
   lastSeenIST: string;
   activeTaskId?: string;
   activeTaskTitle?: string;
+  isSimulated?: boolean;
 }
 
 export interface GridServerItem {
@@ -606,6 +641,7 @@ export interface GridServerItem {
   supervisoryPosition?: 1 | 3 | 5;
   arrivedAtIST?: string;
   lastSeenIST: string;
+  isSimulated?: boolean;
 }
 
 export interface GridSubroomCell {
@@ -638,6 +674,7 @@ export interface GridRoomColumn {
     currentLocation: string;
     preferredPosition?: 1 | 3 | 5;
     assignedPosition?: 1 | 3 | 5;
+    isSimulated?: boolean;
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;

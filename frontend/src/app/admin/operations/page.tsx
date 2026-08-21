@@ -1,52 +1,58 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { AppShell } from '../../../components/layout/AppShell';
 import { useAuth } from '../../../lib/auth-context';
-import { apiClient, OperationalGridResponse } from '../../../lib/api-client';
 import { useDomainEvent } from '../../../lib/realtime-context';
-import { OperationsGrid } from '../../../components/operations/OperationsGrid';
-import { ActiveEventBanner } from '../../../components/operations/ActiveEventBanner';
-import { ServerCoverageCard } from '../../../components/operations/ServerCoverageCard';
-import { OperationsFilters } from '../../../components/operations/OperationsFilters';
-import { EventDetailDrawer } from '../../../components/operations/EventDetailDrawer';
-import { PersonAvailabilityDrawer } from '../../../components/availability/PersonAvailabilityDrawer';
+import { apiClient, OperationalGridResponse } from '../../../lib/api-client';
+import { AppShell } from '../../../components/layout/AppShell';
 import { StatMetricCard } from '../../../components/monitoring/StatMetricCard';
+import { OperationsFilters } from '../../../components/operations/OperationsFilters';
+import { OperationsGrid } from '../../../components/operations/OperationsGrid';
+import { ServerCoverageCard } from '../../../components/operations/ServerCoverageCard';
+import { ActiveEventBanner } from '../../../components/operations/ActiveEventBanner';
+import { PersonAvailabilityDrawer } from '../../../components/availability/PersonAvailabilityDrawer';
+import { EventDetailDrawer } from '../../../components/operations/EventDetailDrawer';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
-import { formatToISTTime } from '../../../lib/time-utils';
 
-export default function OperationsGridPage() {
+export default function AdminOperationsPage() {
   const { user, role } = useAuth();
+  const [gridData, setGridData] = useState<OperationalGridResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isResettingSim, setIsResettingSim] = useState(false);
 
-  // Filters state
+  // Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [presenceFilter, setPresenceFilter] = useState('ALL');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [roomFilter, setRoomFilter] = useState('ALL');
 
-  // Selected details state
+  // Drawers State
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
-  // Data & loading state
-  const [gridData, setGridData] = useState<OperationalGridResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Real-Time IST Clock
   const [currentClock, setCurrentClock] = useState<string>('');
 
   const isServer = role === 'SERVER';
-  const serverRoomLetter = isServer
-    ? user.room ? user.room.replace('Sector', '').replace('Room', '').trim() : 'B'
-    : null;
+  const serverRoomLetter = user.room ? user.room.replace('Section', '').replace('Room', '').trim() : 'B';
+  const isAuthorized = role === 'SUPER_ADMIN' || role === 'ADMIN' || isServer;
 
-  const isAuthorized = role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'SERVER';
-
-  // Live IST Clock
   useEffect(() => {
-    setCurrentClock(formatToISTTime(new Date()));
-    const timer = setInterval(() => {
-      setCurrentClock(formatToISTTime(new Date()));
-    }, 30000);
+    const updateTime = () => {
+      const now = new Date();
+      const istString = now.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      });
+      setCurrentClock(istString);
+    };
+
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -86,6 +92,27 @@ export default function OperationsGridPage() {
       fetchGrid();
     }
   );
+
+  const handleToggleSimulated = async (id: string, presenceState?: 'IN' | 'OUT') => {
+    try {
+      await apiClient.toggleSimulatedPresence(id, presenceState);
+      fetchGrid();
+    } catch (err) {
+      console.error('Failed to toggle simulated presence:', err);
+    }
+  };
+
+  const handleResetSimulation = async () => {
+    try {
+      setIsResettingSim(true);
+      await apiClient.resetSimulation();
+      fetchGrid();
+    } catch (err) {
+      console.error('Failed to reset simulation:', err);
+    } finally {
+      setIsResettingSim(false);
+    }
+  };
 
   if (!isAuthorized) {
     return (
@@ -147,6 +174,18 @@ export default function OperationsGridPage() {
                 <span>Live IST: {currentClock}</span>
               </div>
             )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetSimulation}
+              isLoading={isResettingSim}
+              leftIcon={<span className="material-symbols-outlined text-[16px]">restart_alt</span>}
+              title="Reset simulated test personnel to initial fixture state"
+            >
+              Reset Simulation
+            </Button>
+
             <Button
               variant="primary"
               size="sm"
@@ -208,6 +247,7 @@ export default function OperationsGridPage() {
           <ServerCoverageCard
             rooms={gridData.rooms}
             onSelectServer={(id) => setSelectedPersonId(id)}
+            onToggleSimulated={handleToggleSimulated}
           />
         )}
 
@@ -242,6 +282,7 @@ export default function OperationsGridPage() {
               rooms={gridData.rooms}
               onSelectPerson={(id) => setSelectedPersonId(id)}
               onSelectEvent={(id) => setSelectedEventId(id)}
+              onToggleSimulated={handleToggleSimulated}
               presenceFilter={presenceFilter}
               roleFilter={roleFilter}
             />

@@ -6,6 +6,7 @@ import {
   formatToISTDateTime,
 } from '../utils/time.js';
 import { calculateServerPositions, SupervisoryPosition } from '../utils/server-positioning.js';
+import { SimulationService, SimulatedPerson } from './simulation.service.js';
 
 export type SupervisionState =
   | 'PRESENT_IN_EVENT'
@@ -17,10 +18,10 @@ export type SupervisionState =
 export interface GridMemberItem {
   id: string;
   name: string;
-  role: UserRole;
+  role: UserRole | string;
   title?: string;
   avatarUrl?: string;
-  presenceState: PresenceState;
+  presenceState: PresenceState | string;
   presenceLabel: string;
   currentLocation: string; // e.g. "B4", "UNKNOWN"
   arrivedAt?: string;
@@ -31,6 +32,7 @@ export interface GridMemberItem {
   lastSeenIST: string;
   activeTaskId?: string;
   activeTaskTitle?: string;
+  isSimulated?: boolean;
 }
 
 export interface GridServerItem {
@@ -39,12 +41,13 @@ export interface GridServerItem {
   email: string;
   avatarUrl?: string;
   assignedRoomLetter: string;
-  presenceState: PresenceState;
+  presenceState: PresenceState | string;
   currentLocation: string; // e.g. "B4", "UNKNOWN", "Outside"
   isCurrentlyInSubroom: boolean;
   supervisoryPosition?: SupervisoryPosition;
   arrivedAtIST?: string;
   lastSeenIST: string;
+  isSimulated?: boolean;
 }
 
 export interface GridSubroomCell {
@@ -73,10 +76,11 @@ export interface GridRoomColumn {
   assignedServers: Array<{
     id: string;
     name: string;
-    presenceState: PresenceState;
+    presenceState: PresenceState | string;
     currentLocation: string;
     preferredPosition?: SupervisoryPosition;
     assignedPosition?: SupervisoryPosition;
+    isSimulated?: boolean;
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;
@@ -108,6 +112,7 @@ export interface OperationalGridResponse {
 export class OperationsService {
   /**
    * Builds the Operational Room Grid dynamically from database Rooms and Subrooms
+   * seamlessly merged with the testing Simulation Layer
    */
   static async getOperationalGrid(filters: {
     room?: string;
@@ -132,7 +137,7 @@ export class OperationsService {
           orderBy: { number: 'asc' },
           include: {
             members: {
-              where: { role: UserRole.MEMBER },
+              where: { role: { in: [UserRole.MEMBER, UserRole.TEAM_LEAD] } },
               include: {
                 assignedTasks: {
                   where: { status: 'IN_PROGRESS' },
@@ -181,52 +186,78 @@ export class OperationsService {
       },
     });
 
+    const simPersonnel = SimulationService.getSimulatedPersons();
+
     let totalPeoplePresent = 0;
     let totalServersPresent = 0;
     let totalSubrooms = 0;
 
     const roomColumns: GridRoomColumn[] = rooms.map((room) => {
-      const roomServers = room.members.map((srv) => {
-        const isPresent = srv.presenceState === PresenceState.IN;
-        if (isPresent) totalServersPresent++;
+      // 1. Real database servers for this room
+      const dbServers: GridServerItem[] = room.members.map((srv) => ({
+        id: srv.id,
+        name: srv.name,
+        email: srv.email,
+        avatarUrl: srv.avatarUrl || undefined,
+        assignedRoomLetter: room.letter,
+        presenceState: srv.presenceState,
+        currentLocation: srv.currentLocationName || 'UNKNOWN',
+        isCurrentlyInSubroom: false,
+        arrivedAtIST: srv.arrivedAt ? formatToISTTime(srv.arrivedAt) : undefined,
+        lastSeenIST: srv.lastSeenAt ? formatToISTTime(srv.lastSeenAt) : formatToISTTime(now),
+        isSimulated: false,
+      }));
 
+      // 2. Simulated servers for this room (e.g. Maya Lin, Alex Mercer for Section B)
+      const simServers: GridServerItem[] = simPersonnel
+        .filter((p) => p.role === 'SERVER' && p.sectionLetter.toUpperCase() === room.letter.toUpperCase())
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          email: p.email,
+          avatarUrl: p.avatarUrl,
+          assignedRoomLetter: room.letter,
+          presenceState: p.presenceState,
+          currentLocation: p.presenceState === 'IN' ? p.subroomCode : 'Outside',
+          isCurrentlyInSubroom: false,
+          arrivedAtIST: p.arrivedAtIST,
+          lastSeenIST: p.lastSeenIST,
+          isSimulated: true,
+        }));
+
+      // Combined server roster
+      const allRoomServers = [...dbServers, ...simServers];
+
+      // Format for server positioning algorithm
+      const serverPositionInputs = allRoomServers.map((srv, idx) => {
+        const simMatch = simPersonnel.find((p) => p.id === srv.id);
+        const preferredSlot = (simMatch?.preferredServerPosition || (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
         return {
           id: srv.id,
           name: srv.name,
-          email: srv.email,
-          avatarUrl: srv.avatarUrl || undefined,
-          assignedRoomLetter: room.letter,
-          presenceState: srv.presenceState,
-          currentLocation: srv.currentLocationName || 'UNKNOWN',
-          isCurrentlyInSubroom: false,
-          arrivedAtIST: srv.arrivedAt ? formatToISTTime(srv.arrivedAt) : undefined,
-          lastSeenIST: srv.lastSeenAt ? formatToISTTime(srv.lastSeenAt) : formatToISTTime(now),
+          presenceState: srv.presenceState as 'IN' | 'OUT' | 'UNKNOWN',
+          preferredSlot,
+          isSimulated: srv.isSimulated,
         };
       });
 
-      const serverPresenceCount = roomServers.filter((s) => s.presenceState === PresenceState.IN).length;
-      const serverTotalCount = roomServers.length;
-
-      // Calculate dynamic server positioning for supervisory positions [1, 3, 5]
-      const serverPositionResults = calculateServerPositions(
-        roomServers.map((srv, idx) => ({
-          id: srv.id,
-          name: srv.name,
-          presenceState: srv.presenceState as 'IN' | 'OUT' | 'UNKNOWN',
-          preferredSlot: (idx === 0 ? 1 : idx === 1 ? 3 : 5) as SupervisoryPosition,
-        }))
-      );
+      // Calculate dynamic server positions based on currently PRESENT servers
+      const serverPositionResults = calculateServerPositions(serverPositionInputs);
 
       const serverPositionMap = new Map<string, SupervisoryPosition>();
       serverPositionResults.forEach((pos) => {
         serverPositionMap.set(pos.server.id, pos.position);
       });
 
+      const serverPresenceCount = allRoomServers.filter((s) => s.presenceState === PresenceState.IN || s.presenceState === 'IN').length;
+      const serverTotalCount = allRoomServers.length;
+      totalServersPresent += serverPresenceCount;
+
       const subrooms: GridSubroomCell[] = room.subrooms.map((subroom) => {
         totalSubrooms++;
 
-        // Map occupying members (up to 2 per subroom)
-        const members: GridMemberItem[] = subroom.members.map((m) => {
+        // 1. Real database members in this subroom
+        const dbMembers: GridMemberItem[] = subroom.members.map((m) => {
           if (m.presenceState === PresenceState.IN) {
             totalPeoplePresent++;
           }
@@ -256,18 +287,55 @@ export class OperationsService {
             lastSeenIST: m.lastSeenAt ? formatToISTTime(m.lastSeenAt) : formatToISTTime(now),
             activeTaskId: m.assignedTasks[0]?.taskIdDisplay || m.assignedTasks[0]?.id,
             activeTaskTitle: m.assignedTasks[0]?.title,
+            isSimulated: false,
           };
         });
 
-        // Find supervisory servers currently assigned to this position slot or located in this subroom
+        // 2. Simulated members assigned to this subroom
+        const simMembers: GridMemberItem[] = simPersonnel
+          .filter(
+            (p) =>
+              p.role !== 'SERVER' &&
+              p.sectionLetter.toUpperCase() === room.letter.toUpperCase() &&
+              p.subroomCode.toUpperCase() === subroom.code.toUpperCase()
+          )
+          .map((p) => {
+            if (p.presenceState === 'IN') {
+              totalPeoplePresent++;
+            }
+
+            return {
+              id: p.id,
+              name: p.name,
+              role: p.role,
+              title: p.title,
+              avatarUrl: p.avatarUrl,
+              presenceState: p.presenceState,
+              presenceLabel: p.presenceState === 'IN' ? 'In Subroom' : 'Outside',
+              currentLocation: p.presenceState === 'IN' ? p.subroomCode : 'Outside',
+              arrivedAtIST: p.arrivedAtIST,
+              leftAtIST: p.leftAtIST,
+              durationInWorkGrid: p.durationInWorkGrid,
+              lastSeenIST: p.lastSeenIST,
+              activeTaskId: p.activeTaskId,
+              activeTaskTitle: p.activeTaskTitle,
+              isSimulated: true,
+            };
+          });
+
+        const allSubroomMembers = [...dbMembers, ...simMembers];
+
+        // Find supervisory server dynamically assigned to this position slot (positions 1, 3, 5)
         const supervisoryServerForSlot = serverPositionResults.find((p) => p.position === subroom.number);
 
-        const serversPresentInSubroom: GridServerItem[] = roomServers
+        const serversPresentInSubroom: GridServerItem[] = allRoomServers
           .filter(
             (s) =>
-              (s.presenceState === PresenceState.IN &&
+              ((s.presenceState === PresenceState.IN || s.presenceState === 'IN') &&
                 s.currentLocation.toUpperCase().trim() === subroom.code.toUpperCase().trim()) ||
-              (supervisoryServerForSlot && supervisoryServerForSlot.server.id === s.id && s.presenceState === PresenceState.IN)
+              (supervisoryServerForSlot &&
+                supervisoryServerForSlot.server.id === s.id &&
+                (s.presenceState === PresenceState.IN || s.presenceState === 'IN'))
           )
           .map((s) => ({
             ...s,
@@ -280,6 +348,8 @@ export class OperationsService {
           (e) => e.subroomId === subroom.id || (e.roomId === room.id && e.locations.some((l) => l.subroomId === subroom.id || l.name === subroom.code))
         );
 
+        const occupancyCount = allSubroomMembers.filter((m) => m.presenceState === PresenceState.IN || m.presenceState === 'IN').length;
+
         return {
           id: subroom.id,
           code: subroom.code,
@@ -287,8 +357,8 @@ export class OperationsService {
           roomLetter: room.letter,
           memberCapacity: subroom.memberCapacity,
           serverSeatCount: subroom.serverSeatCount,
-          occupancyCount: members.filter((m) => m.presenceState === PresenceState.IN).length,
-          members,
+          occupancyCount,
+          members: allSubroomMembers,
           serversPresent: serversPresentInSubroom,
           activeRoomEvent: activeSubroomEvent
             ? {
@@ -306,14 +376,19 @@ export class OperationsService {
         id: room.id,
         letter: room.letter,
         name: room.name,
-        assignedServers: roomServers.map((s, idx) => ({
-          id: s.id,
-          name: s.name,
-          presenceState: s.presenceState,
-          currentLocation: s.currentLocation,
-          preferredPosition: (idx === 0 ? 1 : idx === 1 ? 3 : 5) as SupervisoryPosition,
-          assignedPosition: serverPositionMap.get(s.id),
-        })),
+        assignedServers: allRoomServers.map((s, idx) => {
+          const simMatch = simPersonnel.find((p) => p.id === s.id);
+          const preferredPosition = (simMatch?.preferredServerPosition || (idx === 0 ? 1 : idx === 1 ? 3 : 5)) as SupervisoryPosition;
+          return {
+            id: s.id,
+            name: s.name,
+            presenceState: s.presenceState,
+            currentLocation: s.currentLocation,
+            preferredPosition,
+            assignedPosition: serverPositionMap.get(s.id),
+            isSimulated: s.isSimulated,
+          };
+        }),
         serverPresenceCount,
         serverTotalCount,
         serverCoverageSummary: `${serverPresenceCount} / ${serverTotalCount} Present`,
@@ -354,6 +429,59 @@ export class OperationsService {
   }
 
   /**
+   * Retrieves person detail drawer information (handles both real DB users and simulated personnel)
+   */
+  static async getPersonDetail(personId: string) {
+    const simPerson = SimulationService.getSimulatedPerson(personId);
+    if (simPerson) {
+      return {
+        person: {
+          id: simPerson.id,
+          name: simPerson.name,
+          email: simPerson.email,
+          role: simPerson.role,
+          title: simPerson.title,
+          avatarUrl: simPerson.avatarUrl,
+          room: `Section ${simPerson.sectionLetter}`,
+          subroom: simPerson.subroomCode,
+          currentLocation: simPerson.presenceState === 'IN' ? simPerson.subroomCode : 'Outside',
+          attendanceState: simPerson.attendanceState,
+          presenceState: simPerson.presenceState,
+          arrivedAtIST: simPerson.arrivedAtIST,
+          leftAtIST: simPerson.leftAtIST,
+          currentDurationFormatted: simPerson.durationInWorkGrid,
+          lastSeenAtIST: simPerson.lastSeenIST,
+          isSimulated: true,
+        },
+        currentStatus: {
+          state: simPerson.availabilityState,
+          reason: simPerson.activeTaskId ? `Active Task: ${simPerson.activeTaskId} — ${simPerson.activeTaskTitle}` : 'Ready for work',
+          room: `Section ${simPerson.sectionLetter}`,
+          subroom: simPerson.subroomCode,
+          until: 'End of Shift',
+        },
+        upcomingCommitments: simPerson.activeTaskId
+          ? [
+              {
+                id: simPerson.activeTaskId,
+                title: simPerson.activeTaskTitle || 'Assigned task',
+                status: 'IN_PROGRESS',
+                priority: 'HIGH',
+                estimatedHours: 8,
+                allocatedHours: 4,
+                dueDateFormatted: 'Today',
+                room: `Section ${simPerson.sectionLetter}`,
+                subroom: simPerson.subroomCode,
+              },
+            ]
+          : [],
+      };
+    }
+
+    return null;
+  }
+
+  /**
    * Evaluates Dynamic Server Supervision State for a specific event
    */
   static evaluateServerSupervisionStatus(
@@ -391,7 +519,6 @@ export class OperationsService {
     const loc = server.currentLocationName.toUpperCase().trim();
 
     if (event.scope === EventScope.ROOM) {
-      // If event has a subroom code or location matching
       const targetSubroomMatches =
         (event.subroomId && server.currentLocationSubroomId === event.subroomId) ||
         event.locations.some((l) => l.name.toUpperCase().trim() === loc);
@@ -400,7 +527,6 @@ export class OperationsService {
         return 'PRESENT_IN_EVENT';
       }
 
-      // Check if server is in the same room but different subroom
       if (server.roomId && event.roomId && server.roomId === event.roomId) {
         return 'IN_ROOM_DIFFERENT_SUBROOM';
       }
@@ -408,7 +534,6 @@ export class OperationsService {
       return 'OUTSIDE_ROOM';
     }
 
-    // Company event with multi-locations
     const matchedLocation = event.locations.some((l) => l.name.toUpperCase().trim() === loc);
     if (matchedLocation || loc === 'MAIN HALL' || loc === 'MAIN AUDITORIUM') {
       return 'PRESENT_IN_EVENT';

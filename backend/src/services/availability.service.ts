@@ -1,7 +1,8 @@
 import { prisma } from '../db/client.js';
 import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
-import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, PresenceState } from '@prisma/client';
+import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, TaskPriority, PresenceState } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
+import { SimulationService } from './simulation.service.js';
 import {
   APP_TIMEZONE,
   TIMEZONE_LABEL,
@@ -417,6 +418,67 @@ export class AvailabilityService {
    * Detailed weekly timeline and commitments for a selected person in IST
    */
   static async getPersonDetailedAvailability(userId: string, startDateStr?: string) {
+    if (userId.startsWith('sim-') || SimulationService.getSimulatedPerson(userId)) {
+      const sim = SimulationService.getSimulatedPerson(userId);
+      if (sim) {
+        const isPresent = sim.presenceState === 'IN';
+        return {
+          person: {
+            id: sim.id,
+            name: sim.name,
+            email: sim.email,
+            role: sim.role,
+            status: isPresent ? (sim.activeTaskId ? UserStatus.BUSY : UserStatus.ONLINE) : UserStatus.OFFLINE,
+            avatarUrl: sim.avatarUrl,
+            title: sim.title,
+            room: `Section ${sim.sectionLetter}`,
+            subroom: sim.subroomCode,
+            currentLocation: isPresent ? sim.subroomCode : 'Outside',
+            attendanceState: sim.attendanceState,
+            presenceState: sim.presenceState,
+            arrivedAtIST: sim.arrivedAtIST,
+            leftAtIST: sim.leftAtIST,
+            currentDurationFormatted: sim.durationInWorkGrid,
+            lastSeenAtIST: sim.lastSeenIST,
+            capacityLimitHours: 40,
+            currentAllocatedHours: 20,
+            isSimulated: true,
+          },
+          currentStatus: {
+            state: sim.availabilityState,
+            reason: sim.activeTaskId ? `Active Task: ${sim.activeTaskId} — ${sim.activeTaskTitle}` : 'Simulated Test Person',
+            room: `Section ${sim.sectionLetter}`,
+            subroom: sim.subroomCode,
+            until: 'End of Shift',
+          },
+          nextFree: {
+            isCurrentlyFree: sim.availabilityState === 'FREE',
+            statusText: sim.availabilityState === 'FREE' ? 'Available now' : 'Scheduled Busy',
+            nextFreeDate: 'Today',
+            nextFreeTime: '17:00 IST',
+            durationFormatted: 'Simulated schedule',
+          },
+          weeklyTimeline: [],
+          upcomingCommitments: sim.activeTaskId
+            ? [
+                {
+                  id: sim.activeTaskId,
+                  title: sim.activeTaskTitle || 'Assigned task',
+                  description: 'Simulated task commitment for testing',
+                  status: TaskStatus.IN_PROGRESS,
+                  priority: TaskPriority.HIGH,
+                  estimatedHours: 8,
+                  allocatedHours: 4,
+                  dueDateFormatted: 'Today',
+                  room: `Section ${sim.sectionLetter}`,
+                  subroom: sim.subroomCode,
+                },
+              ]
+            : [],
+        };
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
