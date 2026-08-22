@@ -1,6 +1,8 @@
 import { prisma } from '../db/client.js';
 import { UserRole } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
+import { getRedisClient } from '../redis/client.js';
+import { SHORT_CACHE_TTL_SECONDS } from '../redis/ttl-config.js';
 
 export class RoomAssignmentError extends Error {
   statusCode: number;
@@ -24,6 +26,36 @@ const SECTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export class RoomService {
   static async getAllRooms(organizationId?: string, letter?: string) {
+    // Short-lived cache-aside: room/subroom metadata changes rarely and is
+    // safe to be briefly stale, so this is worth caching for the common
+    // "list every room in my org" call (every dashboard load, every
+    // CreateTaskModal open). Only cache the unfiltered per-org query — a
+    // per-letter cache key isn't worth the complexity for a rarer call shape,
+    // and never cache the fully-unscoped (no organizationId) query.
+    const cacheKey = organizationId && !letter ? `rooms:${organizationId}` : null;
+    if (cacheKey) {
+      try {
+        const cached = await getRedisClient().get(cacheKey);
+        if (cached) return JSON.parse(cached) as Awaited<ReturnType<typeof RoomService.queryAndFormatRooms>>;
+      } catch {
+        // Redis unreachable — fall through to Postgres, same as an empty cache.
+      }
+    }
+
+    const formatted = await this.queryAndFormatRooms(organizationId, letter);
+
+    if (cacheKey) {
+      try {
+        await getRedisClient().set(cacheKey, JSON.stringify(formatted), 'EX', SHORT_CACHE_TTL_SECONDS);
+      } catch {
+        // Best-effort — a failed cache write just means the next call hits Postgres again.
+      }
+    }
+
+    return formatted;
+  }
+
+  private static async queryAndFormatRooms(organizationId?: string, letter?: string) {
     const rooms = await prisma.room.findMany({
       where: {
         ...(organizationId ? { organizationId } : {}),
@@ -75,7 +107,7 @@ export class RoomService {
     });
 
     // Format response matching frontend expectations
-    return rooms.map((room) => {
+    const formatted = rooms.map((room) => {
       // Servers assigned to this room (up to 3)
       const servers = room.members || [];
       const serverCount = servers.length;
@@ -129,6 +161,8 @@ export class RoomService {
         occupancyPercentage,
       };
     });
+
+    return formatted;
   }
 
   static async getRoomByLetter(letter: string, organizationId?: string) {

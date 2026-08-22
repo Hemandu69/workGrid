@@ -3,6 +3,7 @@ import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import supertest from 'supertest';
 import { UserRole } from '@prisma/client';
+import * as redisModule from '../src/redis/client.js';
 
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
@@ -78,6 +79,13 @@ describe('Room & Subroom Endpoints (/api/v1/rooms)', () => {
   let memberToken: string;
 
   beforeAll(async () => {
+    // RoomService.getAllRooms has a short-lived Redis cache-aside — simulate
+    // an unreachable Redis so it always falls through to the mocked Postgres
+    // path instead of paying a real connection attempt in this test env.
+    vi.spyOn(redisModule, 'getRedisClient').mockImplementation(() => {
+      throw new Error('Redis unreachable (test)');
+    });
+
     app = await buildApp();
     await app.ready();
 
@@ -102,8 +110,13 @@ describe('Room & Subroom Endpoints (/api/v1/rooms)', () => {
     await app.close();
   });
 
-  it('GET /api/v1/rooms should return all 8 rooms structure', async () => {
+  it('GET /api/v1/rooms rejects an unauthenticated request', async () => {
     const res = await supertest(app.server).get('/api/v1/rooms');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /api/v1/rooms should return all 8 rooms structure for an authenticated user', async () => {
+    const res = await supertest(app.server).get('/api/v1/rooms').set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);

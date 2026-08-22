@@ -6,7 +6,7 @@ import { Button } from '../ui/Button';
 
 interface AvailabilityGridProps {
   initialSchedule: WeeklyAvailabilitySchedule;
-  onSave?: (schedule: WeeklyAvailabilitySchedule) => void;
+  onSave?: (schedule: WeeklyAvailabilitySchedule) => Promise<void>;
   readOnly?: boolean;
 }
 
@@ -30,6 +30,7 @@ export function AvailabilityGrid({
   const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule>(initialSchedule);
   const [selectedToolState, setSelectedToolState] = useState<SlotState>('AVAILABLE');
   const [hasChanges, setHasChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const toggleSlot = (day: DayOfWeek, hour: number) => {
     if (readOnly) return;
@@ -79,9 +80,18 @@ export function AvailabilityGrid({
     }
   };
 
-  const handleSave = () => {
-    onSave?.(schedule);
-    setHasChanges(false);
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await onSave?.(schedule);
+      setHasChanges(false);
+    } catch {
+      // Leave hasChanges=true so the Save button stays visible and the
+      // user's edits are never lost — the parent surfaces the error.
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -147,8 +157,8 @@ export function AvailabilityGrid({
         </div>
 
         {hasChanges && (
-          <Button size="sm" variant="primary" onClick={handleSave}>
-            Save Schedule
+          <Button size="sm" variant="primary" onClick={handleSave} isLoading={isSaving} disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save Schedule'}
           </Button>
         )}
       </div>

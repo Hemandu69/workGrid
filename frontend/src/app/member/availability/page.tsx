@@ -1,31 +1,38 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { AvailabilityGrid } from '../../../components/availability/AvailabilityGrid';
 import { useAuth } from '../../../lib/auth-context';
 import { apiClient } from '../../../lib/api-client';
-import { WeeklyAvailabilitySchedule } from '../../../types/availability';
+import { WeeklyAvailabilitySchedule, DayOfWeek } from '../../../types/availability';
 import { useDomainEvent } from '../../../lib/realtime-context';
+
+const DISPLAY_HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // matches AvailabilityGrid
 
 export default function AvailabilityPage() {
   const { user } = useAuth();
   const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [savedNotification, setSavedNotification] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Monotonic fetch counter so an out-of-order response (e.g. a realtime
+  // refetch racing a save's own response) can never overwrite fresher data.
+  const fetchSeq = useRef(0);
 
   const fetchSchedule = useCallback(async () => {
     if (!user?.id) return;
+    const seq = ++fetchSeq.current;
     try {
       setIsLoading(true);
       const data = await apiClient.getUserAvailability(user.id);
-      if (data) {
+      if (data && seq === fetchSeq.current) {
         setSchedule(data);
       }
     } catch {
       // Clean fallback
     } finally {
-      setIsLoading(false);
+      if (seq === fetchSeq.current) setIsLoading(false);
     }
   }, [user?.id]);
 
@@ -39,10 +46,37 @@ export default function AvailabilityPage() {
     }
   });
 
-  const handleSave = () => {
-    setSavedNotification(true);
-    fetchSchedule();
-    setTimeout(() => setSavedNotification(false), 3000);
+  const handleSave = async (updatedSchedule: WeeklyAvailabilitySchedule) => {
+    if (!user?.id) return;
+    setSaveError(null);
+
+    const slots: { day: DayOfWeek; hour: number; state: string; taskId?: string }[] = [];
+    (Object.keys(updatedSchedule.days) as DayOfWeek[]).forEach((day) => {
+      updatedSchedule.days[day].forEach((slot) => {
+        // BUSY slots are task-driven and never user-editable — never send them back.
+        if (slot.state === 'BUSY' || !DISPLAY_HOURS.includes(slot.hour)) return;
+        const entry: { day: DayOfWeek; hour: number; state: string; taskId?: string } = {
+          day,
+          hour: slot.hour,
+          state: slot.state,
+        };
+        if (slot.taskId) entry.taskId = slot.taskId;
+        slots.push(entry);
+      });
+    });
+
+    const seq = ++fetchSeq.current;
+    try {
+      const updated = await apiClient.updateUserAvailability(user.id, { slots });
+      if (seq === fetchSeq.current) {
+        setSchedule(updated);
+      }
+      setSavedNotification(true);
+      setTimeout(() => setSavedNotification(false), 3000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save your schedule. Please try again.');
+      throw err;
+    }
   };
 
   return (
@@ -69,6 +103,13 @@ export default function AvailabilityPage() {
             <div className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-xs font-semibold flex items-center gap-1.5 animate-in fade-in">
               <span className="material-symbols-outlined text-[16px]">check_circle</span>
               Schedule updated successfully
+            </div>
+          )}
+
+          {saveError && (
+            <div className="px-3 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded text-xs font-semibold flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px]">error</span>
+              {saveError}
             </div>
           )}
         </div>

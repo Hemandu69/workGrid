@@ -5,6 +5,7 @@ import supertest from 'supertest';
 import { UserRole, AccountStatus, TaskStatus } from '@prisma/client';
 import * as redisModule from '../src/redis/client.js';
 import { IdempotencyService } from '../src/services/idempotency.service.js';
+import { IDEMPOTENCY_TTL_SECONDS } from '../src/redis/ttl-config.js';
 
 /** Minimal in-memory fake mirroring ioredis's SET/GET/DEL argument shape. */
 function createFakeRedis(opts: { throwOnSet?: boolean } = {}) {
@@ -42,6 +43,19 @@ describe('IdempotencyService (unit)', () => {
     const result = await IdempotencyService.claim('org-1', 'user-1', 'test.route', 'key-a');
     expect(result.acquired).toBe(true);
     expect(result.replay).toBeUndefined();
+  });
+
+  it('claims with the TTL sourced from the central redis/ttl-config.ts constant', async () => {
+    const fake = createFakeRedis();
+    vi.spyOn(redisModule, 'getRedisClient').mockReturnValue(fake as any);
+    await IdempotencyService.claim('org-1', 'user-1', 'test.route', 'key-ttl');
+    expect(fake.set).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      'EX',
+      IDEMPOTENCY_TTL_SECONDS,
+      'NX'
+    );
   });
 
   it('claim() on a still-pending key returns acquired:false with no replay (concurrent duplicate)', async () => {

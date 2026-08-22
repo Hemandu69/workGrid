@@ -57,6 +57,28 @@ const testUsers: any[] = [
     passwordHash: 'hash',
     version: 1,
   },
+  {
+    id: 'rt-server-roomA-id',
+    email: 'server.rooma@workgrid.corp',
+    name: 'Server Room A',
+    role: UserRole.SERVER,
+    accountStatus: AccountStatus.ACTIVE,
+    organizationId: 'org-rt-1',
+    roomId: 'room-A',
+    passwordHash: 'hash',
+    version: 1,
+  },
+  {
+    id: 'rt-server-roomB-id',
+    email: 'server.roomb@workgrid.corp',
+    name: 'Server Room B',
+    role: UserRole.SERVER,
+    accountStatus: AccountStatus.ACTIVE,
+    organizationId: 'org-rt-1',
+    roomId: 'room-B',
+    passwordHash: 'hash',
+    version: 1,
+  },
 ];
 
 vi.mock('../src/db/client.js', () => ({
@@ -94,6 +116,8 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
   let memberToken: string;
   let suspendedToken: string;
   let org2MemberToken: string;
+  let serverRoomAToken: string;
+  let serverRoomBToken: string;
 
   beforeAll(async () => {
     app = await buildApp();
@@ -106,6 +130,8 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
     memberToken = app.jwt.sign(testUsers[2]);
     suspendedToken = app.jwt.sign(testUsers[3]);
     org2MemberToken = app.jwt.sign(testUsers[4]);
+    serverRoomAToken = app.jwt.sign(testUsers[5]);
+    serverRoomBToken = app.jwt.sign(testUsers[6]);
   });
 
   afterAll(async () => {
@@ -490,6 +516,121 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
 
       expect(captured.length).toBe(1);
       expect(captured[0].payload.title).toBe('Global Town Hall');
+    });
+  });
+
+  describe('5. Availability Events — privacy-scoped delivery', () => {
+    it('delivers to an ADMIN socket regardless of room', async () => {
+      const adminSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${superAdminToken}` },
+      });
+      await new Promise((res) => adminSocket.on('CONNECTED', res));
+
+      const captured: any[] = [];
+      adminSocket.on('AVAILABILITY_CHANGED', (e) => captured.push(e));
+
+      publishDomainEvent({
+        type: 'AVAILABILITY_CHANGED',
+        organizationId: 'org-rt-1',
+        entityId: 'rt-member-id',
+        targetUserId: 'rt-member-id',
+        payload: { userId: 'rt-member-id', personId: 'rt-member-id', organizationId: 'org-rt-1', roomId: 'room-A' },
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+      adminSocket.disconnect();
+
+      expect(captured.length).toBe(1);
+    });
+
+    it('always delivers to the affected user\'s own socket', async () => {
+      const memberSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${memberToken}` },
+      });
+      await new Promise((res) => memberSocket.on('CONNECTED', res));
+
+      const captured: any[] = [];
+      memberSocket.on('AVAILABILITY_CHANGED', (e) => captured.push(e));
+
+      publishDomainEvent({
+        type: 'AVAILABILITY_CHANGED',
+        organizationId: 'org-rt-1',
+        entityId: 'rt-member-id',
+        targetUserId: 'rt-member-id',
+        payload: { userId: 'rt-member-id', personId: 'rt-member-id', organizationId: 'org-rt-1' },
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+      memberSocket.disconnect();
+
+      expect(captured.length).toBe(1);
+    });
+
+    it('delivers to the SERVER overseeing the affected user\'s room, but not a SERVER overseeing a different room', async () => {
+      const serverA = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${serverRoomAToken}` },
+      });
+      const serverB = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${serverRoomBToken}` },
+      });
+
+      await Promise.all([
+        new Promise((res) => serverA.on('CONNECTED', res)),
+        new Promise((res) => serverB.on('CONNECTED', res)),
+      ]);
+
+      const capturedA: any[] = [];
+      const capturedB: any[] = [];
+      serverA.on('AVAILABILITY_CHANGED', (e) => capturedA.push(e));
+      serverB.on('AVAILABILITY_CHANGED', (e) => capturedB.push(e));
+
+      publishDomainEvent({
+        type: 'AVAILABILITY_CHANGED',
+        organizationId: 'org-rt-1',
+        entityId: 'rt-org1-target',
+        targetUserId: 'rt-org1-target',
+        payload: { userId: 'rt-org1-target', personId: 'rt-org1-target', organizationId: 'org-rt-1', roomId: 'room-A' },
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+      serverA.disconnect();
+      serverB.disconnect();
+
+      expect(capturedA.length).toBe(1);
+      expect(capturedB.length).toBe(0);
+    });
+
+    it('does NOT deliver to an unrelated MEMBER outside the target\'s scope', async () => {
+      const memberSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${memberToken}` },
+      });
+      await new Promise((res) => memberSocket.on('CONNECTED', res));
+
+      const captured: any[] = [];
+      memberSocket.on('AVAILABILITY_CHANGED', (e) => captured.push(e));
+
+      publishDomainEvent({
+        type: 'AVAILABILITY_CHANGED',
+        organizationId: 'org-rt-1',
+        entityId: 'rt-org1-target',
+        targetUserId: 'rt-org1-target',
+        payload: { userId: 'rt-org1-target', personId: 'rt-org1-target', organizationId: 'org-rt-1', roomId: 'room-A' },
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+      memberSocket.disconnect();
+
+      expect(captured.length).toBe(0);
     });
   });
 });
