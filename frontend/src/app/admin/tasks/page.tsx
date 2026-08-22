@@ -70,7 +70,8 @@ export default function AdminTasksPage() {
       t.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.assigneeName.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesRoom = roomFilter === 'ALL' || t.assigneeRoom === roomFilter;
+    const matchesRoom =
+      roomFilter === 'ALL' || t.assigneeRoom === roomFilter || `Room ${t.teamSection}` === roomFilter;
     const matchesStatus = statusFilter === 'ALL' || t.status === statusFilter;
 
     return matchesSearch && matchesRoom && matchesStatus;
@@ -151,6 +152,10 @@ export default function AdminTasksPage() {
               <option value="Room B">Section B</option>
               <option value="Room C">Section C</option>
               <option value="Room D">Section D</option>
+              <option value="Room E">Section E</option>
+              <option value="Room F">Section F</option>
+              <option value="Room G">Section G</option>
+              <option value="Room H">Section H</option>
             </select>
 
             <select

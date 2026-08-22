@@ -60,9 +60,16 @@ export function TaskTable({
             {/* Title & Campaign */}
             <TableCell className="max-w-xs">
               <div className="flex flex-col">
-                <span className="font-semibold text-primary truncate hover:underline">
-                  {task.title}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-primary truncate hover:underline">
+                    {task.title}
+                  </span>
+                  {task.taskType === 'TEAM' && (
+                    <span className="shrink-0 px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-secondary-container text-on-secondary-container">
+                      Team · {task.teamSection}
+                    </span>
+                  )}
+                </div>
                 {task.campaignTitle && (
                   <span className="text-[10px] text-on-surface-variant truncate">
                     {task.campaignTitle}
@@ -74,10 +81,14 @@ export function TaskTable({
             {/* Assignee */}
             {showAssignee && (
               <TableCell>
-                <div className="flex items-center gap-2">
-                  <Avatar src={task.assigneeAvatar} name={task.assigneeName} size="sm" />
-                  <span className="text-xs text-on-surface truncate">{task.assigneeName}</span>
-                </div>
+                {task.assigneeId ? (
+                  <div className="flex items-center gap-2">
+                    <Avatar src={task.assigneeAvatar} name={task.assigneeName} size="sm" />
+                    <span className="text-xs text-on-surface truncate">{task.assigneeName}</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-on-surface-variant italic">Unassigned</span>
+                )}
               </TableCell>
             )}
 
@@ -95,7 +106,7 @@ export function TaskTable({
 
             {/* Status */}
             <TableCell>
-              <Badge status={task.status} />
+              <Badge status={task.status}>{task.taskType === 'TEAM' && task.status === 'DRAFT' ? 'Open' : undefined}</Badge>
             </TableCell>
 
             {/* Due Date */}

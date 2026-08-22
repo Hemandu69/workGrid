@@ -157,6 +157,22 @@ export const roomRoutes: FastifyPluginAsync = async (fastify) => {
   // management boundary — matches POST /:id/servers above).
   // ---------------------------------------------------------------------------
 
+  // GET /api/v1/rooms/assignment/me — any authenticated user's own section,
+  // subroom, and current subroom partners (the admin-only /:personId route
+  // below cannot be used by a MEMBER/TEAM_LEAD to see their own assignment).
+  fastify.get(
+    '/assignment/me',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const assignment = await RoomService.getPersonAssignment(request.user.id, request.user.organizationId);
+        return reply.send(assignment);
+      } catch (err: unknown) {
+        return sendAssignmentError(reply, err, 'Failed to fetch your assignment');
+      }
+    }
+  );
+
   // GET /api/v1/rooms/assignment/:personId
   fastify.get(
     '/assignment/:personId',

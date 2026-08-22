@@ -49,15 +49,19 @@ export async function registerSecurityPlugins(app: FastifyInstance): Promise<voi
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
-  // Global Rate Limiting
-  await app.register(rateLimit, {
-    max: config.RATE_LIMIT_MAX,
-    timeWindow: config.RATE_LIMIT_TIME_WINDOW,
-    allowList: ['127.0.0.1', 'localhost'],
-    errorResponseBuilder: () => ({
-      statusCode: 429,
-      error: 'Too Many Requests',
-      message: 'Rate limit exceeded, please try again later.',
-    }),
-  });
+  // Global Rate Limiting — disabled under automated tests, where a single
+  // suite can legitimately fire far more than RATE_LIMIT_MAX requests against
+  // one in-process app instance within the same time window.
+  if (config.NODE_ENV !== 'test') {
+    await app.register(rateLimit, {
+      max: config.RATE_LIMIT_MAX,
+      timeWindow: config.RATE_LIMIT_TIME_WINDOW,
+      allowList: ['127.0.0.1', 'localhost'],
+      errorResponseBuilder: () => ({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: 'Rate limit exceeded, please try again later.',
+      }),
+    });
+  }
 }

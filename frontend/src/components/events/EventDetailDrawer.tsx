@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiClient, ApiError } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
+import { useAuth } from '../../lib/auth-context';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown } from '../../types/org-event';
 import { Avatar } from '../ui/Avatar';
 import { Button } from '../ui/Button';
@@ -25,17 +26,28 @@ const RESPONSE_SECTIONS: Array<{ key: keyof OrgEventResponseBreakdown; label: st
 const STATUS_STYLES: Record<OrgEvent['status'], string> = {
   UPCOMING: 'bg-blue-100 text-blue-800',
   LIVE: 'bg-emerald-100 text-emerald-800',
+  AWAITING_COMPLETION: 'bg-amber-100 text-amber-800',
   COMPLETED: 'bg-slate-100 text-slate-600',
   CANCELLED: 'bg-rose-100 text-rose-700',
 };
 
+const STATUS_LABELS: Record<OrgEvent['status'], string> = {
+  UPCOMING: 'Upcoming',
+  LIVE: 'Live',
+  AWAITING_COMPLETION: 'Awaiting Completion',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+};
+
 export function EventDetailDrawer({ eventId, onClose, onEventChanged }: EventDetailDrawerProps) {
+  const { role } = useAuth();
   const [event, setEvent] = useState<OrgEvent | null>(null);
   const [analytics, setAnalytics] = useState<OrgEventAnalytics | null>(null);
   const [breakdown, setBreakdown] = useState<OrgEventResponseBreakdown | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onEventChangedRef = useRef(onEventChanged);
@@ -76,7 +88,7 @@ export function EventDetailDrawer({ eventId, onClose, onEventChanged }: EventDet
   // Live reconciliation: always re-fetch authoritative analytics rather than
   // trusting/incrementing local counters from the event payload.
   useDomainEvent<{ eventId: string }>(
-    ['ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_RESPONSE_CHANGED'],
+    ['ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_COMPLETED', 'ORG_EVENT_RESPONSE_CHANGED'],
     (domainEvent) => {
       if (eventId && domainEvent.payload?.eventId === eventId) {
         load(true);
@@ -101,7 +113,26 @@ export function EventDetailDrawer({ eventId, onClose, onEventChanged }: EventDet
     }
   };
 
+  const handleComplete = async () => {
+    if (!event || isCompleting) return;
+    setIsCompleting(true);
+    setError(null);
+    try {
+      const updated = await apiClient.completeEvent(event.id);
+      setEvent(updated);
+      onEventChanged?.(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to mark event as done.');
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
   const canManage = event && event.status !== 'COMPLETED' && event.status !== 'CANCELLED';
+  const canMarkDone =
+    canManage &&
+    (role === 'SUPER_ADMIN' || role === 'ADMIN') &&
+    (event?.status === 'LIVE' || event?.status === 'AWAITING_COMPLETION');
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden flex justify-end animate-in fade-in duration-200">
@@ -141,10 +172,10 @@ export function EventDetailDrawer({ eventId, onClose, onEventChanged }: EventDet
               <div className="p-4 bg-surface-container-low border border-surface-outline rounded space-y-3">
                 <div className="flex items-center justify-between">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLES[event.status]}`}>
-                    {event.status}
+                    {STATUS_LABELS[event.status]}
                   </span>
                   <span className="text-xs font-mono text-on-surface-variant font-semibold">
-                    {event.dateIST} • {event.timeIST}
+                    {event.dateIST} • {event.timeIST}–{event.endTimeIST}
                   </span>
                 </div>
 
@@ -157,11 +188,22 @@ export function EventDetailDrawer({ eventId, onClose, onEventChanged }: EventDet
                   Created by <span className="font-semibold text-primary">{event.createdByName}</span>
                 </div>
 
+                {event.status === 'COMPLETED' && event.completedAt && (
+                  <div className="text-xs text-on-surface-variant">
+                    Marked done on <span className="font-semibold text-primary">{new Date(event.completedAt).toLocaleString()}</span>
+                  </div>
+                )}
+
                 {canManage && (
-                  <div className="flex items-center gap-2 pt-2 border-t border-surface-outline/60">
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-surface-outline/60">
                     <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
                       Edit Event
                     </Button>
+                    {canMarkDone && (
+                      <Button variant="primary" size="sm" onClick={handleComplete} isLoading={isCompleting}>
+                        Mark as Done
+                      </Button>
+                    )}
                     <Button variant="danger" size="sm" onClick={handleCancel} isLoading={isCancelling}>
                       Cancel Event
                     </Button>

@@ -1,4 +1,4 @@
-export type OrgEventStatus = 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
+export type OrgEventStatus = 'UPCOMING' | 'LIVE' | 'AWAITING_COMPLETION' | 'COMPLETED' | 'CANCELLED';
 
 export type EventResponseChoice = 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING';
 
@@ -8,9 +8,12 @@ export interface OrgEvent {
   title: string;
   description: string;
   scheduledAt: string;
+  scheduledEndAt: string;
   dateIST: string;
   timeIST: string;
+  endTimeIST: string;
   status: OrgEventStatus;
+  completedAt: string | null;
   createdById?: string;
   createdByName: string;
   createdAt: string;

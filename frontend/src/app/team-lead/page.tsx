@@ -73,6 +73,8 @@ export default function TeamLeadPage() {
   const totalLimit = teamMembers.reduce((acc, m) => acc + (m.capacityLimitHours || 40), 0);
   const utilization = totalLimit > 0 ? Math.round((totalAllocated / totalLimit) * 100) : 0;
   const completedTasks = tasks.filter((t) => t.status === 'COMPLETED').length;
+  const unassignedTeamTasks = tasks.filter((t) => t.taskType === 'TEAM' && !t.assigneeId);
+  const unavailableMembers = teamMembers.filter((m) => m.presenceState && m.presenceState !== 'IN');
 
   return (
     <AppShell
@@ -117,7 +119,9 @@ export default function TeamLeadPage() {
               <span className="material-symbols-outlined text-[18px] text-primary">groups</span>
             </div>
             <p className="text-2xl font-bold text-primary font-mono tabular-nums">{teamMembers.length}</p>
-            <p className="text-[10px] text-on-surface-variant mt-1">Active engineers</p>
+            <p className="text-[10px] text-on-surface-variant mt-1">
+              {unavailableMembers.length > 0 ? `${unavailableMembers.length} currently unavailable` : 'All present'}
+            </p>
           </div>
 
           <div className="p-4 rounded border border-surface-outline bg-surface-bright shadow-xs">
@@ -147,6 +151,36 @@ export default function TeamLeadPage() {
             <p className="text-[10px] text-purple-800 mt-1">Tasks completed</p>
           </div>
         </div>
+
+        {/* Unassigned Team Tasks — created for the whole team, waiting to be distributed */}
+        {unassignedTeamTasks.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-primary">Unassigned Team Tasks</h2>
+              <span className="font-mono text-xs text-on-surface-variant tabular-nums">
+                {unassignedTeamTasks.length} waiting
+              </span>
+            </div>
+            <div className="space-y-2">
+              {unassignedTeamTasks.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedTaskId(t.dbId || t.id)}
+                  className="w-full text-left p-3 bg-amber-50 border border-amber-200 rounded flex items-center justify-between gap-3 hover:border-amber-400 transition-colors"
+                >
+                  <div>
+                    <p className="font-semibold text-primary text-xs">{t.title}</p>
+                    <p className="text-[10px] text-on-surface-variant mt-0.5">
+                      Created by {t.creatorName} · Section {t.teamSection}
+                    </p>
+                  </div>
+                  <span className="material-symbols-outlined text-[18px] text-amber-700">chevron_right</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Squad Members Directory */}
         <div className="space-y-3">
@@ -179,7 +213,14 @@ export default function TeamLeadPage() {
                       <div className="flex items-center gap-2.5">
                         <Avatar src={member.avatarUrl} name={member.name} size="sm" status={member.status} />
                         <div>
-                          <span className="font-semibold text-primary block leading-tight">{member.name}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-primary leading-tight">{member.name}</span>
+                            {member.presenceState && member.presenceState !== 'IN' && (
+                              <span className="px-1 py-0.2 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-600">
+                                Unavailable
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-on-surface-variant font-mono">{member.email}</span>
                         </div>
                       </div>

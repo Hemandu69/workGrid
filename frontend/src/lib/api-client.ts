@@ -146,6 +146,10 @@ export const apiClient = {
   getRoomAssignment: async (personId: string, token?: string): Promise<RoomAssignment> => {
     return request<RoomAssignment>(`/api/v1/rooms/assignment/${personId}`, {}, token);
   },
+  /** The current user's own section, subroom, and subroom partners — usable by any authenticated role, not just admins. */
+  getMyRoomAssignment: async (token?: string): Promise<RoomAssignment> => {
+    return request<RoomAssignment>('/api/v1/rooms/assignment/me', {}, token);
+  },
   assignRoom: async (
     personId: string,
     data: { sectionLetter: string; subroomCode?: string },
@@ -244,6 +248,17 @@ export const apiClient = {
   },
   completeTask: async (taskId: string, token?: string): Promise<Task> => {
     return request<Task>(`/api/v1/tasks/${taskId}/complete`, { method: 'POST' }, token);
+  },
+  splitTeamTask: async (
+    taskId: string,
+    assignments: Array<{ assigneeId: string; title: string; description?: string; estimatedHours?: number }>,
+    token?: string
+  ): Promise<{ parent: Task; children: Task[] }> => {
+    return request<{ parent: Task; children: Task[] }>(
+      `/api/v1/tasks/${taskId}/split`,
+      { method: 'POST', body: JSON.stringify({ assignments }) },
+      token
+    );
   },
   cancelTask: async (taskId: string, reason?: string, token?: string): Promise<Task> => {
     return request<Task>(
@@ -564,20 +579,23 @@ export const apiClient = {
     return request<OrgEvent>(`/api/v1/events/${eventId}`, {}, token);
   },
   createEvent: async (
-    data: { title: string; description: string; date: string; time: string },
+    data: { title: string; description: string; date: string; time: string; endTime: string },
     token?: string
   ): Promise<OrgEvent> => {
     return request<OrgEvent>('/api/v1/events', { method: 'POST', body: JSON.stringify(data) }, token);
   },
   updateEvent: async (
     eventId: string,
-    data: Partial<{ title: string; description: string; date: string; time: string }>,
+    data: Partial<{ title: string; description: string; date: string; time: string; endTime: string }>,
     token?: string
   ): Promise<OrgEvent> => {
     return request<OrgEvent>(`/api/v1/events/${eventId}`, { method: 'PATCH', body: JSON.stringify(data) }, token);
   },
   cancelEvent: async (eventId: string, token?: string): Promise<OrgEvent> => {
     return request<OrgEvent>(`/api/v1/events/${eventId}/cancel`, { method: 'POST' }, token);
+  },
+  completeEvent: async (eventId: string, token?: string): Promise<OrgEvent> => {
+    return request<OrgEvent>(`/api/v1/events/${eventId}/complete`, { method: 'POST' }, token);
   },
   getEventAnalytics: async (eventId: string, token?: string): Promise<OrgEventAnalytics> => {
     return request<OrgEventAnalytics>(`/api/v1/events/${eventId}/analytics`, {}, token);
@@ -653,6 +671,8 @@ export interface RoomAssignment {
   role: string;
   section: string | null; // e.g. "B"
   subroom: string | null; // e.g. "B3" — always null for SERVER role
+  /** Other people currently assigned to the same subroom, derived live. */
+  partners: Array<{ id: string; name: string }>;
 }
 
 export interface RoomAssignmentResult {

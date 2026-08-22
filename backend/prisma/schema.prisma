@@ -68,6 +68,11 @@ enum TaskPriority {
   CRITICAL
 }
 
+enum TaskType {
+  INDIVIDUAL
+  TEAM
+}
+
 enum AnnouncementStatus {
   DRAFT
   PUBLISHED
@@ -333,6 +338,9 @@ model Task {
   description    String?
   status         TaskStatus   @default(DRAFT)
   priority       TaskPriority @default(MEDIUM)
+  taskType       TaskType     @default(INDIVIDUAL)
+  teamSection    String?      // room letter, e.g. "B" — set only for TEAM tasks, including while unassigned
+  parentTaskId   String?      // set on an INDIVIDUAL task created by splitting a TEAM task
   progress       Int          @default(0) // 0-100, authoritative
   estimatedHours Float        @default(8.0)
   allocatedHours Float        @default(0.0)
@@ -351,9 +359,12 @@ model Task {
   creator      User?         @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
   campaign     TaskCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   comments     TaskComment[]
+  parentTask   Task?         @relation("TaskSplit", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  childTasks   Task[]        @relation("TaskSplit")
 
   @@index([organizationId, status, dueDate])
   @@index([assigneeId, status])
+  @@index([organizationId, taskType, teamSection, status])
   @@map("tasks")
 }
 
@@ -408,7 +419,9 @@ model OrganizationEvent {
   title          String
   description    String
   scheduledAt    DateTime
-  status         OrgEventStatus @default(UPCOMING) // Authoritative only for CANCELLED; otherwise derived from scheduledAt at read time
+  scheduledEndAt DateTime
+  completedAt    DateTime?
+  status         OrgEventStatus @default(UPCOMING) // Authoritative only for CANCELLED; COMPLETED is derived from completedAt, everything else from scheduledAt/scheduledEndAt at read time
   createdById    String?
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
