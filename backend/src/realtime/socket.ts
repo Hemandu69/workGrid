@@ -227,6 +227,15 @@ export function setupSocketIO(app: FastifyInstance): SocketIOServer {
       socket.join(`organization:${orgId}:room:${user.roomId}`);
     }
 
+    // A SERVER overseeing a specific room gets a dedicated room-scoped
+    // channel, distinct from the general room:${roomId} above (which every
+    // role assigned to that room also joins) — used to deliver
+    // AVAILABILITY_CHANGED only to the person(s) authorized to see it,
+    // matching the REST endpoint's own SERVER-own-room-only boundary.
+    if (isServer && user.roomId) {
+      socket.join(`organization:${orgId}:room:${user.roomId}:servers`);
+    }
+
     if (user.subroomId) {
       socket.join(`organization:${orgId}:subroom:${user.subroomId}`);
     }
@@ -339,7 +348,26 @@ export function setupSocketIO(app: FastifyInstance): SocketIOServer {
       return;
     }
 
-    // E. Global Organization Events (Attendance, Availability, Operations, Rooms, Announcements, Audit)
+    // E2. Availability Events — never broadcast org-wide (same reasoning as
+    // E1 above: availability visibility follows the same SUPER_ADMIN/ADMIN/
+    // SERVER-own-room-only boundary already enforced on the REST endpoints).
+    // Delivered to: admins, the affected user's own sessions, and only the
+    // SERVER(s) overseeing that user's room.
+    if (eventType === 'AVAILABILITY_CHANGED') {
+      const payload = (event.payload || {}) as Record<string, unknown>;
+      const roomId = payload.roomId as string | undefined;
+      const rooms = [
+        `organization:${orgId}:admin`,
+        ...(event.targetUserId ? [`user:${event.targetUserId}`] : []),
+        ...(roomId ? [`organization:${orgId}:room:${roomId}:servers`] : []),
+      ];
+
+      ioServerInstance.to(rooms).emit(eventType, event);
+      ioServerInstance.to(rooms).emit('DOMAIN_EVENT', event);
+      return;
+    }
+
+    // E. Global Organization Events (Attendance, Operations, Rooms, Announcements, Audit)
     // Broadcast to organization:<orgId> so all active members receive real-time sync
     ioServerInstance.to(`organization:${orgId}`).emit(eventType, event);
     ioServerInstance.to(`organization:${orgId}`).emit('DOMAIN_EVENT', event);

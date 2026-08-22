@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { AppShell } from '../../components/layout/AppShell';
 import { useAuth } from '../../lib/auth-context';
 import { TaskCard } from '../../components/tasks/TaskCard';
@@ -20,6 +21,7 @@ import { useAnnouncements } from '../../lib/useAnnouncements';
 
 export default function MemberDashboard() {
   const { user } = useAuth();
+  const router = useRouter();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
 
@@ -66,6 +68,7 @@ export default function MemberDashboard() {
         { label: user.subroom ? `Subroom ${user.subroom}` : 'Unassigned Subroom', href: '#' },
         { label: 'Member Workspace' },
       ]}
+      onQuickAction={() => router.push('/member/availability')}
     >
       <div className="space-y-6">
         {/* Global Attendance IN / OUT Tracker */}

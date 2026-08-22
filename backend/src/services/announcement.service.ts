@@ -1,9 +1,45 @@
 import { prisma } from '../db/client.js';
-import { CreateAnnouncementInput } from '../schemas/announcement.schema.js';
+import { CreateAnnouncementInput, UpdateAnnouncementInput } from '../schemas/announcement.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { AnnouncementStatus, AudienceScope } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
 import { DEFAULT_PAGE_LIMIT } from '../schemas/pagination.schema.js';
+
+export class AnnouncementNotFoundError extends Error {
+  statusCode = 404;
+  constructor(message = 'Announcement not found') {
+    super(message);
+  }
+}
+
+function mapAnnouncement(a: {
+  id: string;
+  title: string;
+  content: string;
+  status: AnnouncementStatus;
+  scope: AudienceScope;
+  targetRoom: string | null;
+  pinned: boolean;
+  publishedAt: Date | null;
+  scheduledFor: Date | null;
+  createdAt: Date;
+  author: { name: string; role: string | null } | null;
+}) {
+  return {
+    id: a.id,
+    title: a.title,
+    content: a.content,
+    status: a.status,
+    scope: a.scope,
+    targetRoom: a.targetRoom || undefined,
+    authorName: a.author?.name || 'System Administrator',
+    authorRole: a.author?.role ? a.author.role.replace('_', ' ') : 'Global Admin',
+    pinned: a.pinned,
+    publishedAt: a.publishedAt ? a.publishedAt.toISOString() : undefined,
+    scheduledFor: a.scheduledFor ? a.scheduledFor.toISOString() : undefined,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
 
 export class AnnouncementService {
   static async getAnnouncements(
@@ -18,7 +54,9 @@ export class AnnouncementService {
     const where: any = {};
 
     if (filters.organizationId) where.organizationId = filters.organizationId;
-    if (filters.status) where.status = filters.status;
+    // Default excludes ARCHIVED (soft-deleted) announcements — a caller must
+    // explicitly ask for status=ARCHIVED to see them.
+    where.status = filters.status ? filters.status : { not: AnnouncementStatus.ARCHIVED };
     if (filters.scope) where.scope = filters.scope;
     if (filters.targetRoom) where.targetRoom = filters.targetRoom;
 
@@ -36,20 +74,7 @@ export class AnnouncementService {
     ]);
 
     return {
-      items: announcements.map((a) => ({
-        id: a.id,
-        title: a.title,
-        content: a.content,
-        status: a.status,
-        scope: a.scope,
-        targetRoom: a.targetRoom || undefined,
-        authorName: a.author?.name || 'System Administrator',
-        authorRole: a.author?.role ? a.author.role.replace('_', ' ') : 'Global Admin',
-        pinned: a.pinned,
-        publishedAt: a.publishedAt ? a.publishedAt.toISOString() : undefined,
-        scheduledFor: a.scheduledFor ? a.scheduledFor.toISOString() : undefined,
-        createdAt: a.createdAt.toISOString(),
-      })),
+      items: announcements.map(mapAnnouncement),
       total,
       limit: pagination.limit,
       offset: pagination.offset,
@@ -96,6 +121,84 @@ export class AnnouncementService {
       entityId: announcement.id,
       actorId: user.id,
       payload: result,
+    });
+
+    return result;
+  }
+
+  static async updateAnnouncement(id: string, input: UpdateAnnouncementInput, user: AuthUserPayload) {
+    const existing = await prisma.announcement.findUnique({ where: { id } });
+    if (!existing || existing.organizationId !== user.organizationId) {
+      throw new AnnouncementNotFoundError();
+    }
+
+    const updated = await prisma.announcement.update({
+      where: { id },
+      data: {
+        title: input.title ?? undefined,
+        content: input.content ?? undefined,
+        scope: input.scope ?? undefined,
+        targetRoom: input.targetRoom ?? undefined,
+        scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : undefined,
+      },
+      include: { author: true },
+    });
+
+    const result = mapAnnouncement(updated);
+
+    publishDomainEvent({
+      type: 'ANNOUNCEMENT_UPDATED',
+      organizationId: user.organizationId,
+      entityId: id,
+      actorId: user.id,
+      payload: { announcementId: id, organizationId: user.organizationId, announcement: result },
+    });
+
+    return result;
+  }
+
+  static async deleteAnnouncement(id: string, user: AuthUserPayload) {
+    const existing = await prisma.announcement.findUnique({ where: { id } });
+    if (!existing || existing.organizationId !== user.organizationId) {
+      throw new AnnouncementNotFoundError();
+    }
+
+    // Soft delete: the existing ARCHIVED status value (unused until now)
+    // marks an announcement as removed while preserving the row.
+    await prisma.announcement.update({
+      where: { id },
+      data: { status: AnnouncementStatus.ARCHIVED },
+    });
+
+    publishDomainEvent({
+      type: 'ANNOUNCEMENT_DELETED',
+      organizationId: user.organizationId,
+      entityId: id,
+      actorId: user.id,
+      payload: { announcementId: id, organizationId: user.organizationId },
+    });
+  }
+
+  static async setPinned(id: string, pinned: boolean, user: AuthUserPayload) {
+    const existing = await prisma.announcement.findUnique({ where: { id } });
+    if (!existing || existing.organizationId !== user.organizationId) {
+      throw new AnnouncementNotFoundError();
+    }
+
+    const updated = await prisma.announcement.update({
+      where: { id },
+      data: { pinned },
+      include: { author: true },
+    });
+
+    const result = mapAnnouncement(updated);
+
+    publishDomainEvent({
+      type: pinned ? 'ANNOUNCEMENT_PINNED' : 'ANNOUNCEMENT_UNPINNED',
+      organizationId: user.organizationId,
+      entityId: id,
+      actorId: user.id,
+      payload: { announcementId: id, organizationId: user.organizationId, announcement: result },
     });
 
     return result;

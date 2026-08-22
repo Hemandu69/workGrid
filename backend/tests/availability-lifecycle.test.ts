@@ -294,7 +294,7 @@ describe('Availability lifecycle — attendance, tasks and schedule', () => {
     const event = publishedEvents.find((e) => e.type === 'AVAILABILITY_CHANGED');
     expect(event).toBeDefined();
     expect(event.organizationId).toBe('org-1');
-    expect(event.payload.availabilityState).toBe('BUSY');
+    expect(event.payload.userId).toBe('usr-sarah');
   });
 
   // --- Person detail projection -------------------------------------------
