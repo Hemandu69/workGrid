@@ -1,5 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
 import React from 'react';
+import Image from 'next/image';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -24,6 +24,8 @@ export function Avatar({
     lg: 'w-10 h-10 text-sm',
   };
 
+  const sizePx = { sm: 24, md: 32, lg: 40 };
+
   const statusColors = {
     ONLINE: 'bg-status-available',
     BUSY: 'bg-status-busy',
@@ -46,7 +48,7 @@ export function Avatar({
       <div
         className={twMerge(
           clsx(
-            'rounded bg-surface-container text-primary font-semibold flex items-center justify-center border border-surface-outline overflow-hidden select-none',
+            'relative rounded bg-surface-container text-primary font-semibold flex items-center justify-center border border-surface-outline overflow-hidden select-none',
             sizeClasses[size],
             className
           )
@@ -54,7 +56,7 @@ export function Avatar({
         {...props}
       >
         {src ? (
-          <img src={src} alt={name || 'Avatar'} className="w-full h-full object-cover" />
+          <Image src={src} alt={name || 'Avatar'} fill sizes={`${sizePx[size]}px`} className="object-cover" />
         ) : (
           <span>{getInitials(name)}</span>
         )}

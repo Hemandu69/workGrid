@@ -10,16 +10,15 @@ import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import Link from 'next/link';
-import { Task, TaskCampaign } from '../../types/task';
-import { Room } from '../../types/room';
+import { TaskCampaign } from '../../types/task';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 import { apiClient } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
+import { useTasks } from '../../lib/useTasks';
+import { useRooms } from '../../lib/useRooms';
 
 export default function AdminDashboard() {
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [campaigns, setCampaigns] = useState<TaskCampaign[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
   const [stats, setStats] = useState<{
     organizationScale?: number;
     totalMembers?: number;
@@ -32,19 +31,23 @@ export default function AdminDashboard() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
 
+  // Shared, cached, realtime-synced — TASK_*/ROOM_*/SUBROOM_* events
+  // invalidate these caches automatically instead of a hand-rolled listener
+  // re-fetching this page's entire dataset.
+  const { data: tasksResult } = useTasks({ limit: 200 });
+  const { data: roomsData } = useRooms();
+  const tasks = tasksResult?.items ?? [];
+  const rooms = roomsData ?? [];
+
   const loadData = useCallback(async () => {
     try {
-      const [statsData, tasksData, campaignsData, roomsData] = await Promise.all([
+      const [statsData, campaignsData] = await Promise.all([
         apiClient.getDashboardSummary().catch(() => null),
-        apiClient.getTasks().catch(() => []),
         apiClient.getCampaigns().catch(() => []),
-        apiClient.getRooms().catch(() => []),
       ]);
 
       if (statsData) setStats(statsData as typeof stats);
-      if (Array.isArray(tasksData)) setTasks(tasksData);
       if (Array.isArray(campaignsData)) setCampaigns(campaignsData);
-      if (Array.isArray(roomsData)) setRooms(roomsData);
     } catch {
       // Clean fallback
     }
@@ -60,13 +63,11 @@ export default function AdminDashboard() {
     loadData();
   }, [loadData]);
 
-  // Real-Time Domain Event Subscriptions — silent background refresh
+  // Real-Time Domain Event Subscriptions — silent background refresh for the
+  // stats/campaigns this page still fetches directly (tasks/rooms are kept
+  // current by useTasks/useRooms' own realtime sync above).
   useDomainEvent(
-    [
-      'TASK_CREATED', 'TASK_ASSIGNED', 'TASK_REASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_CANCELLED', 'TASK_STATUS_CHANGED', 'TASK_PROGRESS_CHANGED',
-      'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED',
-      'EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED',
-    ],
+    ['TASK_CREATED', 'TASK_COMPLETED', 'EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED'],
     () => {
       loadDataRef.current();
     }

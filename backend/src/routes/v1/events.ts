@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import { OrgEventService, EffectiveOrgEventStatus } from '../../services/org-event.service.js';
 import { createOrgEventSchema, updateOrgEventSchema, updateOrgEventResponseSchema } from '../../schemas/org-event.schema.js';
 import { requireRole } from '../../plugins/auth.js';
+import { withIdempotency } from '../../utils/idempotency-helper.js';
 import { UserRole } from '@prisma/client';
 
 const VALID_STATUS_FILTERS: EffectiveOrgEventStatus[] = ['UPCOMING', 'LIVE', 'AWAITING_COMPLETION', 'COMPLETED', 'CANCELLED'];
@@ -58,8 +59,10 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       try {
-        const event = await OrgEventService.createEvent(parseResult.data, request.user);
-        return reply.status(201).send(event);
+        await withIdempotency(request, reply, 'orgEvent.create', async () => {
+          const event = await OrgEventService.createEvent(parseResult.data, request.user);
+          return { statusCode: 201, body: event };
+        });
       } catch (err: unknown) {
         return sendError(reply, err, 'Failed to create event');
       }

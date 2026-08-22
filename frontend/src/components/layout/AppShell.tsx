@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
 import { CreateTaskModal } from '../tasks/CreateTaskModal';
+import { ConnectionStatus } from '../ui/ConnectionStatus';
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -49,6 +50,8 @@ export function AppShell({ children, breadcrumbs, onQuickAction }: AppShellProps
         isOpen={isCreateTaskOpen}
         onClose={() => setIsCreateTaskOpen(false)}
       />
+
+      <ConnectionStatus />
     </div>
   );
 }

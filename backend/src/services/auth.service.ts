@@ -1,7 +1,7 @@
 import { prisma } from '../db/client.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { AccountStatus, UserRole } from '@prisma/client';
+import { AccountStatus, UserRole, Prisma } from '@prisma/client';
 import {
   LoginInput,
   RegisterInput,
@@ -9,6 +9,12 @@ import {
 } from '../schemas/auth.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { hrEventBus } from '../events/hr-events.js';
+import { BloomFilterService } from './bloom-filter.service.js';
+
+/** true when err is a Prisma unique-constraint violation (P2002) — used to translate a concurrent duplicate-email registration into a clean 409 instead of an unhandled 500. */
+function isUniqueConstraintViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 export class AuthService {
   /**
@@ -111,7 +117,7 @@ export class AuthService {
 
     if (existingUser) {
       const error = new Error(`User with email ${input.email} already exists.`);
-      (error as any).statusCode = 400;
+      (error as any).statusCode = 409;
       throw error;
     }
 
@@ -128,25 +134,42 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(input.password, 10);
 
-    const newUser = await prisma.user.create({
-      data: {
-        organizationId: org.id,
-        email: normalizedEmail,
-        name: input.name.trim(),
-        title: input.title?.trim() || 'New Employee',
-        accountStatus: AccountStatus.PENDING,
-        passwordHash,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        accountStatus: true,
-        title: true,
-        createdAt: true,
-      },
-    });
+    let newUser;
+    try {
+      newUser = await prisma.user.create({
+        data: {
+          organizationId: org.id,
+          email: normalizedEmail,
+          name: input.name.trim(),
+          title: input.title?.trim() || 'New Employee',
+          accountStatus: AccountStatus.PENDING,
+          passwordHash,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          accountStatus: true,
+          title: true,
+          createdAt: true,
+        },
+      });
+    } catch (err) {
+      // A concurrent registration for the same email can slip past the
+      // pre-check above and only get caught by the DB's unique constraint —
+      // translate that race into the same clean 409 the pre-check gives.
+      if (isUniqueConstraintViolation(err)) {
+        const error = new Error(`User with email ${input.email} already exists.`);
+        (error as any).statusCode = 409;
+        throw error;
+      }
+      throw err;
+    }
+
+    // Keep the Bloom filter in sync so the next availability check for this
+    // email correctly reports "possibly present" instead of a false negative.
+    await BloomFilterService.add(normalizedEmail);
 
     // Record registration audit event
     await prisma.auditEvent.create({
@@ -187,6 +210,22 @@ export class AuthService {
       title: newUser.title,
       createdAt: newUser.createdAt,
     };
+  }
+
+  /**
+   * Bloom filter first (skips Postgres when it can prove the email was never
+   * registered), exact Postgres lookup otherwise. Never authoritative on its
+   * own — registration's real uniqueness guarantee is still the DB's
+   * `email @unique` constraint, checked/caught above in register().
+   */
+  static async checkEmailAvailability(email: string): Promise<{ available: boolean }> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const absent = await BloomFilterService.definitelyAbsent(normalizedEmail);
+    if (absent) return { available: true };
+
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail }, select: { id: true } });
+    return { available: !existing };
   }
 
   /**

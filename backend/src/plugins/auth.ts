@@ -189,6 +189,18 @@ export async function registerAuthPlugin(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // Session version invalidation — mirrors the same check the Socket.IO
+      // auth middleware already performs, so a JWT issued before a password
+      // reset/role change (which bumps dbUser.version) is rejected on REST
+      // calls exactly like it already is on a live socket connection.
+      if (typeof decodedPayload.version === 'number' && dbUser.version > decodedPayload.version) {
+        return reply.status(401).send({
+          statusCode: 401,
+          error: 'Unauthorized',
+          message: 'Session has been revoked or updated. Please sign in again.',
+        });
+      }
+
       // Populate authoritative user payload on request
       request.user = {
         id: dbUser.id,

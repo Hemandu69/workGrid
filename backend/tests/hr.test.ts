@@ -4,6 +4,7 @@ import { buildApp } from '../src/app.js';
 import supertest from 'supertest';
 import { AccountStatus, UserRole } from '@prisma/client';
 import { hrEventBus, HREvent } from '../src/events/hr-events.js';
+import * as redisModule from '../src/redis/client.js';
 
 // Mock in-memory state for testing HR & RBAC boundaries
 const mockUsers: any[] = [
@@ -169,6 +170,13 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
   let suspendedToken: string;
 
   beforeAll(async () => {
+    // BloomFilterService (touched by provisionUser()) fails open when Redis
+    // is unreachable — simulate that here rather than depending on a real
+    // Redis instance.
+    vi.spyOn(redisModule, 'getRedisClient').mockImplementation(() => {
+      throw new Error('Redis unreachable (test)');
+    });
+
     app = await buildApp();
     await app.ready();
 
@@ -235,7 +243,7 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
         .set('Authorization', `Bearer ${hrToken}`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.items)).toBe(true);
     });
 
     it('GET /api/v1/operations/grid should REJECT HR user with 403 Forbidden', async () => {
@@ -395,8 +403,8 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
         .set('Authorization', `Bearer ${hrToken}`);
 
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body.length).toBeGreaterThan(0);
+      expect(Array.isArray(res.body.items)).toBe(true);
+      expect(res.body.items.length).toBeGreaterThan(0);
     });
   });
 
@@ -432,7 +440,7 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
         .set('Authorization', `Bearer ${hrToken}`);
 
       expect(res.status).toBe(200);
-      const found = res.body.find((u: any) => u.id === pendingEmployeeId);
+      const found = res.body.items.find((u: any) => u.id === pendingEmployeeId);
       expect(found).toBeDefined();
       expect(found.accountStatus).toBe(AccountStatus.PENDING);
       expect(found.role || null).toBeNull();
@@ -445,9 +453,9 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
         .set('Authorization', `Bearer ${hrToken}`);
 
       expect(res.status).toBe(200);
-      const allPending = res.body.every((u: any) => u.accountStatus === AccountStatus.PENDING);
+      const allPending = res.body.items.every((u: any) => u.accountStatus === AccountStatus.PENDING);
       expect(allPending).toBe(true);
-      const found = res.body.find((u: any) => u.id === pendingEmployeeId);
+      const found = res.body.items.find((u: any) => u.id === pendingEmployeeId);
       expect(found).toBeDefined();
     });
 
@@ -479,7 +487,7 @@ describe('WorkGrid HR & Role Architecture Endpoints (/api/v1/hr & RBAC)', () => 
         .set('Authorization', `Bearer ${hrToken}`);
 
       expect(res.status).toBe(200);
-      const foreignFound = res.body.find((u: any) => u.id === 'other-org-user-id');
+      const foreignFound = res.body.items.find((u: any) => u.id === 'other-org-user-id');
       expect(foreignFound).toBeUndefined();
     });
 

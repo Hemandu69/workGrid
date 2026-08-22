@@ -1,9 +1,11 @@
 import { prisma } from '../db/client.js';
-import { AccountStatus, UserRole } from '@prisma/client';
+import { AccountStatus, UserRole, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { ProvisionUserInput } from '../schemas/hr.schema.js';
 import { hrEventBus, HREventType } from '../events/hr-events.js';
+import { DEFAULT_PAGE_LIMIT, decodeCursor, encodeCursor } from '../schemas/pagination.schema.js';
+import { BloomFilterService } from './bloom-filter.service.js';
 
 export class HRService {
   /**
@@ -53,7 +55,8 @@ export class HRService {
       role?: UserRole | 'UNASSIGNED';
       accountStatus?: AccountStatus;
       search?: string;
-    }
+    },
+    pagination: { limit: number; offset: number } = { limit: DEFAULT_PAGE_LIMIT, offset: 0 }
   ) {
     const where: any = { organizationId };
 
@@ -76,26 +79,31 @@ export class HRService {
       ];
     }
 
-    const users = await prisma.user.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        accountStatus: true,
-        status: true,
-        title: true,
-        avatarUrl: true,
-        capacityLimitHours: true,
-        currentAllocatedHours: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const [total, users] = await prisma.$transaction(async (tx) => [
+      await tx.user.count({ where }),
+      await tx.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          accountStatus: true,
+          status: true,
+          title: true,
+          avatarUrl: true,
+          capacityLimitHours: true,
+          currentAllocatedHours: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        take: pagination.limit,
+        skip: pagination.offset,
+      }),
+    ]);
 
-    return users;
+    return { items: users, total, limit: pagination.limit, offset: pagination.offset };
   }
 
   /**
@@ -129,29 +137,44 @@ export class HRService {
     }
 
     const tempPasswordHash = await bcrypt.hash('TempPassword123!', 10);
+    const normalizedEmail = input.email.toLowerCase();
 
-    const user = await prisma.user.create({
-      data: {
-        organizationId,
-        email: input.email.toLowerCase(),
-        name: input.name,
-        title: input.title,
-        role: initialRole,
-        accountStatus: AccountStatus.PENDING,
-        passwordHash: tempPasswordHash,
-        capacityLimitHours: input.capacityLimitHours || 40,
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        accountStatus: true,
-        title: true,
-        capacityLimitHours: true,
-        createdAt: true,
-      },
-    });
+    let user;
+    try {
+      user = await prisma.user.create({
+        data: {
+          organizationId,
+          email: normalizedEmail,
+          name: input.name,
+          title: input.title,
+          role: initialRole,
+          accountStatus: AccountStatus.PENDING,
+          passwordHash: tempPasswordHash,
+          capacityLimitHours: input.capacityLimitHours || 40,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          accountStatus: true,
+          title: true,
+          capacityLimitHours: true,
+          createdAt: true,
+        },
+      });
+    } catch (err) {
+      // A concurrent provisioning request for the same email can slip past
+      // the pre-check above and only get caught by the DB's unique constraint.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const error = new Error(`A user with email ${input.email} already exists.`);
+        (error as any).statusCode = 409;
+        throw error;
+      }
+      throw err;
+    }
+
+    await BloomFilterService.add(normalizedEmail);
 
     // Emit real-time HR event (organization-isolated)
     hrEventBus.emitHREvent(organizationId, {
@@ -439,13 +462,29 @@ export class HRService {
   /**
    * Fetch Role Audit Trail
    */
-  static async getRoleAuditLogs(organizationId: string, targetUserId?: string) {
+  static async getRoleAuditLogs(
+    organizationId: string,
+    targetUserId?: string,
+    pagination: { limit: number; cursor?: string } = { limit: DEFAULT_PAGE_LIMIT }
+  ) {
     const where: any = { organizationId };
     if (targetUserId) where.targetUserId = targetUserId;
 
-    const logs = await prisma.roleAuditLog.findMany({
+    const decodedCursor = pagination.cursor ? decodeCursor(pagination.cursor) : null;
+    if (decodedCursor) {
+      where.OR = [
+        { createdAt: { lt: decodedCursor.createdAt } },
+        { createdAt: decodedCursor.createdAt, id: { lt: decodedCursor.id } },
+      ];
+    }
+
+    // Fetch one extra row to know whether another page exists without a
+    // separate count query — append-only/high-growth data doesn't need an
+    // expensive total count, only "is there more."
+    const rows = await prisma.roleAuditLog.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: pagination.limit + 1,
       include: {
         targetUser: {
           select: {
@@ -467,19 +506,28 @@ export class HRService {
       },
     });
 
-    return logs.map((l) => ({
-      id: l.id,
-      targetUserId: l.targetUserId,
-      targetUserName: l.targetUser?.name || 'Unknown User',
-      targetUserEmail: l.targetUser?.email || '',
-      targetUserAvatar: l.targetUser?.avatarUrl,
-      changedById: l.changedById,
-      changedByName: l.changedBy?.name || 'System / Admin',
-      changedByRole: l.changedBy?.role || UserRole.SUPER_ADMIN,
-      previousRole: l.previousRole,
-      newRole: l.newRole,
-      reason: l.reason,
-      createdAt: l.createdAt,
-    }));
+    const hasMore = rows.length > pagination.limit;
+    const logs = hasMore ? rows.slice(0, pagination.limit) : rows;
+    const lastLog = logs[logs.length - 1];
+    const nextCursor = hasMore && lastLog ? encodeCursor(lastLog.createdAt, lastLog.id) : null;
+
+    return {
+      items: logs.map((l) => ({
+        id: l.id,
+        targetUserId: l.targetUserId,
+        targetUserName: l.targetUser?.name || 'Unknown User',
+        targetUserEmail: l.targetUser?.email || '',
+        targetUserAvatar: l.targetUser?.avatarUrl,
+        changedById: l.changedById,
+        changedByName: l.changedBy?.name || 'System / Admin',
+        changedByRole: l.changedBy?.role || UserRole.SUPER_ADMIN,
+        previousRole: l.previousRole,
+        newRole: l.newRole,
+        reason: l.reason,
+        createdAt: l.createdAt,
+      })),
+      nextCursor,
+      hasMore,
+    };
   }
 }

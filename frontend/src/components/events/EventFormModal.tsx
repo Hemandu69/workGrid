@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -38,6 +38,10 @@ export function EventFormModal({ isOpen, onClose, onSaved, event }: EventFormMod
   const [endTime, setEndTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One key per fresh create-mode form-open, reused across retries of that
+  // same submission attempt. Not needed for edits — those PATCH a specific
+  // event id and are already idempotent by construction.
+  const idempotencyKeyRef = useRef<string>('');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -48,6 +52,7 @@ export function EventFormModal({ isOpen, onClose, onSaved, event }: EventFormMod
     setTime(parts.time);
     setEndTime(parts.endTime);
     setError(null);
+    if (!event) idempotencyKeyRef.current = crypto.randomUUID();
   }, [isOpen, event]);
 
   const isValid =
@@ -62,7 +67,7 @@ export function EventFormModal({ isOpen, onClose, onSaved, event }: EventFormMod
     try {
       const saved = isEditMode
         ? await apiClient.updateEvent(event!.id, isTimeLocked ? { title, description } : { title, description, date, time, endTime })
-        : await apiClient.createEvent({ title, description, date, time, endTime });
+        : await apiClient.createEvent({ title, description, date, time, endTime }, undefined, idempotencyKeyRef.current);
       onSaved?.(saved);
       onClose();
     } catch (err) {
