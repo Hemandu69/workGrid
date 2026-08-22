@@ -6,9 +6,10 @@ import { UserRole } from '@prisma/client';
 
 export const campaignRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/task-campaigns
-  fastify.get('/', async (request, reply) => {
+  // Protected: campaigns are organizational data and must not leak cross-org.
+  fastify.get('/', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     try {
-      const campaigns = await CampaignService.getCampaigns();
+      const campaigns = await CampaignService.getCampaigns(request.user.organizationId);
       return reply.send(campaigns);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to query campaigns';

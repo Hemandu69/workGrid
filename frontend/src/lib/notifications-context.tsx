@@ -24,7 +24,7 @@ const NotificationsContext = createContext<NotificationsContextType | null>(null
  * none of them can drift into a hardcoded/stale value.
  */
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [events, setEvents] = useState<OrgEvent[]>([]);
   const seenIds = useRef<Set<string>>(new Set());
@@ -78,20 +78,75 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   }, [isAuthenticated]);
 
   useDomainEvent<{ title?: string; content?: string }>(
-    ['NOTIFICATION_CREATED', 'ANNOUNCEMENT_CREATED', 'TASK_ASSIGNED', 'EMPLOYEE_APPROVED'],
+    ['NOTIFICATION_CREATED', 'ANNOUNCEMENT_CREATED', 'EMPLOYEE_APPROVED'],
     (event) => {
       const payload = event.payload || {};
       addNotification({
         id: `notif-${event.id}`,
-        type: event.type === 'ANNOUNCEMENT_CREATED' ? 'ANNOUNCEMENT' : 'TASK_ASSIGNED',
+        type: 'ANNOUNCEMENT',
         title:
           event.type === 'ANNOUNCEMENT_CREATED'
             ? `Announcement: ${payload.title || 'Company Notice'}`
-            : 'Task Assignment / System Update',
+            : 'System Update',
         message: payload.content || payload.title || 'You have a new real-time notification.',
         read: false,
         createdAt: event.timestamp || new Date().toISOString(),
         priority: 'HIGH',
+      });
+    }
+  );
+
+  // Task events — Socket.IO already gatekeeps delivery to the assignee,
+  // creator, admins and operations-scoped roles, so anything received here is
+  // meant to be seen; no further per-user filtering is needed.
+  useDomainEvent<{
+    taskId?: string;
+    taskIdDisplay?: string;
+    title?: string;
+    task?: { title?: string; id?: string };
+    assigneeId?: string;
+    assigneeName?: string;
+    previousAssigneeName?: string;
+    newAssigneeName?: string;
+  }>(
+    ['TASK_ASSIGNED', 'TASK_REASSIGNED', 'TASK_COMPLETED', 'TASK_CANCELLED'],
+    (event) => {
+      const payload = event.payload || {};
+      const taskTitle = payload.title || payload.task?.title || 'a task';
+      const isMine = payload.assigneeId === user?.id || event.targetUserId === user?.id;
+
+      let title = 'Task Update';
+      let message = `${taskTitle} was updated.`;
+
+      switch (event.type) {
+        case 'TASK_ASSIGNED':
+          title = isMine ? 'New Task Assigned to You' : 'Task Assigned';
+          message = isMine
+            ? `You were assigned: ${taskTitle}`
+            : `${payload.assigneeName || 'A team member'} was assigned: ${taskTitle}`;
+          break;
+        case 'TASK_REASSIGNED':
+          title = 'Task Reassigned';
+          message = `${taskTitle} moved from ${payload.previousAssigneeName || 'unassigned'} to ${payload.newAssigneeName || 'someone'}.`;
+          break;
+        case 'TASK_COMPLETED':
+          title = 'Task Completed';
+          message = `${taskTitle} was marked complete.`;
+          break;
+        case 'TASK_CANCELLED':
+          title = 'Task Cancelled';
+          message = `${taskTitle} was cancelled.`;
+          break;
+      }
+
+      addNotification({
+        id: `notif-${event.id}`,
+        type: 'TASK_ASSIGNED',
+        title,
+        message,
+        read: false,
+        createdAt: event.timestamp || new Date().toISOString(),
+        priority: isMine ? 'HIGH' : 'NORMAL',
       });
     }
   );

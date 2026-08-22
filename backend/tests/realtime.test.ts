@@ -229,14 +229,14 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
       const org1Received: any[] = [];
       const org2Received: any[] = [];
 
-      org1Socket.on('TASK_CREATED', (e) => org1Received.push(e));
-      org2Socket.on('TASK_CREATED', (e) => org2Received.push(e));
+      org1Socket.on('ANNOUNCEMENT_CREATED', (e) => org1Received.push(e));
+      org2Socket.on('ANNOUNCEMENT_CREATED', (e) => org2Received.push(e));
 
       // Publish event for Org 1
       publishDomainEvent({
-        type: 'TASK_CREATED',
+        type: 'ANNOUNCEMENT_CREATED',
         organizationId: 'org-rt-1',
-        entityId: 'tsk-org1',
+        entityId: 'ann-org1',
         payload: { title: 'Org 1 Only Task' },
       });
 
@@ -385,34 +385,85 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
       expect(captured[1].type).toBe('EMPLOYEE_CHECKED_OUT');
     });
 
-    it('Task status updates broadcast to organization', async () => {
-      const socket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+    it('Task status updates reach the assignee and admins, but not an unrelated member', async () => {
+      const assigneeSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
         path: '/socket.io',
         transports: ['websocket'],
         extraHeaders: { authorization: `Bearer ${memberToken}` },
       });
+      const adminSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${superAdminToken}` },
+      });
+      const unrelatedSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${hrToken}` },
+      });
 
-      await new Promise((res) => socket.on('CONNECTED', res));
+      await Promise.all([
+        new Promise((res) => assigneeSocket.on('CONNECTED', res)),
+        new Promise((res) => adminSocket.on('CONNECTED', res)),
+        new Promise((res) => unrelatedSocket.on('CONNECTED', res)),
+      ]);
 
-      const captured: any[] = [];
-      socket.on('TASK_STATUS_CHANGED', (e) => captured.push(e));
+      const assigneeCaptured: any[] = [];
+      const adminCaptured: any[] = [];
+      const unrelatedCaptured: any[] = [];
+      assigneeSocket.on('TASK_STATUS_CHANGED', (e) => assigneeCaptured.push(e));
+      adminSocket.on('TASK_STATUS_CHANGED', (e) => adminCaptured.push(e));
+      unrelatedSocket.on('TASK_STATUS_CHANGED', (e) => unrelatedCaptured.push(e));
 
       publishDomainEvent({
         type: 'TASK_STATUS_CHANGED',
         organizationId: 'org-rt-1',
         entityId: 'tsk-42',
+        targetUserId: 'rt-member-id',
         payload: {
           taskId: 'tsk-42',
+          assigneeId: 'rt-member-id',
           previousStatus: TaskStatus.IN_PROGRESS,
           newStatus: TaskStatus.COMPLETED,
         },
       });
 
       await new Promise((r) => setTimeout(r, 100));
-      socket.disconnect();
+      assigneeSocket.disconnect();
+      adminSocket.disconnect();
+      unrelatedSocket.disconnect();
 
-      expect(captured.length).toBe(1);
-      expect(captured[0].payload.newStatus).toBe(TaskStatus.COMPLETED);
+      expect(assigneeCaptured.length).toBe(1);
+      expect(assigneeCaptured[0].payload.newStatus).toBe(TaskStatus.COMPLETED);
+      expect(adminCaptured.length).toBe(1);
+      // HR is neither the assignee, creator, admin, nor operations-scoped.
+      expect(unrelatedCaptured.length).toBe(0);
+    });
+
+    it('Task events never cross organizations, even for an admin socket', async () => {
+      const org1AdminSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+        path: '/socket.io',
+        transports: ['websocket'],
+        extraHeaders: { authorization: `Bearer ${superAdminToken}` },
+      });
+
+      await new Promise((res) => org1AdminSocket.on('CONNECTED', res));
+
+      const captured: any[] = [];
+      org1AdminSocket.on('TASK_CREATED', (e) => captured.push(e));
+
+      publishDomainEvent({
+        type: 'TASK_CREATED',
+        organizationId: 'org-rt-2',
+        entityId: 'tsk-org2',
+        targetUserId: 'rt-org2-member-id',
+        payload: { title: 'Org 2 Only Task', assigneeId: 'rt-org2-member-id' },
+      });
+
+      await new Promise((r) => setTimeout(r, 100));
+      org1AdminSocket.disconnect();
+
+      expect(captured.length).toBe(0);
     });
 
     it('Announcements broadcast to organization', async () => {

@@ -1,65 +1,122 @@
-import { FastifyPluginAsync } from 'fastify';
+import { FastifyPluginAsync, FastifyReply } from 'fastify';
 import { TaskService } from '../../services/task.service.js';
-import { createTaskSchema, updateTaskStatusSchema, addTaskCommentSchema } from '../../schemas/task.schema.js';
+import {
+  createTaskSchema,
+  updateTaskStatusSchema,
+  updateTaskProgressSchema,
+  reassignTaskSchema,
+  addTaskCommentSchema,
+} from '../../schemas/task.schema.js';
 import { requireRole } from '../../plugins/auth.js';
 import { TaskPriority, TaskStatus, UserRole } from '@prisma/client';
 
+function sendError(reply: FastifyReply, err: unknown, fallbackMessage: string) {
+  const statusCode = (err as { statusCode?: number })?.statusCode || 400;
+  const message = err instanceof Error ? err.message : fallbackMessage;
+  const error =
+    statusCode === 404 ? 'Not Found' : statusCode === 403 ? 'Forbidden' : statusCode === 409 ? 'Conflict' : 'Bad Request';
+  return reply.status(statusCode).send({ statusCode, error, message });
+}
+
+// Roles authorized to interact with the task domain at all. HR is
+// deliberately excluded — HR remains a people-management role and must not
+// gain operational task visibility through this route.
+const TASK_DOMAIN_ROLES = [
+  UserRole.SUPER_ADMIN,
+  UserRole.ADMIN,
+  UserRole.TEAM_LEAD,
+  UserRole.SERVER,
+  UserRole.MEMBER,
+];
+
 export const taskRoutes: FastifyPluginAsync = async (fastify) => {
-  // GET /api/v1/tasks
-  fastify.get('/', async (request, reply) => {
-    const query = request.query as {
-      status?: string;
-      priority?: string;
-      assigneeId?: string;
-      roomLetter?: string;
-      campaignId?: string;
-      search?: string;
-    };
+  // GET /api/v1/tasks — role-scoped: MEMBER sees only their own, TEAM_LEAD/
+  // SERVER see only their room, ADMIN/SUPER_ADMIN see the whole organization.
+  fastify.get(
+    '/',
+    { preHandler: [requireRole(TASK_DOMAIN_ROLES)] },
+    async (request, reply) => {
+      const query = request.query as {
+        status?: string;
+        priority?: string;
+        assigneeId?: string;
+        roomLetter?: string;
+        campaignId?: string;
+        search?: string;
+      };
 
-    try {
-      const tasks = await TaskService.getTasks({
-        status: query.status ? (query.status.toUpperCase() as TaskStatus) : undefined,
-        priority: query.priority ? (query.priority.toUpperCase() as TaskPriority) : undefined,
-        assigneeId: query.assigneeId,
-        roomLetter: query.roomLetter,
-        campaignId: query.campaignId,
-        search: query.search,
-      });
+      const statusValue = query.status?.toUpperCase();
+      const priorityValue = query.priority?.toUpperCase();
 
-      return reply.send(tasks);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to query tasks';
-      return reply.status(500).send({
-        statusCode: 500,
-        error: 'Internal Server Error',
-        message,
-      });
+      try {
+        const tasks = await TaskService.getTasks(
+          {
+            status: statusValue && statusValue in TaskStatus ? (statusValue as TaskStatus) : undefined,
+            priority: priorityValue && priorityValue in TaskPriority ? (priorityValue as TaskPriority) : undefined,
+            assigneeId: query.assigneeId || undefined,
+            roomLetter: query.roomLetter || undefined,
+            campaignId: query.campaignId || undefined,
+            search: query.search || undefined,
+          },
+          request.user
+        );
+        return reply.send(tasks);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to query tasks');
+      }
     }
-  });
+  );
+
+  // GET /api/v1/tasks/analytics — backend-derived KPIs; registered before
+  // '/:id' so it is never swallowed by the param route.
+  fastify.get(
+    '/analytics',
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEAD])] },
+    async (request, reply) => {
+      try {
+        const analytics = await TaskService.getTaskAnalytics(request.user);
+        return reply.send(analytics);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to compute task analytics');
+      }
+    }
+  );
 
   // GET /api/v1/tasks/:id
-  fastify.get('/:id', async (request, reply) => {
-    const { id } = request.params as { id: string };
-    try {
-      const task = await TaskService.getTaskById(id);
-      return reply.send(task);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Task not found';
-      return reply.status(404).send({
-        statusCode: 404,
-        error: 'Not Found',
-        message,
-      });
+  fastify.get(
+    '/:id',
+    { preHandler: [requireRole(TASK_DOMAIN_ROLES)] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const task = await TaskService.getTaskById(id, request.user);
+        return reply.send(task);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Task not found');
+      }
     }
-  });
+  );
+
+  // GET /api/v1/tasks/:id/history — combined assignment + status audit trail
+  fastify.get(
+    '/:id/history',
+    { preHandler: [requireRole(TASK_DOMAIN_ROLES)] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const history = await TaskService.getTaskHistory(id, request.user);
+        return reply.send(history);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to fetch task history');
+      }
+    }
+  );
 
   // POST /api/v1/tasks
-  // Protected: SUPER_ADMIN, ADMIN, SERVER can assign tasks
+  // Protected: SUPER_ADMIN, ADMIN, SERVER, TEAM_LEAD can create/assign tasks
   fastify.post(
     '/',
-    {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER])],
-    },
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER, UserRole.TEAM_LEAD])] },
     async (request, reply) => {
       const parseResult = createTaskSchema.safeParse(request.body);
       if (!parseResult.success) {
@@ -75,23 +132,15 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
         const task = await TaskService.createTask(parseResult.data, request.user);
         return reply.status(201).send(task);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to create task';
-        return reply.status(400).send({
-          statusCode: 400,
-          error: 'Bad Request',
-          message,
-        });
+        return sendError(reply, err, 'Failed to create task');
       }
     }
   );
 
   // PATCH /api/v1/tasks/:id/status
-  // Protected: Authenticated users can update task status
   fastify.patch(
     '/:id/status',
-    {
-      preHandler: [fastify.authenticate],
-    },
+    { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parseResult = updateTaskStatusSchema.safeParse(request.body);
@@ -105,26 +154,99 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       try {
-        const task = await TaskService.updateTaskStatus(id, parseResult.data);
+        const task = await TaskService.updateTaskStatus(id, parseResult.data, request.user);
         return reply.send(task);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to update task status';
+        return sendError(reply, err, 'Failed to update task status');
+      }
+    }
+  );
+
+  // PATCH /api/v1/tasks/:id/progress
+  fastify.patch(
+    '/:id/progress',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parseResult = updateTaskProgressSchema.safeParse(request.body);
+      if (!parseResult.success) {
         return reply.status(400).send({
           statusCode: 400,
           error: 'Bad Request',
-          message,
+          message: 'Validation failed',
+          details: parseResult.error.format(),
         });
+      }
+
+      try {
+        const task = await TaskService.updateTaskProgress(id, parseResult.data, request.user);
+        return reply.send(task);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to update task progress');
+      }
+    }
+  );
+
+  // PATCH /api/v1/tasks/:id/assignment — reassign to a different person
+  fastify.patch(
+    '/:id/assignment',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parseResult = reassignTaskSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation failed',
+          details: parseResult.error.format(),
+        });
+      }
+
+      try {
+        const task = await TaskService.reassignTask(id, parseResult.data, request.user);
+        return reply.send(task);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to reassign task');
+      }
+    }
+  );
+
+  // POST /api/v1/tasks/:id/complete — convenience for the common case
+  fastify.post(
+    '/:id/complete',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const task = await TaskService.completeTask(id, request.user);
+        return reply.send(task);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to complete task');
+      }
+    }
+  );
+
+  // POST /api/v1/tasks/:id/cancel
+  fastify.post(
+    '/:id/cancel',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = (request.body || {}) as { reason?: string };
+      try {
+        const task = await TaskService.cancelTask(id, body.reason, request.user);
+        return reply.send(task);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to cancel task');
       }
     }
   );
 
   // POST /api/v1/tasks/:id/comments
-  // Protected: Authenticated users can comment on tasks
   fastify.post(
     '/:id/comments',
-    {
-      preHandler: [fastify.authenticate],
-    },
+    { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parseResult = addTaskCommentSchema.safeParse(request.body);
@@ -141,12 +263,7 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
         const comment = await TaskService.addTaskComment(id, parseResult.data, request.user);
         return reply.status(201).send(comment);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to add comment';
-        return reply.status(400).send({
-          statusCode: 400,
-          error: 'Bad Request',
-          message,
-        });
+        return sendError(reply, err, 'Failed to add comment');
       }
     }
   );
