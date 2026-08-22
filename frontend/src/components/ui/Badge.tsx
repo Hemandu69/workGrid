@@ -115,6 +115,11 @@ export function Badge({
         badgeStyle = 'bg-slate-50 text-slate-600 border-slate-200';
         label = 'Draft';
         break;
+      case 'CANCELLED':
+        dotColor = 'bg-rose-400';
+        badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200 line-through';
+        label = 'Cancelled';
+        break;
       case 'PREFERRED':
         dotColor = 'bg-status-preferred';
         badgeStyle = 'bg-purple-50 text-purple-800 border-purple-200';

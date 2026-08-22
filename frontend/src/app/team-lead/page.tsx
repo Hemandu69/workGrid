@@ -13,15 +13,21 @@ import { useDomainEvent } from '../../lib/realtime-context';
 import { Task } from '../../types/task';
 import { User } from '../../types/auth';
 import { CreateTaskModal } from '../../components/tasks/CreateTaskModal';
+import { TaskTable } from '../../components/tasks/TaskTable';
+import { TaskDetailDrawer } from '../../components/tasks/TaskDetailDrawer';
 
 export default function TeamLeadPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
+      // No filters needed — the backend automatically scopes a TEAM_LEAD's
+      // task list to their own room, so this already returns "my squad's
+      // tasks" and nothing else.
       const [tasksData, usersData] = await Promise.all([
         apiClient.getTasks().catch(() => []),
         apiClient.getUsers({ role: 'MEMBER' }).catch(() => []),
@@ -45,9 +51,23 @@ export default function TeamLeadPage() {
   }, [loadData]);
 
   // Real-Time Domain Events
-  useDomainEvent(['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_STATUS_CHANGED', 'EMPLOYEE_UPDATED', 'AVAILABILITY_CHANGED'], () => {
-    loadData();
-  });
+  useDomainEvent(
+    [
+      'TASK_CREATED',
+      'TASK_ASSIGNED',
+      'TASK_REASSIGNED',
+      'TASK_UPDATED',
+      'TASK_COMPLETED',
+      'TASK_CANCELLED',
+      'TASK_STATUS_CHANGED',
+      'TASK_PROGRESS_CHANGED',
+      'EMPLOYEE_UPDATED',
+      'AVAILABILITY_CHANGED',
+    ],
+    () => {
+      loadData();
+    }
+  );
 
   const totalAllocated = teamMembers.reduce((acc, m) => acc + (m.currentAllocatedHours || 0), 0);
   const totalLimit = teamMembers.reduce((acc, m) => acc + (m.capacityLimitHours || 40), 0);
@@ -195,6 +215,23 @@ export default function TeamLeadPage() {
             </tbody>
           </Table>
         </div>
+
+        {/* Squad Task Queue */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-primary">Squad Task Queue</h2>
+            <span className="font-mono text-xs text-on-surface-variant tabular-nums">
+              {tasks.length} Tasks Tracked
+            </span>
+          </div>
+
+          <TaskTable
+            tasks={tasks}
+            onSelectTask={(t) => setSelectedTaskId(t.dbId || t.id)}
+            showAssignee={true}
+            emptyMessage="No tasks assigned to your squad yet."
+          />
+        </div>
       </div>
 
       <CreateTaskModal
@@ -202,6 +239,8 @@ export default function TeamLeadPage() {
         onClose={() => setIsAssignModalOpen(false)}
         onTaskCreated={() => loadData()}
       />
+
+      <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
     </AppShell>
   );
 }

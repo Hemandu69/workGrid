@@ -1,6 +1,6 @@
 import { HealthResponse } from '../types/health';
 import { Room } from '../types/room';
-import { Task, TaskCampaign, TaskComment, TaskPriority } from '../types/task';
+import { Task, TaskCampaign, TaskComment, TaskPriority, TaskHistoryEntry, TaskAnalytics } from '../types/task';
 import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
 import { WeeklyAvailabilitySchedule } from '../types/availability';
@@ -17,6 +17,20 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/**
+ * `new URLSearchParams(obj)` stringifies every value with `String()`, so an
+ * `undefined` filter becomes the literal query string "undefined" rather than
+ * being omitted — which a strict backend (e.g. an enum column) then rejects.
+ * This drops undefined/empty entries before serializing.
+ */
+function buildQueryParams(filters: Record<string, string | undefined>): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== '') params.set(key, value);
+  }
+  return params;
 }
 
 async function request<T>(
@@ -168,7 +182,7 @@ export const apiClient = {
       search?: string;
     } = {}
   ): Promise<Task[]> => {
-    const params = new URLSearchParams(filters as Record<string, string>);
+    const params = buildQueryParams(filters);
     return request<Task[]>(`/api/v1/tasks?${params.toString()}`);
   },
   getTask: async (id: string): Promise<Task> => {
@@ -188,13 +202,14 @@ export const apiClient = {
     taskId: string,
     status: string,
     allocatedHours?: number,
-    token?: string
+    token?: string,
+    reason?: string
   ): Promise<Task> => {
     return request<Task>(
       `/api/v1/tasks/${taskId}/status`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ status, allocatedHours }),
+        body: JSON.stringify({ status, allocatedHours, reason }),
       },
       token
     );
@@ -208,6 +223,41 @@ export const apiClient = {
       },
       token
     );
+  },
+  updateTaskProgress: async (taskId: string, progress: number, token?: string): Promise<Task> => {
+    return request<Task>(
+      `/api/v1/tasks/${taskId}/progress`,
+      { method: 'PATCH', body: JSON.stringify({ progress }) },
+      token
+    );
+  },
+  reassignTask: async (
+    taskId: string,
+    assigneeId: string,
+    reason?: string,
+    token?: string
+  ): Promise<Task> => {
+    return request<Task>(
+      `/api/v1/tasks/${taskId}/assignment`,
+      { method: 'PATCH', body: JSON.stringify({ assigneeId, reason }) },
+      token
+    );
+  },
+  completeTask: async (taskId: string, token?: string): Promise<Task> => {
+    return request<Task>(`/api/v1/tasks/${taskId}/complete`, { method: 'POST' }, token);
+  },
+  cancelTask: async (taskId: string, reason?: string, token?: string): Promise<Task> => {
+    return request<Task>(
+      `/api/v1/tasks/${taskId}/cancel`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+      token
+    );
+  },
+  getTaskHistory: async (taskId: string, token?: string): Promise<TaskHistoryEntry[]> => {
+    return request<TaskHistoryEntry[]>(`/api/v1/tasks/${taskId}/history`, {}, token);
+  },
+  getTaskAnalytics: async (token?: string): Promise<TaskAnalytics> => {
+    return request<TaskAnalytics>('/api/v1/tasks/analytics', {}, token);
   },
 
   // Campaigns

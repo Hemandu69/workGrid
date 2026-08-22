@@ -15,7 +15,7 @@ import { Card } from '../../../components/ui/Card';
 export default function AdminTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [campaigns, setCampaigns] = useState<TaskCampaign[]>([]);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [roomFilter, setRoomFilter] = useState('ALL');
@@ -48,9 +48,21 @@ export default function AdminTasksPage() {
   }, [fetchTasks]);
 
   // Real-Time Task Domain Events
-  useDomainEvent(['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED'], () => {
-    fetchTasks();
-  });
+  useDomainEvent(
+    [
+      'TASK_CREATED',
+      'TASK_ASSIGNED',
+      'TASK_REASSIGNED',
+      'TASK_UPDATED',
+      'TASK_COMPLETED',
+      'TASK_CANCELLED',
+      'TASK_STATUS_CHANGED',
+      'TASK_PROGRESS_CHANGED',
+    ],
+    () => {
+      fetchTasks();
+    }
+  );
 
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =
@@ -163,20 +175,13 @@ export default function AdminTasksPage() {
         {/* Tasks Table */}
         <TaskTable
           tasks={filteredTasks}
-          onSelectTask={(t) => setSelectedTask(t)}
+          onSelectTask={(t) => setSelectedTaskId(t.dbId || t.id)}
           showAssignee={true}
         />
       </div>
 
       {/* Task Drawer */}
-      <TaskDetailDrawer
-        task={selectedTask}
-        onClose={() => setSelectedTask(null)}
-        onStatusChange={(taskId, newStatus) => {
-          setTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-          if (selectedTask) setSelectedTask({ ...selectedTask, status: newStatus });
-        }}
-      />
+      <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
 
       {/* Create Task Modal */}
       <CreateTaskModal

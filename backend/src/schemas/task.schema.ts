@@ -15,6 +15,16 @@ export const createTaskSchema = z.object({
 export const updateTaskStatusSchema = z.object({
   status: z.nativeEnum(TaskStatus),
   allocatedHours: z.number().min(0).optional(),
+  reason: z.string().max(500).optional(),
+});
+
+export const updateTaskProgressSchema = z.object({
+  progress: z.number().int().min(0).max(100),
+});
+
+export const reassignTaskSchema = z.object({
+  assigneeId: z.string().uuid().or(z.string().min(5)),
+  reason: z.string().max(500).optional(),
 });
 
 export const addTaskCommentSchema = z.object({
@@ -31,5 +41,7 @@ export const createTaskCampaignSchema = z.object({
 
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
 export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusSchema>;
+export type UpdateTaskProgressInput = z.infer<typeof updateTaskProgressSchema>;
+export type ReassignTaskInput = z.infer<typeof reassignTaskSchema>;
 export type AddTaskCommentInput = z.infer<typeof addTaskCommentSchema>;
 export type CreateTaskCampaignInput = z.infer<typeof createTaskCampaignSchema>;

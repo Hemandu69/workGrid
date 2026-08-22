@@ -20,7 +20,7 @@ import { useDomainEvent } from '../../lib/realtime-context';
 
 export default function MemberDashboard() {
   const { user } = useAuth();
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
@@ -61,7 +61,19 @@ export default function MemberDashboard() {
 
   // Real-Time Subscriptions — silent background refresh
   useDomainEvent(
-    ['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED', 'ANNOUNCEMENT_CREATED', 'AVAILABILITY_CHANGED', 'ROOM_ASSIGNMENT_CHANGED'],
+    [
+      'TASK_CREATED',
+      'TASK_ASSIGNED',
+      'TASK_REASSIGNED',
+      'TASK_UPDATED',
+      'TASK_COMPLETED',
+      'TASK_CANCELLED',
+      'TASK_STATUS_CHANGED',
+      'TASK_PROGRESS_CHANGED',
+      'ANNOUNCEMENT_CREATED',
+      'AVAILABILITY_CHANGED',
+      'ROOM_ASSIGNMENT_CHANGED',
+    ],
     () => {
       loadMemberDataRef.current();
     }
@@ -129,7 +141,7 @@ export default function MemberDashboard() {
               {activeTask ? (
                 <TaskCard
                   task={activeTask}
-                  onOpenDetails={(t) => setSelectedTask(t)}
+                  onOpenDetails={(t) => setSelectedTaskId(t.dbId || t.id)}
                   onUpdateStatus={handleUpdateStatus}
                 />
               ) : (
@@ -153,7 +165,7 @@ export default function MemberDashboard() {
 
               <TaskTable
                 tasks={upcomingTasks}
-                onSelectTask={(t) => setSelectedTask(t)}
+                onSelectTask={(t) => setSelectedTaskId(t.dbId || t.id)}
                 showAssignee={false}
               />
             </section>
@@ -247,14 +259,7 @@ export default function MemberDashboard() {
       </div>
 
       {/* Task Detail Drawer */}
-      <TaskDetailDrawer
-        task={selectedTask}
-        onClose={() => setSelectedTask(null)}
-        onStatusChange={(taskId, newStatus) => {
-          setTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-          if (selectedTask) setSelectedTask({ ...selectedTask, status: newStatus });
-        }}
-      />
+      <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
     </AppShell>
   );
 }

@@ -12,7 +12,7 @@ import { useDomainEvent } from '../../../lib/realtime-context';
 export default function MemberTasksPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
@@ -38,11 +38,30 @@ export default function MemberTasksPage() {
   }, [fetchTasks]);
 
   // Real-Time Task Domain Events
-  useDomainEvent(['TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED'], (event) => {
-    if (!event.targetUserId || event.targetUserId === user?.id) {
-      fetchTasks();
+  useDomainEvent(
+    [
+      'TASK_CREATED',
+      'TASK_ASSIGNED',
+      'TASK_REASSIGNED',
+      'TASK_UPDATED',
+      'TASK_COMPLETED',
+      'TASK_CANCELLED',
+      'TASK_STATUS_CHANGED',
+      'TASK_PROGRESS_CHANGED',
+    ],
+    (event) => {
+      const payload = event.payload as { assigneeId?: string; previousAssigneeId?: string; newAssigneeId?: string } | null;
+      const concernsMe =
+        !event.targetUserId ||
+        event.targetUserId === user?.id ||
+        payload?.assigneeId === user?.id ||
+        payload?.previousAssigneeId === user?.id ||
+        payload?.newAssigneeId === user?.id;
+      if (concernsMe) {
+        fetchTasks();
+      }
     }
-  });
+  );
 
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =
@@ -123,20 +142,13 @@ export default function MemberTasksPage() {
         {/* Task Table */}
         <TaskTable
           tasks={filteredTasks}
-          onSelectTask={(t) => setSelectedTask(t)}
+          onSelectTask={(t) => setSelectedTaskId(t.dbId || t.id)}
           showAssignee={true}
         />
       </div>
 
       {/* Task Details Drawer */}
-      <TaskDetailDrawer
-        task={selectedTask}
-        onClose={() => setSelectedTask(null)}
-        onStatusChange={(taskId, newStatus) => {
-          setTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-          if (selectedTask) setSelectedTask({ ...selectedTask, status: newStatus });
-        }}
-      />
+      <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
     </AppShell>
   );
 }
