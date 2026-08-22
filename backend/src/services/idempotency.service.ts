@@ -1,6 +1,5 @@
 import { getRedisClient } from '../redis/client.js';
-
-const IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60; // 24h — covers a realistic "closed the tab, retried later" window without unbounded Redis growth.
+import { IDEMPOTENCY_TTL_SECONDS } from '../redis/ttl-config.js';
 
 export interface IdempotencyClaim {
   /** true when this call should execute the handler (either it holds the lock, or Redis was unreachable and we fail open). */

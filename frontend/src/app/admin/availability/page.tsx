@@ -50,7 +50,11 @@ export default function PeopleAvailabilityPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Monotonic fetch counter so overlapping real-time refreshes cannot apply stale data
+  const fetchSeq = useRef(0);
+
   const fetchAvailability = useCallback((showSpinner = true) => {
+    const seq = ++fetchSeq.current;
     if (showSpinner) setIsLoading(true);
     setError(null);
 
@@ -66,10 +70,12 @@ export default function PeopleAvailabilityPage() {
           search: searchQuery.trim() || undefined,
       })
       .then((res) => {
+        if (seq !== fetchSeq.current) return;
         setData(res);
         setIsLoading(false);
       })
       .catch((err) => {
+        if (seq !== fetchSeq.current) return;
         setError(err instanceof Error ? err.message : 'Failed to fetch availability');
         setIsLoading(false);
       });

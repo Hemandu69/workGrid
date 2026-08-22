@@ -4,6 +4,7 @@ import supertest from 'supertest';
 import { buildApp } from '../src/app.js';
 import { UserRole, AccountStatus } from '@prisma/client';
 import { OperationsService } from '../src/services/operations.service.js';
+import * as redisModule from '../src/redis/client.js';
 
 // ---------------------------------------------------------------------------
 // Mock topology: Sections B and C, subrooms B1-B8 / C1-C8 (capacity 2 each)
@@ -170,6 +171,13 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
   const tokens: Record<string, string> = {};
 
   beforeAll(async () => {
+    // RoomService.getAllRooms has a short-lived Redis cache-aside — simulate
+    // an unreachable Redis so it always falls through to the mocked Postgres
+    // path instead of paying a real connection attempt in this test env.
+    vi.spyOn(redisModule, 'getRedisClient').mockImplementation(() => {
+      throw new Error('Redis unreachable (test)');
+    });
+
     app = await buildApp();
     await app.ready();
 

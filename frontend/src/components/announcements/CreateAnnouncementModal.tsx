@@ -5,16 +5,19 @@ import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
-import { AudienceScope } from '../../types/announcement';
+import { Announcement, AudienceScope } from '../../types/announcement';
 import { apiClient } from '../../lib/api-client';
 
 interface CreateAnnouncementModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreated?: () => void;
+  /** When set, the modal edits this announcement instead of creating a new one. */
+  announcement?: Announcement | null;
 }
 
-export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAnnouncementModalProps) {
+export function CreateAnnouncementModal({ isOpen, onClose, onCreated, announcement }: CreateAnnouncementModalProps) {
+  const isEditMode = Boolean(announcement);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [scope, setScope] = useState<AudienceScope>('GLOBAL');
@@ -22,13 +25,21 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
   const [pinned, setPinned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // One key per fresh form-open, reused across retries of that same
-  // submission attempt so a slow-network retry never publishes twice.
+  // One key per fresh create-mode form-open, reused across retries of that
+  // same submission attempt. Not needed for edits — those PATCH a specific
+  // announcement id and are already idempotent by construction.
   const idempotencyKeyRef = useRef<string>('');
 
   useEffect(() => {
-    if (isOpen) idempotencyKeyRef.current = crypto.randomUUID();
-  }, [isOpen]);
+    if (!isOpen) return;
+    setTitle(announcement?.title || '');
+    setContent(announcement?.content || '');
+    setScope(announcement?.scope || 'GLOBAL');
+    setTargetRoom(announcement?.targetRoom || 'Room B');
+    setPinned(announcement?.pinned || false);
+    setError(null);
+    if (!announcement) idempotencyKeyRef.current = crypto.randomUUID();
+  }, [isOpen, announcement]);
 
   const scopeOptions = [
     { value: 'GLOBAL', label: 'Global (All Members)' },
@@ -49,17 +60,26 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
     setIsSubmitting(true);
     setError(null);
     try {
-      await apiClient.createAnnouncement(
-        {
+      if (isEditMode) {
+        await apiClient.updateAnnouncement(announcement!.id, {
           title: title.trim(),
           content: content.trim(),
           scope,
           targetRoom: scope === 'ROOM_SPECIFIC' ? targetRoom : undefined,
-          pinned,
-        },
-        undefined,
-        idempotencyKeyRef.current
-      );
+        });
+      } else {
+        await apiClient.createAnnouncement(
+          {
+            title: title.trim(),
+            content: content.trim(),
+            scope,
+            targetRoom: scope === 'ROOM_SPECIFIC' ? targetRoom : undefined,
+            pinned,
+          },
+          undefined,
+          idempotencyKeyRef.current
+        );
+      }
       setTitle('');
       setContent('');
       setScope('GLOBAL');
@@ -67,7 +87,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
       onCreated?.();
       onClose();
     } catch {
-      setError('Could not publish the announcement. Please try again.');
+      setError(isEditMode ? 'Could not save changes. Please try again.' : 'Could not publish the announcement. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -77,7 +97,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create Organization Announcement"
+      title={isEditMode ? 'Edit Organization Announcement' : 'Create Organization Announcement'}
       description="Broadcast official announcements and operational notices across organizational sections."
       maxWidth="lg"
       footer={
@@ -92,7 +112,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
             isLoading={isSubmitting}
             disabled={!title.trim() || !content.trim()}
           >
-            Publish Announcement
+            {isEditMode ? 'Save Changes' : 'Publish Announcement'}
           </Button>
         </>
       }
@@ -144,18 +164,20 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
           )}
         </div>
 
-        <div className="flex items-center gap-2 pt-2">
-          <input
-            type="checkbox"
-            id="pin-announcement"
-            checked={pinned}
-            onChange={(e) => setPinned(e.target.checked)}
-            className="rounded border-surface-outline text-primary focus:ring-primary h-4 w-4"
-          />
-          <label htmlFor="pin-announcement" className="text-xs text-on-surface font-medium cursor-pointer">
-            Pin announcement to the top of the command board
-          </label>
-        </div>
+        {!isEditMode && (
+          <div className="flex items-center gap-2 pt-2">
+            <input
+              type="checkbox"
+              id="pin-announcement"
+              checked={pinned}
+              onChange={(e) => setPinned(e.target.checked)}
+              className="rounded border-surface-outline text-primary focus:ring-primary h-4 w-4"
+            />
+            <label htmlFor="pin-announcement" className="text-xs text-on-surface font-medium cursor-pointer">
+              Pin announcement to the top of the command board
+            </label>
+          </div>
+        )}
       </form>
     </Modal>
   );

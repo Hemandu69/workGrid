@@ -1,12 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Announcement } from '../../types/announcement';
 import { Badge } from '../ui/Badge';
+import { useAsyncAction } from '../../lib/useAsyncAction';
 
 interface AnnouncementCardProps {
   announcement: Announcement;
+  /** Shows edit/pin/delete controls — only pass true from an authorized management surface. */
+  canManage?: boolean;
+  onEdit?: (announcement: Announcement) => void;
+  onDelete?: (announcement: Announcement) => Promise<void>;
+  onTogglePin?: (announcement: Announcement) => Promise<void>;
 }
 
-export function AnnouncementCard({ announcement }: AnnouncementCardProps) {
+export function AnnouncementCard({ announcement, canManage, onEdit, onDelete, onTogglePin }: AnnouncementCardProps) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleteAction = useAsyncAction(async () => {
+    await onDelete?.(announcement);
+    setConfirmingDelete(false);
+  });
+  const pinAction = useAsyncAction(async () => {
+    await onTogglePin?.(announcement);
+  });
+
   const scopeLabels: Record<string, string> = {
     GLOBAL: 'Global All Sections',
     ADMINS_ONLY: 'Administrators Only',
@@ -42,6 +57,58 @@ export function AnnouncementCard({ announcement }: AnnouncementCardProps) {
         >
           {announcement.status}
         </Badge>
+
+        {canManage && (
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onEdit?.(announcement)}
+              className="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container-low transition-colors"
+              title="Edit announcement"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => pinAction.run()}
+              disabled={pinAction.isPending}
+              className="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container-low transition-colors disabled:opacity-50"
+              title={announcement.pinned ? 'Unpin announcement' : 'Pin announcement'}
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {announcement.pinned ? 'keep_off' : 'push_pin'}
+              </span>
+            </button>
+            {confirmingDelete ? (
+              <span className="flex items-center gap-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => deleteAction.run()}
+                  disabled={deleteAction.isPending}
+                  className="px-1.5 py-0.5 rounded bg-status-blocked text-white font-semibold disabled:opacity-50"
+                >
+                  {deleteAction.isPending ? 'Deleting...' : 'Confirm'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  className="px-1.5 py-0.5 rounded text-on-surface-variant hover:text-on-surface"
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="p-1 rounded text-on-surface-variant hover:text-status-blocked hover:bg-surface-container-low transition-colors"
+                title="Delete announcement"
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div>
