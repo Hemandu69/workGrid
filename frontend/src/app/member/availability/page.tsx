@@ -80,7 +80,7 @@ export default function AvailabilityPage() {
             Capacity & Task Allocation Rules
           </div>
           <p className="text-on-surface-variant leading-relaxed">
-            Active task allocations consume available hours. When a task is assigned, the system reserves non-conflicting capacity before its due time. Slots marked as Busy cannot be made unavailable without Admin overload.
+            Assigned tasks use up your available hours automatically, reserved ahead of their due time. Slots marked Busy can only be changed by an Admin.
           </p>
         </div>
 

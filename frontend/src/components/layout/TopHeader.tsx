@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth-context';
 import { useNotifications } from '../../lib/notifications-context';
-import { UserRole } from '../../types/auth';
 import { Avatar } from '../ui/Avatar';
 import { formatToISTTime } from '../../lib/time-utils';
 
@@ -14,9 +13,8 @@ interface TopHeaderProps {
 }
 
 export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps) {
-  const { user, role, setRole, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const { unreadCount } = useNotifications();
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [currentISTClock, setCurrentISTClock] = useState<string>('');
 
@@ -35,15 +33,6 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
   ];
 
   const activeBreadcrumbs = breadcrumbs || defaultBreadcrumbs;
-
-  const roleOptions: Array<{ role: UserRole; label: string; desc: string }> = [
-    { role: 'SUPER_ADMIN', label: 'Super Admin', desc: 'Global monitoring, announcements & org health' },
-    { role: 'ADMIN', label: 'Admin', desc: 'Operational administration & section oversight' },
-    { role: 'HR', label: 'HR', desc: 'People management, onboarding & role governance' },
-    { role: 'TEAM_LEAD', label: 'Team Lead', desc: 'Team-level task and workload coordination' },
-    { role: 'SERVER', label: 'Server', desc: 'Room & event supervision (Section B)' },
-    { role: 'MEMBER', label: 'Member', desc: 'Task execution & weekly availability' },
-  ];
 
   return (
     <header className="fixed top-0 right-0 w-full lg:w-[calc(100%-260px)] h-row-height-standard bg-surface-bright border-b border-surface-outline flex justify-between items-center px-4 lg:px-6 z-30 select-none">
@@ -107,40 +96,10 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
           </div>
         )}
 
-        {/* Role Switcher Button */}
-        <div className="relative">
-          <button
-            onClick={() => setShowRoleMenu(!showRoleMenu)}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container border border-surface-outline text-xs font-semibold text-primary hover:bg-surface-container-high transition-colors"
-          >
-            <span className="material-symbols-outlined text-[15px] text-secondary">admin_panel_settings</span>
-            <span className="hidden md:inline">Role:</span>
-            <span>{role ? role.replace('_', ' ') : 'Unassigned'}</span>
-            <span className="material-symbols-outlined text-[14px]">arrow_drop_down</span>
-          </button>
-
-          {showRoleMenu && (
-            <div className="absolute right-0 mt-1.5 w-64 bg-surface-bright border border-surface-outline rounded shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-3 py-1.5 border-b border-surface-outline text-[10px] uppercase font-bold text-on-surface-variant">
-                Switch Preview Role
-              </div>
-              {roleOptions.map((opt) => (
-                <button
-                  key={opt.role}
-                  onClick={() => {
-                    setRole(opt.role);
-                    setShowRoleMenu(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-surface-container-low transition-colors flex flex-col ${
-                    role === opt.role ? 'bg-secondary-container/40 font-semibold' : ''
-                  }`}
-                >
-                  <span className="text-primary font-medium">{opt.label}</span>
-                  <span className="text-[10px] text-on-surface-variant">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Role Badge (read-only) */}
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container border border-surface-outline text-xs font-semibold text-primary">
+          <span className="material-symbols-outlined text-[15px] text-secondary">admin_panel_settings</span>
+          <span>{role ? role.replace('_', ' ') : 'Unassigned'}</span>
         </div>
 
         {/* Notification Hub Trigger */}

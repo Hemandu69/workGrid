@@ -57,7 +57,8 @@ export function PersonAvailabilityDrawer({
       });
   }, [userId]);
 
-  // Real-time synchronization: refresh drawer for real users AND simulated personnel
+  // Real-time synchronization: silently refresh the drawer when the viewed
+  // person's presence, location, availability, or room assignment changes.
   useDomainEvent(
     [
       'LOCATION_CHANGED',
@@ -66,33 +67,20 @@ export function PersonAvailabilityDrawer({
       'EMPLOYEE_CHECKED_IN',
       'EMPLOYEE_CHECKED_OUT',
       'AVAILABILITY_CHANGED',
-      'PRESENCE_CHANGED',
-      'GRID_UPDATED',
       'ROOM_ASSIGNMENT_CHANGED',
     ],
     (event) => {
       if (!userId) return;
 
-      const payload = event.payload as {
-        userId?: string | null;
-        simulatedPersonId?: string;
-        personId?: string;
-        resetSimulation?: boolean;
-        isSimulated?: boolean;
-      } | null;
+      const payload = event.payload as { userId?: string | null; personId?: string } | null;
 
-      // Real user match OR simulated person match (sim events use userId: null)
       const matchesViewedPerson =
         payload?.userId === userId ||
-        payload?.simulatedPersonId === userId ||
         payload?.personId === userId ||
         event.targetUserId === userId ||
         event.entityId === userId;
 
-      const isBroadcast =
-        event.type === 'ROOM_STATUS_CHANGED' ||
-        event.type === 'GRID_UPDATED' ||
-        payload?.resetSimulation === true;
+      const isBroadcast = event.type === 'ROOM_STATUS_CHANGED';
 
       if (matchesViewedPerson || isBroadcast) {
         refreshDrawer(true);
@@ -149,19 +137,15 @@ export function PersonAvailabilityDrawer({
     if (!userId || !data) return;
     try {
       setIsUpdatingPresence(true);
-      if (userId.startsWith('sim-') || data.person.isSimulated) {
-        await apiClient.toggleSimulatedPresence(userId, targetState);
-      } else {
-        await apiClient.updatePresence({
-          userId,
-          presenceState: targetState,
-          // Returning puts them back in their assigned subroom. With no
-          // assignment there is no location to claim — leave it to the backend
-          // rather than inventing one.
-          currentLocationName:
-            targetState === 'IN' ? data.person.subroom ?? null : 'Outside',
-        });
-      }
+      await apiClient.updatePresence({
+        userId,
+        presenceState: targetState,
+        // Returning puts them back in their assigned subroom. With no
+        // assignment there is no location to claim — leave it to the backend
+        // rather than inventing one.
+        currentLocationName:
+          targetState === 'IN' ? data.person.subroom ?? null : 'Outside',
+      });
 
       const refreshed = await apiClient.getPersonAvailabilityDetail(userId);
       setData(refreshed);
@@ -353,7 +337,7 @@ export function PersonAvailabilityDrawer({
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] font-mono text-on-surface-variant pt-1 border-t border-surface-outline/50">
-                  <span>Assigned Scope: <strong className="text-primary">{data.person.room || '—'}</strong></span>
+                  <span>Assigned Section: <strong className="text-primary">{data.person.room || '—'}</strong></span>
                   {data.person.attendanceState === 'IN' ? (
                     <span>Live Duration: <strong className="text-emerald-700 font-semibold">{liveDuration || data.person.currentDurationFormatted || 'Active'}</strong></span>
                   ) : (

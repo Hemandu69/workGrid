@@ -46,34 +46,34 @@ export default function AdminReportsPage() {
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
         { label: 'Admin Operations', href: '/admin' },
-        { label: 'Reports & Utilization Analytics' },
+        { label: 'Reports & Analytics' },
       ]}
     >
       <div className="space-y-6">
         {/* Header */}
         <div className="border-b border-surface-outline pb-4">
           <h1 className="text-xl font-bold text-primary tracking-tight">
-            Operational Analytics & Capacity Utilization
+            Reports & Analytics
           </h1>
           <p className="text-xs text-on-surface-variant mt-1">
-            Historical throughput, section capacity saturation, and task turnaround metrics across all sections.
+            Task completion trends, room occupancy, and workload metrics across all sections.
           </p>
         </div>
 
         {/* Analytics Top Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatMetricCard
-            label="Global Saturation"
+            label="Workspace Usage"
             value={`${stats?.globalSaturationPercentage ?? 0}%`}
-            subtext="Occupied subroom capacity"
-            trend="Real-time Density"
+            subtext="Occupied room capacity"
+            trend="Updated Live"
             icon="speed"
             indicatorColor="available"
           />
           <StatMetricCard
-            label="Active Workload Tasks"
+            label="Active Tasks"
             value={stats?.activeTasks ?? 0}
-            subtext="Total tasks in dispatch"
+            subtext="Total tasks in progress"
             trend="Active Queue"
             icon="assignment"
             indicatorColor="primary"
@@ -81,15 +81,15 @@ export default function AdminReportsPage() {
           <StatMetricCard
             label="Subrooms Monitored"
             value={rooms.length * 8 || 64}
-            subtext="Across all provisioned sections"
+            subtext="Across all active sections"
             trend="Sections A–H"
             icon="insights"
             indicatorColor="busy"
           />
           <StatMetricCard
-            label="Task Overdue Risk"
+            label="Tasks At Risk of Being Late"
             value={`${stats?.overdueRiskPercentage ?? 0}%`}
-            subtext="Risk of SLA deviation"
+            subtext="Based on task due dates"
             trend="Calculated from tasks"
             icon="verified_user"
             indicatorColor="available"
@@ -99,7 +99,7 @@ export default function AdminReportsPage() {
         {/* Utilization by Section */}
         <Card>
           <CardHeader>
-            <CardTitle>Section Capacity Saturation & Workload Breakdown</CardTitle>
+            <CardTitle>Room Occupancy & Workload by Section</CardTitle>
           </CardHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

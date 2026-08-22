@@ -2,7 +2,6 @@ import { prisma } from '../db/client.js';
 import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
 import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, TaskPriority, PresenceState } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
-import { SimulationService, SimulatedAvailabilityState } from './simulation.service.js';
 import {
   AvailabilityState,
   availabilityFromUserStatus,
@@ -224,9 +223,6 @@ export class AvailabilityService {
   /**
    * Sets a person's authoritative operational availability (FREE / BUSY /
    * PARTIALLY_AVAILABLE / UNAVAILABLE) and broadcasts it organization-wide.
-   *
-   * Handles real accounts and simulated test personnel through the same path so
-   * both produce identical domain-event semantics for every connected client.
    * Room assignment is never touched — availability and location are separate
    * pieces of state.
    */
@@ -237,58 +233,6 @@ export class AvailabilityService {
   ) {
     const now = new Date();
 
-    // --- Simulated test personnel (in-memory, never written to PostgreSQL) ---
-    const sim = SimulationService.getSimulatedPerson(personId);
-    if (sim) {
-      const updated = SimulationService.updateSimulatedAvailability(
-        personId,
-        state as SimulatedAvailabilityState,
-        now
-      );
-
-      const payload = {
-        userId: null,
-        simulatedPersonId: updated.id,
-        personId: updated.id,
-        name: updated.name,
-        role: updated.role,
-        organizationId: actor.organizationId,
-        presenceState: updated.presenceState,
-        attendanceState: updated.attendanceState,
-        availabilityState: updated.availabilityState,
-        availabilityLabel: AVAILABILITY_LABELS[updated.availabilityState],
-        section: updated.sectionLetter,
-        sectionLetter: updated.sectionLetter,
-        subroomCode: updated.subroomCode,
-        currentLocation: resolveCurrentLocation({
-          presenceState: updated.presenceState,
-          subroomCode: updated.subroomCode,
-          roomLetter: updated.sectionLetter,
-        }),
-        isSimulated: true,
-        timestamp: now.toISOString(),
-      };
-
-      publishDomainEvent({
-        type: 'AVAILABILITY_CHANGED',
-        organizationId: actor.organizationId,
-        entityId: updated.id,
-        actorId: actor.id,
-        payload,
-      });
-
-      return {
-        personId: updated.id,
-        name: updated.name,
-        availabilityState: updated.availabilityState,
-        availabilityLabel: AVAILABILITY_LABELS[updated.availabilityState],
-        presenceState: updated.presenceState,
-        currentLocation: payload.currentLocation,
-        isSimulated: true,
-      };
-    }
-
-    // --- Real authenticated account ---
     const user = await prisma.user.findUnique({
       where: { id: personId },
       include: { room: true, subroom: true },
@@ -347,7 +291,6 @@ export class AvailabilityService {
         currentLocation,
         section: user.room?.letter,
         subroomCode: user.subroom?.code,
-        isSimulated: false,
         timestamp: now.toISOString(),
       },
     });
@@ -359,7 +302,6 @@ export class AvailabilityService {
       availabilityLabel: AVAILABILITY_LABELS[state],
       presenceState: updated.presenceState,
       currentLocation,
-      isSimulated: false,
     };
   }
 
@@ -635,149 +577,6 @@ export class AvailabilityService {
    * Detailed weekly timeline and commitments for a selected person in IST
    */
   static async getPersonDetailedAvailability(userId: string, startDateStr?: string) {
-    if (userId.startsWith('sim-') || SimulationService.getSimulatedPerson(userId)) {
-      const sim = SimulationService.getSimulatedPerson(userId);
-      if (sim) {
-        const now = new Date();
-        const daysTimeline: DayAvailabilityTimeline[] = [];
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(now.getTime() + i * 86400000);
-          const dayName = `${dayNames[d.getUTCDay()]} ${d.getUTCDate()}`;
-          const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6;
-          const isToday = i === 0;
-
-          if (isWeekend) {
-            daysTimeline.push({
-              date: d.toISOString().split('T')[0],
-              dayName,
-              dayOfWeek: dayNames[d.getUTCDay()].toUpperCase() as DayOfWeek,
-              isToday,
-              status: 'UNAVAILABLE',
-              windows: [
-                {
-                  startHour: 0,
-                  endHour: 24,
-                  startFormatted: '12:00 AM',
-                  endFormatted: '11:59 PM IST',
-                  state: 'UNAVAILABLE',
-                  label: 'Weekend / Off-shift',
-                },
-              ],
-            });
-          } else {
-            // Today's timeline must agree with the person's live availability,
-            // including a manually set BUSY that has no backing task.
-            const isBusyNow = i === 0 && sim.presenceState === 'IN' && sim.availabilityState === 'BUSY';
-            const hasTask = (Boolean(sim.activeTaskId) && (i === 0 || i === 1)) || isBusyNow;
-            daysTimeline.push({
-              date: d.toISOString().split('T')[0],
-              dayName,
-              dayOfWeek: dayNames[d.getUTCDay()].toUpperCase() as DayOfWeek,
-              isToday,
-              status: hasTask ? 'BUSY' : 'FREE',
-              windows: [
-                {
-                  startHour: 9,
-                  endHour: 13,
-                  startFormatted: '09:00 AM',
-                  endFormatted: '01:00 PM IST',
-                  state: hasTask ? 'BUSY' : 'FREE',
-                  label: hasTask ? 'Active Task Allocation' : 'Core Shift Free',
-                  reason: hasTask ? sim.activeTaskTitle : undefined,
-                },
-                {
-                  startHour: 13,
-                  endHour: 14,
-                  startFormatted: '01:00 PM',
-                  endFormatted: '02:00 PM IST',
-                  state: 'UNAVAILABLE',
-                  label: 'Lunch Break',
-                },
-                {
-                  startHour: 14,
-                  endHour: 18,
-                  startFormatted: '02:00 PM',
-                  endFormatted: '06:00 PM IST',
-                  state: 'FREE',
-                  label: 'Afternoon Operations',
-                },
-              ],
-            });
-          }
-        }
-
-        // Same authoritative derivation the real branch uses — presence dominates.
-        const simProjection = deriveAvailability({
-          presenceState: sim.presenceState,
-          storedState: sim.availabilityState,
-          activeTaskLabel: sim.activeTaskId ? `${sim.activeTaskId} — ${sim.activeTaskTitle}` : null,
-          locationLabel: `Subroom ${sim.subroomCode}`,
-        });
-        const simActiveWindow = this.findActiveWindow(daysTimeline, now);
-        const simNextFree = this.computeNextFree(daysTimeline, now);
-
-        return {
-          person: {
-            id: sim.id,
-            name: sim.name,
-            email: sim.email,
-            role: sim.role,
-            status: userStatusFromAvailability(simProjection.state),
-            availabilityState: simProjection.state,
-            avatarUrl: sim.avatarUrl,
-            title: sim.title,
-            room: `Section ${sim.sectionLetter}`,
-            subroom: sim.subroomCode,
-            currentLocation: resolveCurrentLocation({
-              presenceState: sim.presenceState,
-              subroomCode: sim.subroomCode,
-              roomLetter: sim.sectionLetter,
-            }),
-            attendanceState: sim.attendanceState,
-            presenceState: sim.presenceState,
-            arrivedAt: sim.checkedInAt ? sim.checkedInAt.toISOString() : undefined,
-            arrivedAtIST: sim.checkedInAt ? formatToISTTime(sim.checkedInAt) : undefined,
-            leftAt: sim.checkedOutAt ? sim.checkedOutAt.toISOString() : undefined,
-            leftAtIST: sim.checkedOutAt ? formatToISTTime(sim.checkedOutAt) : undefined,
-            currentDurationFormatted: SimulationService.getFormattedDuration(sim, now),
-            lastSeenAtIST: formatToISTTime(sim.lastSeenAt),
-            capacityLimitHours: sim.capacityLimitHours || 40,
-            currentAllocatedHours: sim.currentAllocatedHours || 20,
-            isSimulated: true,
-          },
-          currentStatus: {
-            state: simProjection.state,
-            label: simProjection.label,
-            reason: simProjection.reason,
-            room: `Section ${sim.sectionLetter}`,
-            subroom: sim.subroomCode,
-            // Derived from the simulated person's own timeline, not a fixed label.
-            until: simActiveWindow ? simActiveWindow.endFormatted : undefined,
-          },
-          nextFree: simNextFree,
-          weeklyTimeline: daysTimeline,
-          upcomingCommitments: sim.activeTaskId
-            ? [
-                {
-                  id: sim.activeTaskId,
-                  title: sim.activeTaskTitle || 'Assigned task',
-                  description: 'Simulated task commitment for testing',
-                  status: TaskStatus.IN_PROGRESS,
-                  priority: TaskPriority.HIGH,
-                  estimatedHours: 8,
-                  allocatedHours: 4,
-                  dueDateFormatted: 'Today',
-                  room: `Section ${sim.sectionLetter}`,
-                  subroom: sim.subroomCode,
-                },
-              ]
-            : [],
-        };
-      }
-    }
-
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {

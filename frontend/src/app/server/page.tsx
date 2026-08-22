@@ -180,9 +180,9 @@ export default function ServerDashboard() {
             indicatorColor="available"
           />
           <StatMetricCard
-            label="Blockage Risk"
+            label="Blocked Tasks"
             value={`${blockedTasksCount} Task`}
-            subtext="Policy or dependency guard"
+            subtext="Waiting on something else"
             trend={blockedTasksCount > 0 ? "Action Required" : "All Clear"}
             trendDirection={blockedTasksCount > 0 ? "down" : "up"}
             icon="warning"

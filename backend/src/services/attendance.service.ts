@@ -178,7 +178,6 @@ export class AttendanceService {
             availabilityState: reconciledAvailability,
             availabilityLabel: AVAILABILITY_LABELS[reconciledAvailability],
             reconciled: true,
-            isSimulated: false,
             timestamp: now.toISOString(),
           },
         });
@@ -314,7 +313,6 @@ export class AttendanceService {
         status: userStatusFromAvailability(arrivalAvailability),
         availabilityState: arrivalAvailability,
         availabilityLabel: AVAILABILITY_LABELS[arrivalAvailability],
-        isSimulated: false,
         timestamp: now.toISOString(),
       },
     });
@@ -504,7 +502,6 @@ export class AttendanceService {
         availabilityState: 'UNAVAILABLE',
         availabilityLabel: AVAILABILITY_LABELS.UNAVAILABLE,
         currentLocation: 'Outside',
-        isSimulated: false,
         timestamp: now.toISOString(),
       },
     });

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserStatus } from '@prisma/client';
 import { AvailabilityService } from '../src/services/availability.service.js';
 import { AttendanceService } from '../src/services/attendance.service.js';
-import { SimulationService } from '../src/services/simulation.service.js';
 
 /**
  * Live state for the single real account under test, mutated by the service
@@ -113,7 +112,6 @@ describe('Availability lifecycle — attendance, tasks and schedule', () => {
     activeTaskCount = 0;
     openAttendanceRecord = null;
     publishedEvents.length = 0;
-    SimulationService.resetSimulation(new Date('2026-08-21T08:00:00.000Z'));
 
     mockPrisma.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
       where.id === 'usr-sarah' ? Promise.resolve(currentUser()) : Promise.resolve(null)
@@ -360,62 +358,4 @@ describe('Availability lifecycle — attendance, tasks and schedule', () => {
     }
   });
 
-  // --- Simulated personnel detail -----------------------------------------
-
-  it('17. projects a simulated OUT person as UNAVAILABLE and Outside', async () => {
-    const target = SimulationService.getSimulatedPersons().find((p) => p.presenceState === 'OUT')!;
-
-    const detail = await AvailabilityService.getPersonDetailedAvailability(target.id);
-
-    expect(detail.currentStatus.state).toBe('UNAVAILABLE');
-    expect(detail.person.currentLocation).toBe('Outside');
-  });
-
-  it('18. reflects a simulated availability change in the person detail', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-    SimulationService.updateSimulatedAvailability(target.id, 'PARTIALLY_AVAILABLE');
-
-    const detail = await AvailabilityService.getPersonDetailedAvailability(target.id);
-
-    expect(detail.currentStatus.state).toBe('PARTIALLY_AVAILABLE');
-    expect(detail.person.currentLocation).toBe(target.subroomCode);
-  });
-
-  it('19. derives a simulated person’s next free window from their own timeline', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-
-    const detail = await AvailabilityService.getPersonDetailedAvailability(target.id);
-    const allWindows = detail.weeklyTimeline.flatMap((d) => d.windows);
-
-    expect(allWindows.length).toBeGreaterThan(0);
-    if (detail.nextFree.nextFreeTime) {
-      expect(
-        allWindows.some(
-          (w) =>
-            w.startFormatted === detail.nextFree.nextFreeTime ||
-            w.endFormatted === detail.nextFree.nextFreeTime
-        )
-      ).toBe(true);
-    }
-  });
-
-  it('20. keeps a simulated person’s timeline in step with a manual BUSY', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN' && !p.activeTaskId
-    )!;
-    SimulationService.updateSimulatedAvailability(target.id, 'BUSY');
-
-    const detail = await AvailabilityService.getPersonDetailedAvailability(target.id);
-    const today = detail.weeklyTimeline.find((d) => d.isToday);
-
-    // A weekend "today" has no working windows to mark busy.
-    if (today && today.status !== 'UNAVAILABLE') {
-      expect(today.windows.some((w) => w.state === 'BUSY')).toBe(true);
-    }
-    expect(detail.currentStatus.state).toBe('BUSY');
-  });
 });

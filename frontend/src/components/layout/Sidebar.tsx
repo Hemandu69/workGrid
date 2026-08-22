@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
 import { useNotifications } from '../../lib/notifications-context';
-import { useDomainEvent } from '../../lib/realtime-context';
+import { useDomainEvent, useRealtime } from '../../lib/realtime-context';
 import { apiClient } from '../../lib/api-client';
 import { Badge } from '../ui/Badge';
 import { Avatar } from '../ui/Avatar';
@@ -34,12 +34,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'campaign',
     roles: ['SUPER_ADMIN'],
   },
-  {
-    label: 'Events',
-    href: '/super-admin/events',
-    icon: 'event_upcoming',
-    roles: ['SUPER_ADMIN'],
-  },
 
   // HR Dedicated Links (People Management)
   {
@@ -60,6 +54,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Admin Dashboard',
     href: '/admin',
     icon: 'dashboard',
+    roles: ['ADMIN'],
+  },
+  {
+    label: 'Announcements',
+    href: '/super-admin/announcements',
+    icon: 'campaign',
     roles: ['ADMIN'],
   },
   {
@@ -98,13 +98,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'analytics',
     roles: ['ADMIN', 'SUPER_ADMIN'],
   },
-  {
-    label: 'Events',
-    href: '/admin/events',
-    icon: 'event_upcoming',
-    roles: ['ADMIN'],
-  },
-
   // Server Link (Room & Event Supervision)
   {
     label: 'Room Supervision',
@@ -158,6 +151,7 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
   const pathname = usePathname();
   const { user, role } = useAuth();
   const { unreadCount } = useNotifications();
+  const isConnected = useRealtime()?.isConnected ?? false;
 
   // Live count of the viewer's own open tasks — the badge must reflect real
   // assigned work, never a fixed number.
@@ -317,8 +311,12 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
         {/* Footer info */}
         <div className="p-3 border-t border-surface-outline bg-surface-container-low text-[11px] text-on-surface-variant flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-status-available animate-pulse"></span>
-            <span>2,000 Nodes Active</span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isConnected ? 'bg-status-available animate-pulse' : 'bg-slate-400'
+              }`}
+            ></span>
+            <span>{isConnected ? 'Live Updates On' : 'Reconnecting…'}</span>
           </div>
           <span className="font-mono text-[10px]">v1.0.0</span>
         </div>

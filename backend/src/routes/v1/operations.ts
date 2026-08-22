@@ -1,7 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
 import { OperationsService } from '../../services/operations.service.js';
-import { SimulationService } from '../../services/simulation.service.js';
-import { AvailabilityService } from '../../services/availability.service.js';
 import { publishDomainEvent } from '../../events/domain-events.js';
 import { requireRole } from '../../plugins/auth.js';
 import { PresenceState, UserRole } from '@prisma/client';
@@ -185,170 +183,8 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // POST /api/v1/operations/simulation/toggle
-  // Toggles or sets state for a simulated test person without database writes
-  // Requires authentication so the real organizationId is available for Socket.IO routing
-  fastify.post(
-    '/simulation/toggle',
-    {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER])],
-    },
-    async (request, reply) => {
-      const { id, presenceState } = request.body as { id: string; presenceState?: 'IN' | 'OUT' };
-
-      if (!id) {
-        return reply.status(400).send({
-          statusCode: 400,
-          error: 'Bad Request',
-          message: 'Simulation person id is required.',
-        });
-      }
-
-      try {
-        const currentPerson = SimulationService.getSimulatedPerson(id);
-        if (!currentPerson) {
-          return reply.status(404).send({
-            statusCode: 404,
-            error: 'Not Found',
-            message: `Simulated person ${id} not found.`,
-          });
-        }
-
-        const targetState = presenceState || (currentPerson.presenceState === 'IN' ? 'OUT' : 'IN');
-        const updated = SimulationService.updateSimulatedPersonState(id, targetState);
-
-        // Use the authenticated user's real organizationId so events route to the
-        // correct Socket.IO room (organization:<orgId>) where all clients are subscribed.
-        const organizationId = request.user.organizationId;
-
-        // Common payload identifying this as a simulated person (no real userId)
-        const simulationPayload = {
-          userId: null,
-          simulatedPersonId: updated.id,
-          personId: updated.id,
-          name: updated.name,
-          role: updated.role,
-          section: updated.sectionLetter,
-          sectionLetter: updated.sectionLetter,
-          subroomCode: updated.subroomCode,
-          presenceState: updated.presenceState,
-          attendanceState: updated.attendanceState,
-          availabilityState: updated.availabilityState,
-          location: updated.presenceState === 'IN' ? updated.subroomCode : 'Outside',
-          isSimulated: true,
-          timestamp: new Date().toISOString(),
-        };
-
-        // Emit the same full event set as real authenticated check-in/check-out,
-        // using the real org ID so they arrive in the clients' Socket.IO room.
-        publishDomainEvent({
-          type: 'PRESENCE_CHANGED',
-          organizationId,
-          entityId: updated.id,
-          payload: simulationPayload,
-        });
-
-        publishDomainEvent({
-          type: 'ATTENDANCE_UPDATED',
-          organizationId,
-          entityId: updated.id,
-          payload: simulationPayload,
-        });
-
-        publishDomainEvent({
-          type: 'LOCATION_CHANGED',
-          organizationId,
-          entityId: updated.id,
-          payload: simulationPayload,
-        });
-
-        publishDomainEvent({
-          type: 'ROOM_STATUS_CHANGED',
-          organizationId,
-          entityId: updated.sectionLetter,
-          payload: {
-            ...simulationPayload,
-            roomLetter: updated.sectionLetter,
-          },
-        });
-
-        publishDomainEvent({
-          type: 'AVAILABILITY_CHANGED',
-          organizationId,
-          entityId: updated.id,
-          payload: simulationPayload,
-        });
-
-        return reply.send({
-          success: true,
-          person: updated,
-        });
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to toggle simulation state';
-        return reply.status(500).send({
-          statusCode: 500,
-          error: 'Internal Server Error',
-          message,
-        });
-      }
-    }
-  );
-
-  // POST /api/v1/operations/simulation/reset
-  // Restores initial test fixtures for simulated personnel
-  // Requires authentication so the real organizationId is available for Socket.IO routing
-  fastify.post(
-    '/simulation/reset',
-    {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])],
-    },
-    async (request, reply) => {
-      try {
-        const resetPersonnel = SimulationService.resetSimulation();
-
-        const organizationId = request.user.organizationId;
-
-        // Broadcast a grid-wide reset event to all connected clients using real org ID
-        publishDomainEvent({
-          type: 'GRID_UPDATED',
-          organizationId,
-          entityId: 'simulation-reset',
-          payload: {
-            resetSimulation: true,
-            isSimulated: true,
-            timestamp: new Date().toISOString(),
-          },
-        });
-
-        // Also emit ROOM_STATUS_CHANGED so any section-scoped listeners react
-        publishDomainEvent({
-          type: 'ROOM_STATUS_CHANGED',
-          organizationId,
-          entityId: 'ALL',
-          payload: {
-            resetSimulation: true,
-            isSimulated: true,
-          },
-        });
-
-        return reply.send({
-          success: true,
-          message: 'Simulation reset to default fixture state.',
-          personnel: resetPersonnel,
-        });
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to reset simulation';
-        return reply.status(500).send({
-          statusCode: 500,
-          error: 'Internal Server Error',
-          message,
-        });
-      }
-    }
-  );
-
   // GET /api/v1/operations/person/:id
-  // Retrieves details for either real database user or simulated personnel
+  // Retrieves availability detail for a real, authenticated user.
   fastify.get(
     '/person/:id',
     async (request, reply) => {
@@ -356,13 +192,7 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
 
       try {
         const personDetail = await OperationsService.getPersonDetail(id);
-        if (personDetail) {
-          return reply.send(personDetail);
-        }
-
-        // If not simulated, delegate to AvailabilityService for database user
-        const dbUserAvailability = await AvailabilityService.getUserAvailability(id);
-        return reply.send(dbUserAvailability);
+        return reply.send(personDetail);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Person not found';
         return reply.status(404).send({

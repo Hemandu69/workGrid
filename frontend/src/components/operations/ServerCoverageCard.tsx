@@ -6,10 +6,9 @@ import { GridRoomColumn } from '../../lib/api-client';
 interface ServerCoverageCardProps {
   rooms: GridRoomColumn[];
   onSelectServer?: (serverId: string) => void;
-  onToggleSimulated?: (id: string, presenceState?: 'IN' | 'OUT') => void;
 }
 
-export function ServerCoverageCard({ rooms, onSelectServer, onToggleSimulated }: ServerCoverageCardProps) {
+export function ServerCoverageCard({ rooms, onSelectServer }: ServerCoverageCardProps) {
   return (
     <div className="p-4 bg-surface-bright border border-surface-outline rounded shadow-2xs space-y-3">
       {/* Header */}
@@ -92,25 +91,6 @@ export function ServerCoverageCard({ rooms, onSelectServer, onToggleSimulated }:
                           <span className="font-mono text-[10px] text-on-surface-variant font-semibold">
                             {isPresent ? `Loc: ${srv.currentLocation}` : srv.presenceState}
                           </span>
-
-                          {/* Simulation Quick Toggle */}
-                          {srv.isSimulated && onToggleSimulated && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onToggleSimulated(srv.id, isPresent ? 'OUT' : 'IN');
-                              }}
-                              className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold transition-all border ${
-                                isPresent
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                                  : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                              }`}
-                              title={`Toggle server test presence (currently ${srv.presenceState})`}
-                            >
-                              {isPresent ? 'IN' : 'OUT'}
-                            </button>
-                          )}
                         </div>
                       </div>
                     );

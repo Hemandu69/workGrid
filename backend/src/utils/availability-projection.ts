@@ -14,8 +14,7 @@ export const AVAILABILITY_STATES: AvailabilityState[] = [
 ];
 
 /**
- * `User.status` is the authoritative STORED operational availability for real
- * accounts — the direct counterpart of `SimulatedPerson.availabilityState`.
+ * `User.status` is the authoritative STORED operational availability.
  * The existing `UserStatus` enum already covers the four states exactly, so no
  * schema change is required to represent them:
  *
@@ -77,7 +76,7 @@ export interface AvailabilityProjection {
 
 export interface AvailabilityProjectionInput {
   presenceState: PresenceState | string | null | undefined;
-  /** `User.status` for real accounts, `availabilityState` for simulated ones. */
+  /** Derived from the person's stored `User.status`. */
   storedState: AvailabilityState;
   activeTaskLabel?: string | null;
   /** Where the person sits when present, e.g. "B3" — used for the reason text. */

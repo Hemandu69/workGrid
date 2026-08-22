@@ -8,7 +8,6 @@ interface OperationsGridProps {
   rooms: GridRoomColumn[];
   onSelectPerson: (userId: string) => void;
   onSelectEvent?: (eventId: string) => void;
-  onToggleSimulated?: (id: string, presenceState?: 'IN' | 'OUT') => void;
   presenceFilter: string;
   roleFilter: string;
 }
@@ -17,7 +16,6 @@ export function OperationsGrid({
   rooms,
   onSelectPerson,
   onSelectEvent,
-  onToggleSimulated,
   presenceFilter,
   roleFilter,
 }: OperationsGridProps) {
@@ -57,7 +55,6 @@ export function OperationsGrid({
                   subroom={subroom}
                   onSelectPerson={onSelectPerson}
                   onSelectEvent={onSelectEvent}
-                  onToggleSimulated={onToggleSimulated}
                   presenceFilter={presenceFilter}
                   roleFilter={roleFilter}
                 />

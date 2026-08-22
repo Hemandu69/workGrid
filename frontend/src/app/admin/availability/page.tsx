@@ -283,8 +283,8 @@ export default function PeopleAvailabilityPage() {
           <StatMetricCard
             label="Total Personnel"
             value={data?.summary.totalPeople ?? '—'}
-            subtext="In organizational scope"
-            trend="100% Evaluated"
+            subtext="Across the organization"
+            trend="All Tracked"
             icon="groups"
             indicatorColor="primary"
           />
@@ -361,7 +361,7 @@ export default function PeopleAvailabilityPage() {
             {isServer ? (
               <div className="px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs font-semibold text-primary flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-[15px] text-secondary">meeting_room</span>
-                <span>Section {serverRoomLetter} (Assigned Scope)</span>
+                <span>Section {serverRoomLetter} (Your Section)</span>
               </div>
             ) : (
               <select
@@ -408,7 +408,7 @@ export default function PeopleAvailabilityPage() {
               <span>{error}</span>
             </div>
             <Button variant="outline" size="sm" onClick={() => fetchAvailability(true)}>
-              Retry Query
+              Try Again
             </Button>
           </div>
         )}

@@ -45,14 +45,14 @@ export default function AdminRoomsPage() {
         {/* Header */}
         <div className="border-b border-surface-outline pb-4">
           <h1 className="text-xl font-bold text-primary tracking-tight">
-            Rooms & Subrooms Topology (Sections A–H)
+            Rooms & Subrooms (Sections A–H)
           </h1>
           <p className="text-xs text-on-surface-variant mt-1">
-            Monitor real-time capacity and occupancy across all 64 subrooms. Default capacity is 2 members + 1 lead server per subroom.
+            Monitor live capacity and occupancy across all 64 subrooms. Default capacity is 2 members + 1 lead server per subroom.
           </p>
         </div>
 
-        {/* Room Topology Grid */}
+        {/* Room Overview Grid */}
         <RoomOverviewGrid rooms={rooms} selectedRoomLetter="B" />
       </div>
     </AppShell>

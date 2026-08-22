@@ -16,9 +16,7 @@ export const updateWeeklyScheduleSchema = z.object({
 export type UpdateWeeklyScheduleInput = z.infer<typeof updateWeeklyScheduleSchema>;
 
 /**
- * Operational availability status change. Targets either a real account or a
- * simulated test person — both travel the same endpoint so the simulation
- * behaves exactly like the real system.
+ * Operational availability status change for a real, authenticated account.
  */
 export const setAvailabilityStatusSchema = z.object({
   personId: z.string().optional(),

@@ -3,7 +3,6 @@ import { FastifyInstance } from 'fastify';
 import supertest from 'supertest';
 import { buildApp } from '../src/app.js';
 import { UserRole, AccountStatus } from '@prisma/client';
-import { SimulationService } from '../src/services/simulation.service.js';
 import { OperationsService } from '../src/services/operations.service.js';
 
 // ---------------------------------------------------------------------------
@@ -31,6 +30,10 @@ function resetMockUsers() {
     { id: 'admin-1', email: 'marcus@org.corp', name: 'Marcus Sterling', role: UserRole.ADMIN, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: null, subroomId: null, presenceState: 'IN' },
     { id: 'hr-1', email: 'sarah.j@org.corp', name: 'Sarah Jenkins', role: UserRole.HR, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: null, subroomId: null, presenceState: 'IN' },
     { id: 'server-1', email: 'david@org.corp', name: 'David Chen', role: UserRole.SERVER, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: 'room-b-id', subroomId: null, presenceState: 'IN', currentLocationRoomId: 'room-b-id' },
+    // Two more real servers alongside David so Section B's 1/3/5 supervisory
+    // compaction can be exercised with only real, authenticated accounts.
+    { id: 'server-2', email: 'karan@org.corp', name: 'Karan Shah', role: UserRole.SERVER, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: 'room-b-id', subroomId: null, presenceState: 'IN', currentLocationRoomId: 'room-b-id' },
+    { id: 'server-3', email: 'maya@org.corp', name: 'Maya Lin', role: UserRole.SERVER, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: 'room-b-id', subroomId: null, presenceState: 'IN', currentLocationRoomId: 'room-b-id' },
     // Sarah (member-1) starts in B2, alongside member-2 — makes B2 full at 2/2. She is
     // currently checked IN and physically standing at her B2 desk.
     { id: 'member-1', email: 'sarah.connor@org.corp', name: 'Sarah Connor', role: UserRole.MEMBER, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: 'room-b-id', subroomId: 'subroom-b2-id', presenceState: 'IN', currentLocationRoomId: 'room-b-id', currentLocationSubroomId: 'subroom-b2-id', currentLocationName: 'B2' },
@@ -119,7 +122,7 @@ Object.assign(mockPrisma, {
           })),
         members: mockUsers
           .filter((u) => u.roomId === room.id && u.role === 'SERVER')
-          .map((u) => ({ ...u, presenceState: 'IN', currentLocationName: null, arrivedAt: null, lastSeenAt: new Date() })),
+          .map((u) => ({ ...u, currentLocationName: u.currentLocationName ?? null, arrivedAt: null, lastSeenAt: new Date() })),
       }));
     }),
   },
@@ -182,27 +185,9 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
     await app.close();
   });
 
-  /**
-   * The default simulation fixture pre-populates EVERY subroom (A1-H8) with 2
-   * simulated members — there is no "naturally empty" subroom. Tests that need
-   * a genuinely free destination first evacuate that subroom's default
-   * simulated occupants, exactly as an operator clearing desks would.
-   */
-  function evacuateSimulatedSubroom(sectionLetter: string, subroomCode: string) {
-    for (const p of SimulationService.getSimulatedPersons()) {
-      if (p.role !== 'SERVER' && p.sectionLetter === sectionLetter && p.subroomCode === subroomCode) {
-        SimulationService.reassignSimulatedPerson(p.id, '', '');
-      }
-    }
-  }
-
   beforeEach(() => {
     resetMockUsers();
     publishedEvents.length = 0;
-    SimulationService.resetSimulation(new Date('2026-08-21T08:00:00.000Z'));
-    for (const [section, subroom] of [['C', 'C4'], ['C', 'C1'], ['C', 'C6'], ['D', 'D8'], ['B', 'B5']]) {
-      evacuateSimulatedSubroom(section, subroom);
-    }
   });
 
   // ---------------------------------------------------------------------------
@@ -215,7 +200,6 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
         .set('Authorization', `Bearer ${tokens['admin-1']}`)
         .send({ sectionLetter: 'C', subroomCode: 'C4' });
 
-      if (res.status !== 200) console.log('DEBUG BODY', JSON.stringify(res.body));
       expect(res.status).toBe(200);
       expect(res.body.current.section).toBe('C');
       expect(res.body.current.subroom).toBe('C4');
@@ -385,77 +369,6 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
   });
 
   // ---------------------------------------------------------------------------
-  // SIMULATED USER
-  // ---------------------------------------------------------------------------
-  describe('Simulated personnel assignment', () => {
-    const simMemberId = 'sim-member-b2-01'; // fixture: Section B, Subroom B2
-
-    it('assigns/reassigns a simulated member — no PostgreSQL User row is created', async () => {
-      const res = await supertest(app.server)
-        .patch(`/api/v1/rooms/assignment/${simMemberId}`)
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'C', subroomCode: 'C6' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.current.isSimulated).toBe(true);
-      expect(res.body.current.section).toBe('C');
-      expect(res.body.current.subroom).toBe('C6');
-
-      const sim = SimulationService.getSimulatedPerson(simMemberId)!;
-      expect(sim.sectionLetter).toBe('C');
-      expect(sim.subroomCode).toBe('C6');
-
-      // Never leaks into the real Prisma User table
-      expect(findUser(simMemberId)).toBeNull();
-    });
-
-    it('clears a simulated member — disappears from every room/subroom projection', async () => {
-      const res = await supertest(app.server)
-        .delete(`/api/v1/rooms/assignment/${simMemberId}`)
-        .set('Authorization', `Bearer ${tokens['admin-1']}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.current.section).toBeNull();
-
-      const grid = await OperationsService.getOperationalGrid({});
-      const stillPresent = grid.rooms.some((r) => r.subrooms.some((s) => s.members.some((m) => m.id === simMemberId)));
-      expect(stillPresent).toBe(false);
-    });
-
-    it('rejects assigning a simulated member into a full real subroom (B2 is 2/2)', async () => {
-      const res = await supertest(app.server)
-        .patch(`/api/v1/rooms/assignment/${simMemberId}`)
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'B', subroomCode: 'B2' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toMatch(/capacity/i);
-    });
-
-    it('combined real + simulated occupancy is enforced together', async () => {
-      // Put one real member into an otherwise-empty subroom B5, then fill it with one sim member —
-      // a second sim member assignment into B5 must now be rejected (1 real + 1 sim = 2/2).
-      await supertest(app.server)
-        .patch('/api/v1/rooms/assignment/member-3')
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'B', subroomCode: 'B5' });
-
-      await supertest(app.server)
-        .patch(`/api/v1/rooms/assignment/${simMemberId}`)
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'B', subroomCode: 'B5' });
-
-      const res = await supertest(app.server)
-        .patch('/api/v1/rooms/assignment/sim-member-b2-02')
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'B', subroomCode: 'B5' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toMatch(/capacity/i);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
   // REALTIME
   // ---------------------------------------------------------------------------
   describe('ROOM_ASSIGNMENT_CHANGED realtime event', () => {
@@ -470,8 +383,6 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
       expect(evt.organizationId).toBe(ORG);
       expect(evt.payload).toMatchObject({
         userId: 'member-1',
-        simulatedPersonId: null,
-        isSimulated: false,
         previousSection: 'B',
         previousSubroom: 'B2',
         newSection: 'C',
@@ -480,36 +391,18 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
       });
       expect(evt.payload.timestamp).toBeDefined();
     });
-
-    it('emits with a simulatedPersonId (userId null) for a simulated person move', async () => {
-      await supertest(app.server)
-        .patch('/api/v1/rooms/assignment/sim-member-b2-01')
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'D', subroomCode: 'D8' });
-
-      const evt = publishedEvents.find((e) => e.type === 'ROOM_ASSIGNMENT_CHANGED');
-      expect(evt).toBeDefined();
-      expect(evt.payload).toMatchObject({
-        userId: null,
-        simulatedPersonId: 'sim-member-b2-01',
-        isSimulated: true,
-        previousSection: 'B',
-        previousSubroom: 'B2',
-        newSection: 'D',
-        newSubroom: 'D8',
-      });
-    });
   });
 
   // ---------------------------------------------------------------------------
   // SERVER — room assignment must not break supervisory positioning
   // ---------------------------------------------------------------------------
   describe('Server room reassignment is independent of supervisory positioning', () => {
-    it('moving a real server to another section keeps 1/3/5 compaction intact in both sections', async () => {
-      // David (real) starts in Room B alongside 3 simulated servers (Karan/Maya/Alex).
+    it('moving one of three real servers to another section keeps 1/3/5 compaction intact in both sections', async () => {
+      // Section B starts with 3 real servers (David/Karan/Maya) → compact 1/3/5.
       let grid = await OperationsService.getOperationalGrid({ room: 'B' });
       let secB = grid.rooms.find((r) => r.letter === 'B')!;
-      expect(secB.assignedServers.some((s) => s.id === 'server-1')).toBe(true);
+      expect(secB.assignedServers.map((s) => s.id).sort()).toEqual(['server-1', 'server-2', 'server-3']);
+      expect(secB.assignedServers.map((s) => s.assignedPosition).sort()).toEqual([1, 3, 5]);
 
       const res = await supertest(app.server)
         .patch('/api/v1/rooms/assignment/server-1')
@@ -520,66 +413,36 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
       expect(res.body.current.section).toBe('C');
       expect(res.body.current.subroom).toBeNull(); // servers are never subroom-pinned
 
-      // David now appears in Section C's server roster...
+      // David now appears alone in Section C, seated at position 1.
       grid = await OperationsService.getOperationalGrid({ room: 'C' });
       const secC = grid.rooms.find((r) => r.letter === 'C')!;
       expect(secC.assignedServers.some((s) => s.id === 'server-1')).toBe(true);
       const david = secC.assignedServers.find((s) => s.id === 'server-1')!;
       expect(david.presenceState).toBe('IN');
-      expect([1, 3, 5]).toContain(david.assignedPosition);
+      expect(david.assignedPosition).toBe(1);
 
-      // ...and Section B's remaining 3 simulated servers still compact correctly (no gaps).
+      // ...and Section B's remaining 2 real servers compact to 1/3 (no gap at 5).
       grid = await OperationsService.getOperationalGrid({ room: 'B' });
       secB = grid.rooms.find((r) => r.letter === 'B')!;
       expect(secB.assignedServers.some((s) => s.id === 'server-1')).toBe(false);
-      const activeInB = secB.assignedServers.filter((s) => s.presenceState === 'IN');
-      expect(activeInB.map((s) => s.assignedPosition).sort()).toEqual([1, 3, 5]);
+      expect(secB.assignedServers.map((s) => s.assignedPosition).sort()).toEqual([1, 3]);
     });
 
-    it('IN/OUT toggling still recalculates positions correctly after a server moves sections', async () => {
+    it('checking the middle server OUT keeps the third at its own position 5 (no compaction to 3)', async () => {
+      // Section B: 3 real servers IN → 1/3/5 (server-1=P1, server-2=P3, server-3=P5).
+      // Taking the SECOND (P3) server OUT must NOT pull the third down into P3 —
+      // per the explicit supervisory compaction rule, S3 stays put at P5.
       await supertest(app.server)
-        .patch('/api/v1/rooms/assignment/server-1')
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'C' });
+        .post('/api/v1/operations/presence')
+        .set('Authorization', `Bearer ${tokens['server-2']}`)
+        .send({ presenceState: 'OUT' });
 
-      // Section C now has David (real, IN) + 3 simulated servers (Section C fixture servers).
-      let grid = await OperationsService.getOperationalGrid({ room: 'C' });
-      let secC = grid.rooms.find((r) => r.letter === 'C')!;
-      let activeIn = secC.assignedServers.filter((s) => s.presenceState === 'IN');
-      expect(activeIn).toHaveLength(4); // 1 real + 3 sim (extras pool seats 3, David keeps a primary/extra seat)
-      expect(activeIn.filter((s) => [1, 3, 5].includes(s.assignedPosition!)).map((s) => s.assignedPosition).sort()).toEqual([1, 3, 5]);
-
-      // Take one Section C simulated server OUT — remaining set must still compact to fill 1/3/5.
-      const secCSimServer = secC.assignedServers.find((s) => s.isSimulated)!;
-      SimulationService.updateSimulatedPersonState(secCSimServer.id, 'OUT');
-
-      grid = await OperationsService.getOperationalGrid({ room: 'C' });
-      secC = grid.rooms.find((r) => r.letter === 'C')!;
-      activeIn = secC.assignedServers.filter((s) => s.presenceState === 'IN');
-      const positions = activeIn.map((s) => s.assignedPosition).filter((p): p is 1 | 3 | 5 => Boolean(p));
-      expect(new Set(positions)).toEqual(new Set([1, 3, 5].slice(0, Math.min(3, positions.length))));
-      expect(positions.length).toBeGreaterThan(0);
-    });
-
-    it('moving a simulated server to another section updates its section without manual position hardcoding', async () => {
-      const simServerId = 'sim-server-d-01';
-      const res = await supertest(app.server)
-        .patch(`/api/v1/rooms/assignment/${simServerId}`)
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({ sectionLetter: 'E' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.current.section).toBe('E');
-      expect(res.body.current.subroom).toBeNull();
-
-      const sim = SimulationService.getSimulatedPerson(simServerId)!;
-      expect(sim.sectionLetter).toBe('E');
-      // preferredServerPosition identity is untouched by a section move
-      expect(sim.preferredServerPosition).toBe(1);
-
-      const grid = await OperationsService.getOperationalGrid({ room: 'E' });
-      const secE = grid.rooms.find((r) => r.letter === 'E')!;
-      expect(secE.assignedServers.some((s) => s.id === simServerId)).toBe(true);
+      const grid = await OperationsService.getOperationalGrid({ room: 'B' });
+      const secB = grid.rooms.find((r) => r.letter === 'B')!;
+      const activeIn = secB.assignedServers.filter((s) => s.presenceState === 'IN');
+      expect(activeIn).toHaveLength(2);
+      expect(activeIn.map((s) => s.assignedPosition).sort()).toEqual([1, 5]);
+      expect(secB.assignedServers.find((s) => s.id === 'server-2')!.presenceState).toBe('OUT');
     });
   });
 });
