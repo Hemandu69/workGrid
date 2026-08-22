@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -22,6 +22,13 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
   const [pinned, setPinned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // One key per fresh form-open, reused across retries of that same
+  // submission attempt so a slow-network retry never publishes twice.
+  const idempotencyKeyRef = useRef<string>('');
+
+  useEffect(() => {
+    if (isOpen) idempotencyKeyRef.current = crypto.randomUUID();
+  }, [isOpen]);
 
   const scopeOptions = [
     { value: 'GLOBAL', label: 'Global (All Members)' },
@@ -42,13 +49,17 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
     setIsSubmitting(true);
     setError(null);
     try {
-      await apiClient.createAnnouncement({
-        title: title.trim(),
-        content: content.trim(),
-        scope,
-        targetRoom: scope === 'ROOM_SPECIFIC' ? targetRoom : undefined,
-        pinned,
-      });
+      await apiClient.createAnnouncement(
+        {
+          title: title.trim(),
+          content: content.trim(),
+          scope,
+          targetRoom: scope === 'ROOM_SPECIFIC' ? targetRoom : undefined,
+          pinned,
+        },
+        undefined,
+        idempotencyKeyRef.current
+      );
       setTitle('');
       setContent('');
       setScope('GLOBAL');

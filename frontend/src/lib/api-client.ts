@@ -5,6 +5,7 @@ import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
 import { WeeklyAvailabilitySchedule } from '../types/availability';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
+import { PaginatedResult, CursorResult } from '../types/pagination';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -25,10 +26,10 @@ export class ApiError extends Error {
  * being omitted — which a strict backend (e.g. an enum column) then rejects.
  * This drops undefined/empty entries before serializing.
  */
-function buildQueryParams(filters: Record<string, string | undefined>): URLSearchParams {
+function buildQueryParams(filters: Record<string, string | number | undefined>): URLSearchParams {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value !== undefined && value !== '') params.set(key, value);
+    if (value !== undefined && value !== '') params.set(key, String(value));
   }
   return params;
 }
@@ -102,6 +103,12 @@ export const apiClient = {
       body: JSON.stringify(data),
     });
   },
+  checkEmailAvailability: async (email: string, signal?: AbortSignal): Promise<{ available: boolean }> => {
+    return request<{ available: boolean }>(
+      `/api/v1/auth/email-availability?email=${encodeURIComponent(email)}`,
+      { signal }
+    );
+  },
   forgotPassword: async (email: string): Promise<{ message: string; resetToken?: string }> => {
     return request<{ message: string; resetToken?: string }>('/api/v1/auth/forgot-password', {
       method: 'POST',
@@ -166,9 +173,11 @@ export const apiClient = {
   },
 
   // Users Directory
-  getUsers: async (filters: { role?: string; status?: string; search?: string } = {}): Promise<User[]> => {
-    const params = new URLSearchParams(filters as Record<string, string>);
-    return request<User[]>(`/api/v1/users?${params.toString()}`);
+  getUsers: async (
+    filters: { role?: string; status?: string; search?: string; limit?: number; offset?: number } = {}
+  ): Promise<PaginatedResult<User>> => {
+    const params = buildQueryParams(filters);
+    return request<PaginatedResult<User>>(`/api/v1/users?${params.toString()}`);
   },
   getUser: async (id: string): Promise<User> => {
     return request<User>(`/api/v1/users/${id}`);
@@ -183,20 +192,23 @@ export const apiClient = {
       roomLetter?: string;
       campaignId?: string;
       search?: string;
+      limit?: number;
+      offset?: number;
     } = {}
-  ): Promise<Task[]> => {
+  ): Promise<PaginatedResult<Task>> => {
     const params = buildQueryParams(filters);
-    return request<Task[]>(`/api/v1/tasks?${params.toString()}`);
+    return request<PaginatedResult<Task>>(`/api/v1/tasks?${params.toString()}`);
   },
   getTask: async (id: string): Promise<Task> => {
     return request<Task>(`/api/v1/tasks/${id}`);
   },
-  createTask: async (taskData: Partial<Task>, token?: string): Promise<Task> => {
+  createTask: async (taskData: Partial<Task>, token?: string, idempotencyKey?: string): Promise<Task> => {
     return request<Task>(
       '/api/v1/tasks',
       {
         method: 'POST',
         body: JSON.stringify(taskData),
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       },
       token
     );
@@ -290,19 +302,23 @@ export const apiClient = {
   },
 
   // Announcements
-  getAnnouncements: async (filters: { status?: string; scope?: string } = {}): Promise<Announcement[]> => {
-    const params = new URLSearchParams(filters as Record<string, string>);
-    return request<Announcement[]>(`/api/v1/announcements?${params.toString()}`);
+  getAnnouncements: async (
+    filters: { status?: string; scope?: string; limit?: number; offset?: number } = {}
+  ): Promise<PaginatedResult<Announcement>> => {
+    const params = buildQueryParams(filters);
+    return request<PaginatedResult<Announcement>>(`/api/v1/announcements?${params.toString()}`);
   },
   createAnnouncement: async (
     announcementData: Partial<Announcement>,
-    token?: string
+    token?: string,
+    idempotencyKey?: string
   ): Promise<Announcement> => {
     return request<Announcement>(
       '/api/v1/announcements',
       {
         method: 'POST',
         body: JSON.stringify(announcementData),
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       },
       token
     );
@@ -508,16 +524,18 @@ export const apiClient = {
   },
 
   getPeopleDirectory: async (
-    filters: { role?: string; accountStatus?: string; search?: string } = {},
+    filters: { role?: string; accountStatus?: string; search?: string; limit?: number; offset?: number } = {},
     token?: string
   ) => {
     const searchParams = new URLSearchParams();
     if (filters.role && filters.role !== 'ALL') searchParams.append('role', filters.role);
     if (filters.accountStatus && filters.accountStatus !== 'ALL') searchParams.append('accountStatus', filters.accountStatus);
     if (filters.search) searchParams.append('search', filters.search);
+    if (filters.limit !== undefined) searchParams.append('limit', String(filters.limit));
+    if (filters.offset !== undefined) searchParams.append('offset', String(filters.offset));
 
     const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
-    return request<Array<import('../types/auth').User>>(`/api/v1/hr/people${query}`, {}, token);
+    return request<PaginatedResult<import('../types/auth').User>>(`/api/v1/hr/people${query}`, {}, token);
   },
 
   provisionUser: async (
@@ -563,9 +581,12 @@ export const apiClient = {
     }, token);
   },
 
-  getRoleAuditLogs: async (targetUserId?: string, token?: string) => {
-    const query = targetUserId ? `?targetUserId=${targetUserId}` : '';
-    return request<Array<import('../types/auth').RoleAuditLog>>(`/api/v1/hr/audit-logs${query}`, {}, token);
+  getRoleAuditLogs: async (targetUserId?: string, cursor?: string, token?: string) => {
+    const searchParams = new URLSearchParams();
+    if (targetUserId) searchParams.append('targetUserId', targetUserId);
+    if (cursor) searchParams.append('cursor', cursor);
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return request<CursorResult<import('../types/auth').RoleAuditLog>>(`/api/v1/hr/audit-logs${query}`, {}, token);
   },
 
   // ---------------------------------------------------------------------------
@@ -580,9 +601,14 @@ export const apiClient = {
   },
   createEvent: async (
     data: { title: string; description: string; date: string; time: string; endTime: string },
-    token?: string
+    token?: string,
+    idempotencyKey?: string
   ): Promise<OrgEvent> => {
-    return request<OrgEvent>('/api/v1/events', { method: 'POST', body: JSON.stringify(data) }, token);
+    return request<OrgEvent>(
+      '/api/v1/events',
+      { method: 'POST', body: JSON.stringify(data), headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined },
+      token
+    );
   },
   updateEvent: async (
     eventId: string,

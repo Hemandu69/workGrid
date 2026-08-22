@@ -3,14 +3,18 @@ import { CreateAnnouncementInput } from '../schemas/announcement.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
 import { AnnouncementStatus, AudienceScope } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
+import { DEFAULT_PAGE_LIMIT } from '../schemas/pagination.schema.js';
 
 export class AnnouncementService {
-  static async getAnnouncements(filters: {
-    status?: AnnouncementStatus;
-    scope?: AudienceScope;
-    targetRoom?: string;
-    organizationId?: string;
-  }) {
+  static async getAnnouncements(
+    filters: {
+      status?: AnnouncementStatus;
+      scope?: AudienceScope;
+      targetRoom?: string;
+      organizationId?: string;
+    },
+    pagination: { limit: number; offset: number } = { limit: DEFAULT_PAGE_LIMIT, offset: 0 }
+  ) {
     const where: any = {};
 
     if (filters.organizationId) where.organizationId = filters.organizationId;
@@ -18,28 +22,38 @@ export class AnnouncementService {
     if (filters.scope) where.scope = filters.scope;
     if (filters.targetRoom) where.targetRoom = filters.targetRoom;
 
-    const announcements = await prisma.announcement.findMany({
-      where,
-      orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
-      include: {
-        author: true,
-      },
-    });
+    const [total, announcements] = await prisma.$transaction(async (tx) => [
+      await tx.announcement.count({ where }),
+      await tx.announcement.findMany({
+        where,
+        orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          author: true,
+        },
+        take: pagination.limit,
+        skip: pagination.offset,
+      }),
+    ]);
 
-    return announcements.map((a) => ({
-      id: a.id,
-      title: a.title,
-      content: a.content,
-      status: a.status,
-      scope: a.scope,
-      targetRoom: a.targetRoom || undefined,
-      authorName: a.author?.name || 'System Administrator',
-      authorRole: a.author?.role ? a.author.role.replace('_', ' ') : 'Global Admin',
-      pinned: a.pinned,
-      publishedAt: a.publishedAt ? a.publishedAt.toISOString() : undefined,
-      scheduledFor: a.scheduledFor ? a.scheduledFor.toISOString() : undefined,
-      createdAt: a.createdAt.toISOString(),
-    }));
+    return {
+      items: announcements.map((a) => ({
+        id: a.id,
+        title: a.title,
+        content: a.content,
+        status: a.status,
+        scope: a.scope,
+        targetRoom: a.targetRoom || undefined,
+        authorName: a.author?.name || 'System Administrator',
+        authorRole: a.author?.role ? a.author.role.replace('_', ' ') : 'Global Admin',
+        pinned: a.pinned,
+        publishedAt: a.publishedAt ? a.publishedAt.toISOString() : undefined,
+        scheduledFor: a.scheduledFor ? a.scheduledFor.toISOString() : undefined,
+        createdAt: a.createdAt.toISOString(),
+      })),
+      total,
+      limit: pagination.limit,
+      offset: pagination.offset,
+    };
   }
 
   static async createAnnouncement(input: CreateAnnouncementInput, user: AuthUserPayload) {

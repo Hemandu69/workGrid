@@ -7,6 +7,7 @@ import {
   updateRoleSchema,
   updateStatusSchema,
 } from '../../schemas/hr.schema.js';
+import { paginationQuerySchema, cursorQuerySchema } from '../../schemas/pagination.schema.js';
 import { hrEventBus } from '../../events/hr-events.js';
 
 export const hrRoutes: FastifyPluginAsync = async (fastify) => {
@@ -63,12 +64,26 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
             ? (statusUpper as AccountStatus)
             : undefined;
 
-        const users = await HRService.getPeopleDirectory(request.user.organizationId, {
-          role: roleFilter,
-          accountStatus: statusFilter,
-          search: query.search?.trim() || undefined,
-        });
-        return reply.send(users);
+        const paginationResult = paginationQuerySchema.safeParse(request.query);
+        if (!paginationResult.success) {
+          return reply.status(400).send({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: 'Invalid pagination parameters',
+            details: paginationResult.error.format(),
+          });
+        }
+
+        const result = await HRService.getPeopleDirectory(
+          request.user.organizationId,
+          {
+            role: roleFilter,
+            accountStatus: statusFilter,
+            search: query.search?.trim() || undefined,
+          },
+          paginationResult.data
+        );
+        return reply.send(result);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Failed to query people directory';
         const statusCode = (err as any)?.statusCode || 500;
@@ -210,10 +225,21 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const query = request.query as { targetUserId?: string };
 
+      const paginationResult = cursorQuerySchema.safeParse(request.query);
+      if (!paginationResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Invalid pagination parameters',
+          details: paginationResult.error.format(),
+        });
+      }
+
       try {
         const logs = await HRService.getRoleAuditLogs(
           request.user.organizationId,
-          query.targetUserId
+          query.targetUserId,
+          paginationResult.data
         );
         return reply.send(logs);
       } catch (err: unknown) {

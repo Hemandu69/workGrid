@@ -130,10 +130,9 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
   useEffect(() => {
     if (!isReassignOpen) return;
     apiClient
-      .getUsers()
-      .then((users) => {
-        if (!Array.isArray(users)) return setAssignees([]);
-        let eligible = users.filter((u) => u.role === 'MEMBER' || u.role === 'TEAM_LEAD' || u.role === 'SERVER');
+      .getUsers({ limit: 200 })
+      .then((result) => {
+        let eligible = result.items.filter((u) => u.role === 'MEMBER' || u.role === 'TEAM_LEAD' || u.role === 'SERVER');
         // A team task can only go to a member of its own section.
         if (task?.taskType === 'TEAM' && task.teamSection) {
           eligible = eligible.filter((u) => sectionLetterOf(u.room) === task.teamSection);

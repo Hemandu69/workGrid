@@ -46,13 +46,11 @@ export function SplitTeamTaskModal({ isOpen, onClose, task, onSplit }: SplitTeam
     ]);
     setError(null);
     apiClient
-      .getUsers()
-      .then((users) => {
-        const eligible = Array.isArray(users)
-          ? users.filter(
-              (u) => (u.role === 'MEMBER' || u.role === 'TEAM_LEAD' || u.role === 'SERVER') && sectionLetterOf(u.room) === task.teamSection
-            )
-          : [];
+      .getUsers({ limit: 200 })
+      .then((result) => {
+        const eligible = result.items.filter(
+          (u) => (u.role === 'MEMBER' || u.role === 'TEAM_LEAD' || u.role === 'SERVER') && sectionLetterOf(u.room) === task.teamSection
+        );
         setMembers(eligible);
       })
       .catch(() => setMembers([]));

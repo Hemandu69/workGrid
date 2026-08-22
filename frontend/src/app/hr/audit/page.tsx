@@ -17,10 +17,19 @@ export default function HRAuditPage() {
   const fetchLogs = useCallback(async () => {
     try {
       setIsLoading(true);
-      const data = await apiClient.getRoleAuditLogs();
-      if (data && Array.isArray(data)) {
-        setLogs(data);
+      // The endpoint is cursor-paginated server-side to keep each request
+      // bounded; this page still shows the full searchable history, so pages
+      // are transparently accumulated here rather than exposing pagination
+      // controls the design doesn't currently have.
+      const accumulated: RoleAuditLog[] = [];
+      let cursor: string | undefined;
+      for (;;) {
+        const page = await apiClient.getRoleAuditLogs(undefined, cursor);
+        accumulated.push(...page.items);
+        if (!page.hasMore || !page.nextCursor) break;
+        cursor = page.nextCursor;
       }
+      setLogs(accumulated);
     } catch {
       // Handled
     } finally {

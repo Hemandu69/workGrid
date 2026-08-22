@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -8,66 +8,29 @@ import { Avatar } from '../../components/ui/Avatar';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 import { useAuth } from '../../lib/auth-context';
-import { apiClient } from '../../lib/api-client';
-import { useDomainEvent } from '../../lib/realtime-context';
-import { Task } from '../../types/task';
-import { User } from '../../types/auth';
+import { useTasks } from '../../lib/useTasks';
+import { useUsers } from '../../lib/useUsers';
 import { CreateTaskModal } from '../../components/tasks/CreateTaskModal';
 import { TaskTable } from '../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../components/tasks/TaskDetailDrawer';
 
 export default function TeamLeadPage() {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [teamMembers, setTeamMembers] = useState<User[]>([]);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
-    try {
-      // No filters needed — the backend automatically scopes a TEAM_LEAD's
-      // task list to their own room, so this already returns "my squad's
-      // tasks" and nothing else.
-      const [tasksData, usersData] = await Promise.all([
-        apiClient.getTasks().catch(() => []),
-        apiClient.getUsers({ role: 'MEMBER' }).catch(() => []),
-      ]);
-
-      if (Array.isArray(tasksData)) setTasks(tasksData);
-      if (Array.isArray(usersData)) {
-        // Scope to team members in user's room/subroom or all members
-        const filtered = user.room
-          ? usersData.filter((u) => u.room === user.room)
-          : usersData;
-        setTeamMembers(filtered.length > 0 ? filtered : usersData);
-      }
-    } catch {
-      // Clean fallback
-    }
-  }, [user.room]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  // Real-Time Domain Events
-  useDomainEvent(
-    [
-      'TASK_CREATED',
-      'TASK_ASSIGNED',
-      'TASK_REASSIGNED',
-      'TASK_UPDATED',
-      'TASK_COMPLETED',
-      'TASK_CANCELLED',
-      'TASK_STATUS_CHANGED',
-      'TASK_PROGRESS_CHANGED',
-      'EMPLOYEE_UPDATED',
-      'AVAILABILITY_CHANGED',
-    ],
-    () => {
-      loadData();
-    }
-  );
+  // Shared, cached, realtime-synced — no manual loadData()/useDomainEvent
+  // listener needed, both hooks invalidate themselves on the relevant
+  // TASK_*/EMPLOYEE_*/AVAILABILITY_* events. No filters needed on tasks —
+  // the backend automatically scopes a TEAM_LEAD's task list to their own
+  // room, so this already returns "my squad's tasks" and nothing else.
+  const { data: tasksResult } = useTasks({ limit: 200 });
+  const { data: usersResult } = useUsers({ role: 'MEMBER', limit: 200 });
+  const tasks = tasksResult?.items ?? [];
+  const usersData = usersResult?.items ?? [];
+  // Scope to team members in user's room/subroom or all members
+  const filtered = user.room ? usersData.filter((u) => u.room === user.room) : usersData;
+  const teamMembers = filtered.length > 0 ? filtered : usersData;
 
   const totalAllocated = teamMembers.reduce((acc, m) => acc + (m.currentAllocatedHours || 0), 0);
   const totalLimit = teamMembers.reduce((acc, m) => acc + (m.capacityLimitHours || 40), 0);
@@ -278,7 +241,6 @@ export default function TeamLeadPage() {
       <CreateTaskModal
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
-        onTaskCreated={() => loadData()}
       />
 
       <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />

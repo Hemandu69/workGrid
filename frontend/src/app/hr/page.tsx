@@ -42,19 +42,16 @@ export default function HRDashboardPage() {
           role: roleFilter !== 'ALL' ? roleFilter : undefined,
           accountStatus: statusFilter !== 'ALL' ? statusFilter : undefined,
           search: search.trim() || undefined,
-        }).catch(() => []),
-        apiClient.getRoleAuditLogs().catch(() => []),
+          limit: 200,
+        }).catch(() => ({ items: [] as User[] })),
+        apiClient.getRoleAuditLogs().catch(() => ({ items: [] as RoleAuditLog[] })),
       ]);
 
       if (statsData) {
         setStats(statsData);
       }
-      if (Array.isArray(directoryData)) {
-        setPeople(directoryData);
-      }
-      if (Array.isArray(logsData)) {
-        setAuditLogs(logsData);
-      }
+      setPeople(directoryData.items);
+      setAuditLogs(logsData.items);
     } catch {
       // Handled
     } finally {

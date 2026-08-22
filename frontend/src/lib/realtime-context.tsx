@@ -204,7 +204,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       socketRef.current = null;
       setIsConnected(false);
     };
-  }, [user, dispatchEvent]);
+    // Depend on the specific fields this effect actually reads (id,
+    // accountStatus), not the whole user object — refreshUser() gives that
+    // object a new reference on every call even when nothing relevant
+    // changed, which previously tore down and reconnected the socket far
+    // more often than necessary.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.accountStatus, dispatchEvent]);
 
   const subscribe = useCallback((eventTypes: DomainEventType[] | '*', listener: EventListener) => {
     const types = Array.isArray(eventTypes) ? eventTypes : [eventTypes];

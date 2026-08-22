@@ -11,6 +11,7 @@ import { AuthUserPayload } from '../plugins/auth.js';
 import { AccountStatus, TaskStatus, TaskType, UserRole } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
 import { AvailabilityService } from './availability.service.js';
+import { DEFAULT_PAGE_LIMIT } from '../schemas/pagination.schema.js';
 import { deriveAvailability, availabilityFromUserStatus } from '../utils/availability-projection.js';
 import {
   TASK_ELIGIBLE_ASSIGNEE_ROLES,
@@ -54,6 +55,25 @@ const TASK_INCLUDE = {
   assignee: { include: { room: true, subroom: true } },
   creator: true,
   campaign: true,
+  childTasks: { select: { id: true } },
+} as const;
+
+// Lighter include for list views — formatTask only reads a handful of fields
+// off assignee/creator/campaign, so list queries don't need the full related
+// rows that TASK_INCLUDE pulls for single-task detail views.
+const TASK_LIST_INCLUDE = {
+  assignee: {
+    select: {
+      id: true,
+      name: true,
+      avatarUrl: true,
+      roomId: true,
+      room: { select: { letter: true } },
+      subroom: { select: { code: true } },
+    },
+  },
+  creator: { select: { id: true, name: true } },
+  campaign: { select: { id: true, title: true } },
   childTasks: { select: { id: true } },
 } as const;
 
@@ -147,7 +167,8 @@ export class TaskService {
       campaignId?: string;
       search?: string;
     },
-    requester: AuthUserPayload
+    requester: AuthUserPayload,
+    pagination: { limit: number; offset: number } = { limit: DEFAULT_PAGE_LIMIT, offset: 0 }
   ) {
     const where: any = { organizationId: requester.organizationId };
     const andConditions: any[] = [];
@@ -198,13 +219,18 @@ export class TaskService {
 
     if (andConditions.length > 0) where.AND = andConditions;
 
-    const tasks = await prisma.task.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      include: { ...TASK_INCLUDE, _count: { select: { comments: true } } },
-    });
+    const [total, tasks] = await prisma.$transaction(async (tx) => [
+      await tx.task.count({ where }),
+      await tx.task.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { ...TASK_LIST_INCLUDE, _count: { select: { comments: true } } },
+        take: pagination.limit,
+        skip: pagination.offset,
+      }),
+    ]);
 
-    return tasks.map((t) => this.formatTask(t));
+    return { items: tasks.map((t) => this.formatTask(t)), total, limit: pagination.limit, offset: pagination.offset };
   }
 
   static async getTaskById(idOrDisplayId: string, requester: AuthUserPayload) {
@@ -217,17 +243,29 @@ export class TaskService {
       throw new TaskForbiddenError('You are not authorized to view this task.');
     }
 
+    return this.formatTaskDetail(task);
+  }
+
+  /**
+   * Formats a task detail response (comments + history) from a raw row that
+   * already carries the TASK_INCLUDE-shaped relations. Callers that just
+   * performed a mutation and already have the relevant relations in scope
+   * (e.g. createTask's freshly-fetched assignee, reassignTask's newAssignee)
+   * pass a merged row here instead of re-running findRawTask's full include
+   * — the caller is responsible for having already authorized the action.
+   */
+  private static async formatTaskDetail(taskWithRelations: any) {
     const [comments, history] = await Promise.all([
       prisma.taskComment.findMany({
-        where: { taskId: task.id },
+        where: { taskId: taskWithRelations.id },
         orderBy: { createdAt: 'asc' },
         include: { author: true },
       }),
-      this.getTaskHistoryRaw(task.id),
+      this.getTaskHistoryRaw(taskWithRelations.id),
     ]);
 
     return {
-      ...this.formatTask(task),
+      ...this.formatTask(taskWithRelations),
       commentsCount: comments.length,
       comments: comments.map((c) => ({
         id: c.id,
@@ -294,7 +332,7 @@ export class TaskService {
         organizationId: user.organizationId,
         OR: [{ id: assigneeIdOrEmail }, { email: assigneeIdOrEmail }],
       },
-      include: { room: true },
+      include: { room: true, subroom: true },
     });
 
     if (!assignee) {
@@ -320,6 +358,12 @@ export class TaskService {
 
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const taskIdDisplay = `TSK-${randomSuffix}`;
+
+    // Fetched only when a campaign is actually attached — avoids an
+    // unconditional join for the common no-campaign case.
+    const campaign = input.campaignId
+      ? await prisma.taskCampaign.findUnique({ where: { id: input.campaignId }, select: { id: true, title: true } })
+      : null;
 
     const task = await prisma.$transaction(async (tx) => {
       const created = await tx.task.create({
@@ -363,7 +407,17 @@ export class TaskService {
       return created;
     });
 
-    const fullTask = await this.getTaskById(task.id, user);
+    // Built directly from data already in scope instead of re-fetching the
+    // full task detail — a task that's milliseconds old has no comments or
+    // prior history entries beyond the TASK_CREATED audit event just written,
+    // which formatTaskDetail's own history query below picks up correctly.
+    const fullTask = await this.formatTaskDetail({
+      ...task,
+      assignee,
+      creator: { name: user.name },
+      campaign,
+      childTasks: [],
+    });
 
     publishDomainEvent({
       type: 'TASK_CREATED',
@@ -432,6 +486,10 @@ export class TaskService {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
     const taskIdDisplay = `TSK-${randomSuffix}`;
 
+    const campaign = input.campaignId
+      ? await prisma.taskCampaign.findUnique({ where: { id: input.campaignId }, select: { id: true, title: true } })
+      : null;
+
     const task = await prisma.$transaction(async (tx) => {
       const created = await tx.task.create({
         data: {
@@ -470,7 +528,13 @@ export class TaskService {
       return created;
     });
 
-    const fullTask = await this.getTaskById(task.id, user);
+    const fullTask = await this.formatTaskDetail({
+      ...task,
+      assignee: null,
+      creator: { name: user.name },
+      campaign,
+      childTasks: [],
+    });
 
     publishDomainEvent({
       type: 'TASK_CREATED',
@@ -535,7 +599,10 @@ export class TaskService {
       return result;
     });
 
-    const fullTask = await this.getTaskById(updated.id, requester);
+    // task already carries the full TASK_INCLUDE relations (assignee/creator/
+    // campaign/childTasks are untouched by a status change) — merge in just
+    // the updated scalar fields instead of re-querying them.
+    const fullTask = await this.formatTaskDetail({ ...task, ...updated });
 
     publishDomainEvent({
       type:
@@ -630,7 +697,7 @@ export class TaskService {
       return result;
     });
 
-    const fullTask = await this.getTaskById(updated.id, requester);
+    const fullTask = await this.formatTaskDetail({ ...task, ...updated });
 
     publishDomainEvent({
       type: 'TASK_PROGRESS_CHANGED',
@@ -688,7 +755,7 @@ export class TaskService {
         organizationId: task.organizationId,
         OR: [{ id: input.assigneeId }, { email: input.assigneeId }],
       },
-      include: { room: true },
+      include: { room: true, subroom: true },
     });
 
     if (!newAssignee) {
@@ -771,7 +838,11 @@ export class TaskService {
       return result;
     });
 
-    const fullTask = await this.getTaskById(updated.id, requester);
+    // creator/campaign/childTasks are unchanged by a reassignment — only the
+    // assignee relation needs replacing, with the newAssignee row already
+    // fetched above (including room/subroom, so formatTask's fields resolve
+    // without another query).
+    const fullTask = await this.formatTaskDetail({ ...task, ...updated, assignee: newAssignee });
 
     publishDomainEvent({
       type: 'TASK_REASSIGNED',
@@ -818,15 +889,26 @@ export class TaskService {
       throw new TaskForbiddenError('You are not authorized to split this team task.');
     }
 
-    // Resolve + validate every candidate up front, before creating anything.
-    const resolved: Array<{ assignment: (typeof input.assignments)[number]; candidate: any }> = [];
+    // Resolve every candidate in one batched lookup instead of one query per
+    // assignment, then validate each in the original per-assignment order so
+    // error messages/precedence are unchanged.
+    const candidateKeys = input.assignments.map((a) => a.assigneeId);
+    const candidateRows = await prisma.user.findMany({
+      where: {
+        organizationId: task.organizationId,
+        OR: [{ id: { in: candidateKeys } }, { email: { in: candidateKeys } }],
+      },
+      include: { room: true, subroom: true },
+    });
+    const candidateByKey = new Map<string, (typeof candidateRows)[number]>();
+    for (const c of candidateRows) {
+      candidateByKey.set(c.id, c);
+      candidateByKey.set(c.email, c);
+    }
+
+    const resolved: Array<{ assignment: (typeof input.assignments)[number]; candidate: (typeof candidateRows)[number] }> = [];
     for (const assignment of input.assignments) {
-      const candidate = await prisma.user.findFirst({
-        where: {
-          organizationId: task.organizationId,
-          OR: [{ id: assignment.assigneeId }, { email: assignment.assigneeId }],
-        },
-      });
+      const candidate = candidateByKey.get(assignment.assigneeId);
       if (!candidate) {
         throw new TaskValidationError(`Assignee ${assignment.assigneeId} not found in your organization.`);
       }
@@ -847,7 +929,7 @@ export class TaskService {
     }
 
     const created = await prisma.$transaction(async (tx) => {
-      const childRows: Array<{ id: string; candidateId: string; candidateName: string }> = [];
+      const childRows: Array<{ child: any; candidate: (typeof candidateRows)[number] }> = [];
 
       for (const { assignment, candidate } of resolved) {
         const randomSuffix = Math.floor(1000 + Math.random() * 9000);
@@ -892,7 +974,7 @@ export class TaskService {
           });
         }
 
-        childRows.push({ id: child.id, candidateId: candidate.id, candidateName: candidate.name });
+        childRows.push({ child, candidate });
       }
 
       if (typeof (tx as any).auditEvent?.create === 'function') {
@@ -904,8 +986,8 @@ export class TaskService {
             entityType: 'Task',
             entityId: task.id,
             details: {
-              childTaskIds: childRows.map((c) => c.id),
-              childAssigneeNames: childRows.map((c) => c.candidateName),
+              childTaskIds: childRows.map((c) => c.child.id),
+              childAssigneeNames: childRows.map((c) => c.candidate.name),
             },
           },
         });
@@ -914,11 +996,25 @@ export class TaskService {
       return childRows;
     });
 
-    const children = await Promise.all(created.map((c) => this.getTaskById(c.id, requester)));
+    // Built directly from the transaction's own results instead of a
+    // getTaskById-per-child re-fetch — each child is milliseconds old with
+    // no comments and only the TASK_CREATED entry formatTaskDetail's own
+    // history query below picks up.
+    const children = await Promise.all(
+      created.map(({ child, candidate }) =>
+        this.formatTaskDetail({
+          ...child,
+          assignee: candidate,
+          creator: { name: requester.name },
+          campaign: task.campaign,
+          childTasks: [],
+        })
+      )
+    );
 
     for (let i = 0; i < children.length; i++) {
       const fullChild = children[i];
-      const candidateId = created[i].candidateId;
+      const candidateId = created[i].candidate.id;
 
       publishDomainEvent({
         type: 'TASK_CREATED',
@@ -948,7 +1044,13 @@ export class TaskService {
       await AvailabilityService.syncAvailabilityWithTasks(candidateId, requester.id).catch(() => null);
     }
 
-    const fullParent = await this.getTaskById(task.id, requester);
+    // Only childTasks changed on the parent (it now has the newly created
+    // children) — reuse the already-loaded task row instead of a full
+    // findRawTask re-fetch.
+    const fullParent = await this.formatTaskDetail({
+      ...task,
+      childTasks: created.map(({ child }) => ({ id: child.id })),
+    });
 
     publishDomainEvent({
       type: 'TASK_UPDATED',
