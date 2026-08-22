@@ -16,6 +16,8 @@ export interface RoomAssignmentState {
   role: string;
   section: string | null; // e.g. "B"
   subroom: string | null; // e.g. "B3" — always null for SERVER role
+  /** Other people currently assigned to the same subroom, derived live — never stored. */
+  partners: Array<{ id: string; name: string }>;
 }
 
 const SECTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -271,12 +273,21 @@ export class RoomService {
       throw new RoomAssignmentError(`Person ${personId} not found`, 404);
     }
 
+    const partners =
+      user.role !== UserRole.SERVER && user.subroomId
+        ? await prisma.user.findMany({
+            where: { subroomId: user.subroomId, id: { not: personId } },
+            select: { id: true, name: true },
+          })
+        : [];
+
     return {
       personId,
       name: user.name,
       role: user.role || UserRole.MEMBER,
       section: user.room?.letter ?? null,
       subroom: user.role === UserRole.SERVER ? null : user.subroom?.code ?? null,
+      partners,
     };
   }
 

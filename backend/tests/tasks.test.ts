@@ -16,6 +16,9 @@ interface FakeTask {
   description: string | null;
   status: TaskStatus;
   priority: string;
+  taskType: string;
+  teamSection: string | null;
+  parentTaskId: string | null;
   progress: number;
   estimatedHours: number;
   allocatedHours: number;
@@ -33,9 +36,11 @@ const USERS: Record<string, any> = {
   'superadmin-1': { id: 'superadmin-1', name: 'Elena Vance', email: 'super@workgrid.corp', role: 'SUPER_ADMIN', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: null },
   'server-b': { id: 'server-b', name: 'David Chen', email: 'david@workgrid.corp', role: 'SERVER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
   'teamlead-b': { id: 'teamlead-b', name: 'Alex Rivera', email: 'alex@workgrid.corp', role: 'TEAM_LEAD', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
-  'member-b1': { id: 'member-b1', name: 'Sarah Connor', email: 'sarah@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
-  'member-b2': { id: 'member-b2', name: 'Liam Vance', email: 'liam@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
-  'member-a1': { id: 'member-a1', name: 'External Person', email: 'ext@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-a', room: { letter: 'A' } },
+  'member-b1': { id: 'member-b1', name: 'Sarah Connor', email: 'sarah@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' }, presenceState: 'IN', status: 'ONLINE' },
+  'member-b2': { id: 'member-b2', name: 'Liam Vance', email: 'liam@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' }, presenceState: 'IN', status: 'ONLINE' },
+  'member-b3': { id: 'member-b3', name: 'Maya Patel', email: 'maya@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' }, presenceState: 'OUT', status: 'OFFLINE' },
+  'member-b4': { id: 'member-b4', name: 'Kabir Nair', email: 'kabir@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' }, presenceState: 'IN', status: 'BUSY' },
+  'member-a1': { id: 'member-a1', name: 'External Person', email: 'ext@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-a', room: { letter: 'A' }, presenceState: 'IN', status: 'ONLINE' },
   'member-pending': { id: 'member-pending', name: 'Pending Person', email: 'pending@workgrid.corp', role: 'MEMBER', accountStatus: 'PENDING', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
   'hr-1': { id: 'hr-1', name: 'Priya HR', email: 'hr@workgrid.corp', role: 'HR', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: null },
   'org2-admin': { id: 'org2-admin', name: 'Org2 Admin', email: 'admin2@other.corp', role: 'ADMIN', accountStatus: 'ACTIVE', organizationId: 'org-2', roomId: null },
@@ -57,6 +62,9 @@ function makeTask(overrides: Partial<FakeTask> = {}): FakeTask {
     description: 'desc',
     status: TaskStatus.ASSIGNED,
     priority: 'MEDIUM',
+    taskType: 'INDIVIDUAL',
+    teamSection: null,
+    parentTaskId: null,
     progress: 0,
     estimatedHours: 8,
     allocatedHours: 0,
@@ -79,6 +87,7 @@ function hydrate(t: FakeTask) {
     assignee: assignee ? { ...assignee, room: assignee.room || null, subroom: null } : null,
     creator: creator || null,
     campaign: null,
+    childTasks: tasks.filter((c) => c.parentTaskId === t.id).map((c) => ({ id: c.id })),
     _count: { comments: 0 },
   };
 }
@@ -90,6 +99,9 @@ const { mockPrisma } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+    },
+    room: {
+      findFirst: vi.fn(),
     },
     user: {
       findFirst: vi.fn(),
@@ -135,12 +147,32 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
       return Promise.resolve(found ? hydrate(found) : null);
     });
 
+    // Evaluates a single Prisma-shaped clause (the ones this suite's OR/AND
+    // combinations actually produce) against one task row.
+    function matchesClause(t: any, clause: any): boolean {
+      if (clause.assignee?.roomId) return USERS[t.assigneeId || '']?.roomId === clause.assignee.roomId;
+      if (clause.taskType !== undefined || clause.teamSection !== undefined) {
+        if (clause.taskType !== undefined && t.taskType !== clause.taskType) return false;
+        if (clause.teamSection !== undefined && t.teamSection !== clause.teamSection) return false;
+        if (clause.assigneeId === null && t.assigneeId) return false;
+        return true;
+      }
+      return true;
+    }
+
     mockPrisma.task.findMany.mockImplementation(({ where }: any) => {
       let result = tasks.filter((t) => t.organizationId === where.organizationId);
       if (where.status) result = result.filter((t) => t.status === where.status);
       if (where.assigneeId) result = result.filter((t) => t.assigneeId === where.assigneeId);
       if (where.assignee?.roomId) result = result.filter((t) => USERS[t.assigneeId || '']?.roomId === where.assignee.roomId);
       if (where.assignee?.room?.letter) result = result.filter((t) => USERS[t.assigneeId || '']?.room?.letter === where.assignee.room.letter);
+      if (where.AND) {
+        result = result.filter((t) =>
+          (where.AND as any[]).every((clause) =>
+            clause.OR ? clause.OR.some((sub: any) => matchesClause(t, sub)) : matchesClause(t, clause)
+          )
+        );
+      }
       return Promise.resolve(result.map(hydrate));
     });
 
@@ -163,6 +195,14 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
         (u: any) => u.organizationId === where.organizationId && ors.some((o: any) => (o.id && o.id === u.id) || (o.email && o.email === u.email))
       );
       return Promise.resolve(found || null);
+    });
+
+    mockPrisma.room.findFirst.mockImplementation(({ where }: any) => {
+      const validLetters = ['A', 'B'];
+      if (where.organizationId === 'org-1' && validLetters.includes(where.letter)) {
+        return Promise.resolve({ id: `room-${where.letter.toLowerCase()}`, organizationId: 'org-1', letter: where.letter });
+      }
+      return Promise.resolve(null);
     });
 
     mockPrisma.user.findUnique.mockImplementation(({ where }: any) => Promise.resolve(USERS[where.id] || null));
@@ -337,14 +377,13 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('16. allows a SERVER to assign within their own room', async () => {
+  it('16. SERVER cannot create tasks at all — task-creation capability was removed', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/tasks')
       .set('Authorization', `Bearer ${tokens['server-b']}`)
       .send({ title: 'In-room task', assigneeId: 'member-b1' });
 
-    expect(res.status).toBe(201);
-    expect(res.body.assigneeId).toBe('member-b1');
+    expect(res.status).toBe(403);
   });
 
   // --- Status lifecycle (section 5) ---------------------------------------
@@ -701,5 +740,287 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.totalTasks).toBe(1);
+  });
+
+  // --- Team tasks: creation, section scoping ------------------------------
+
+  it('44. ADMIN can create an unassigned TEAM task for any section', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Section B Infrastructure Audit', taskType: 'TEAM', teamSection: 'B' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.taskType).toBe('TEAM');
+    expect(res.body.teamSection).toBe('B');
+    expect(res.body.assigneeId).toBe('');
+    expect(res.body.status).toBe('DRAFT');
+    expect(res.body.isDistributed).toBe(false);
+  });
+
+  it('45. SUPER_ADMIN can create a TEAM task for any section', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['superadmin-1']}`)
+      .send({ title: 'Section A Report', taskType: 'TEAM', teamSection: 'A' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.teamSection).toBe('A');
+  });
+
+  it('46. TEAM_LEAD can create a TEAM task for their own section', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ title: 'Squad B Distributed Work', taskType: 'TEAM', teamSection: 'B' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.teamSection).toBe('B');
+  });
+
+  it('47. TEAM_LEAD cannot create a TEAM task for another section (403)', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ title: 'Section A Work', taskType: 'TEAM', teamSection: 'A' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('48. creating a TEAM task without teamSection is rejected (400)', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'No Section Given', taskType: 'TEAM' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('49. an unassigned team task appears in its own section Team Lead\'s task list', async () => {
+    await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Section B Team Task', taskType: 'TEAM', teamSection: 'B' });
+
+    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['teamlead-b']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.some((t: any) => t.taskType === 'TEAM' && t.teamSection === 'B')).toBe(true);
+  });
+
+  // --- Team tasks: assignment, reassignment, availability -----------------
+
+  it('50. a Team Lead can assign an unassigned team task to a member of their own section', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Assign Me', taskType: 'TEAM', teamSection: 'B' });
+
+    const res = await supertest(app.server)
+      .patch(`/api/v1/tasks/${created.body.id}/assignment`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-b1' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.assigneeId).toBe('member-b1');
+    expect(res.body.status).toBe('ASSIGNED');
+  });
+
+  it('51. a Team Lead cannot assign a team task belonging to another section (403)', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Section A Task', taskType: 'TEAM', teamSection: 'A' });
+
+    const res = await supertest(app.server)
+      .patch(`/api/v1/tasks/${created.body.id}/assignment`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-a1' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('52. assigning a team task to a currently unavailable (OUT) member is rejected (409)', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Assign to OUT member', taskType: 'TEAM', teamSection: 'B' });
+
+    const res = await supertest(app.server)
+      .patch(`/api/v1/tasks/${created.body.id}/assignment`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-b3' }); // presenceState OUT
+
+    expect(res.status).toBe(409);
+  });
+
+  it('53. assigning a team task to a BUSY-but-present member is allowed', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Assign to BUSY member', taskType: 'TEAM', teamSection: 'B' });
+
+    const res = await supertest(app.server)
+      .patch(`/api/v1/tasks/${created.body.id}/assignment`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-b4' }); // presenceState IN, status BUSY
+
+    expect(res.status).toBe(200);
+    expect(res.body.assigneeId).toBe('member-b4');
+  });
+
+  it('54. reassigning a team task preserves the same task id and records both history entries — no duplicate task is created', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Reassign Me', taskType: 'TEAM', teamSection: 'B' });
+    const taskId = created.body.id;
+
+    const assigned = await supertest(app.server)
+      .patch(`/api/v1/tasks/${taskId}/assignment`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-b1' });
+    expect(assigned.body.dbId).toBe(created.body.dbId);
+
+    // member-b1 becomes unavailable; the Team Lead reassigns to member-b2
+    const reassigned = await supertest(app.server)
+      .patch(`/api/v1/tasks/${taskId}/assignment`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-b2', reason: 'member-b1 unavailable' });
+
+    expect(reassigned.status).toBe(200);
+    expect(reassigned.body.id).toBe(created.body.id);
+    expect(reassigned.body.dbId).toBe(created.body.dbId);
+    expect(reassigned.body.assigneeId).toBe('member-b2');
+
+    // Exactly one task row exists for this id — no duplicate was created.
+    expect(tasks.filter((t) => t.id === created.body.dbId)).toHaveLength(1);
+
+    const history = await supertest(app.server)
+      .get(`/api/v1/tasks/${taskId}/history`)
+      .set('Authorization', `Bearer ${tokens['admin-1']}`);
+    const reassignedEntries = history.body.filter((h: any) => h.action === 'TASK_REASSIGNED');
+    expect(reassignedEntries.length).toBeGreaterThanOrEqual(2); // unassigned→b1, b1→b2
+  });
+
+  // --- Team tasks: splitting -----------------------------------------------
+
+  it('55. a Team Lead can split an unassigned team task across 2+ members, creating independent child tasks', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Section B Infrastructure Audit', taskType: 'TEAM', teamSection: 'B' });
+
+    publishedEvents.length = 0;
+
+    const res = await supertest(app.server)
+      .post(`/api/v1/tasks/${created.body.id}/split`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({
+        assignments: [
+          { assigneeId: 'member-b1', title: 'Network audit' },
+          { assigneeId: 'member-b2', title: 'Documentation' },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.children).toHaveLength(2);
+    expect(res.body.children.map((c: any) => c.assigneeId).sort()).toEqual(['member-b1', 'member-b2']);
+    expect(res.body.children.every((c: any) => c.taskType === 'INDIVIDUAL')).toBe(true);
+    expect(res.body.children.every((c: any) => c.parentTaskId === created.body.dbId)).toBe(true);
+    expect(res.body.parent.isDistributed).toBe(true);
+
+    expect(publishedEvents.filter((e) => e.type === 'TASK_CREATED')).toHaveLength(2);
+    expect(publishedEvents.filter((e) => e.type === 'TASK_ASSIGNED')).toHaveLength(2);
+    expect(publishedEvents.some((e) => e.type === 'TASK_UPDATED' && e.entityId === created.body.dbId)).toBe(true);
+  });
+
+  it('56. splitting records a TASK_SPLIT audit entry on the parent task', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Splittable Task', taskType: 'TEAM', teamSection: 'B' });
+
+    await supertest(app.server)
+      .post(`/api/v1/tasks/${created.body.id}/split`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({
+        assignments: [
+          { assigneeId: 'member-b1', title: 'Part one' },
+          { assigneeId: 'member-b2', title: 'Part two' },
+        ],
+      });
+
+    const history = await supertest(app.server)
+      .get(`/api/v1/tasks/${created.body.id}/history`)
+      .set('Authorization', `Bearer ${tokens['admin-1']}`);
+    expect(history.body.some((h: any) => h.action === 'TASK_SPLIT')).toBe(true);
+  });
+
+  it('57. cannot split a task that already has an assignee (409)', async () => {
+    tasks.push(makeTask({ id: 'team-task-assigned', taskType: 'TEAM', teamSection: 'B', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks/team-task-assigned/split')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({
+        assignments: [
+          { assigneeId: 'member-b1', title: 'Part one' },
+          { assigneeId: 'member-b2', title: 'Part two' },
+        ],
+      });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('58. splitting requires at least 2 assignments (400)', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'One-Person Split Attempt', taskType: 'TEAM', teamSection: 'B' });
+
+    const res = await supertest(app.server)
+      .post(`/api/v1/tasks/${created.body.id}/split`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assignments: [{ assigneeId: 'member-b1', title: 'Only part' }] });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('59. a Team Lead from another section cannot split a team task that is not theirs (403)', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Section A Split', taskType: 'TEAM', teamSection: 'A' });
+
+    const res = await supertest(app.server)
+      .post(`/api/v1/tasks/${created.body.id}/split`)
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({
+        assignments: [
+          { assigneeId: 'member-a1', title: 'Part one' },
+          { assigneeId: 'member-a1', title: 'Part two' },
+        ],
+      });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('60. organization isolation: a user from another org cannot view, assign, or split an org-1 team task', async () => {
+    const created = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Org-1 Team Task', taskType: 'TEAM', teamSection: 'B' });
+
+    const viewRes = await supertest(app.server)
+      .get(`/api/v1/tasks/${created.body.id}`)
+      .set('Authorization', `Bearer ${tokens['org2-admin']}`);
+    expect(viewRes.status).toBe(403); // different org, not admin of org-1, not creator/assignee
+
+    const splitRes = await supertest(app.server)
+      .post(`/api/v1/tasks/${created.body.id}/split`)
+      .set('Authorization', `Bearer ${tokens['org2-admin']}`)
+      .send({ assignments: [{ assigneeId: 'org2-member', title: 'Part one' }, { assigneeId: 'org2-member', title: 'Part two' }] });
+    expect(splitRes.status).toBe(403);
   });
 });

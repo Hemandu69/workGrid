@@ -15,33 +15,43 @@ interface EventFormModalProps {
   event?: OrgEvent | null;
 }
 
-function defaultDateTimeParts(scheduledAt?: string): { date: string; time: string } {
+function defaultDateTimeParts(scheduledAt?: string, scheduledEndAt?: string): { date: string; time: string; endTime: string } {
   const base = scheduledAt ? new Date(scheduledAt) : new Date(Date.now() + 24 * 3600000);
   const date = base.toISOString().split('T')[0];
   const time = `${String(base.getHours()).padStart(2, '0')}:${String(base.getMinutes()).padStart(2, '0')}`;
-  return { date, time };
+
+  const endBase = scheduledEndAt ? new Date(scheduledEndAt) : new Date(base.getTime() + 3600000);
+  const endTime = `${String(endBase.getHours()).padStart(2, '0')}:${String(endBase.getMinutes()).padStart(2, '0')}`;
+
+  return { date, time, endTime };
 }
 
 export function EventFormModal({ isOpen, onClose, onSaved, event }: EventFormModalProps) {
   const isEditMode = Boolean(event);
+  // Once an event has started, its schedule can no longer be moved — only the
+  // name/description remain editable (matches the backend's own guard).
+  const isTimeLocked = isEditMode && (event?.status === 'LIVE' || event?.status === 'AWAITING_COMPLETION');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
-    const parts = defaultDateTimeParts(event?.scheduledAt);
+    const parts = defaultDateTimeParts(event?.scheduledAt, event?.scheduledEndAt);
     setTitle(event?.title || '');
     setDescription(event?.description || '');
     setDate(parts.date);
     setTime(parts.time);
+    setEndTime(parts.endTime);
     setError(null);
   }, [isOpen, event]);
 
-  const isValid = title.trim().length >= 3 && description.trim().length > 0 && date && time;
+  const isValid =
+    title.trim().length >= 3 && description.trim().length > 0 && date && time && endTime && endTime > time;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,8 +61,8 @@ export function EventFormModal({ isOpen, onClose, onSaved, event }: EventFormMod
     setError(null);
     try {
       const saved = isEditMode
-        ? await apiClient.updateEvent(event!.id, { title, description, date, time })
-        : await apiClient.createEvent({ title, description, date, time });
+        ? await apiClient.updateEvent(event!.id, isTimeLocked ? { title, description } : { title, description, date, time, endTime })
+        : await apiClient.createEvent({ title, description, date, time, endTime });
       onSaved?.(saved);
       onClose();
     } catch (err) {
@@ -115,22 +125,41 @@ export function EventFormModal({ isOpen, onClose, onSaved, event }: EventFormMod
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {isTimeLocked && (
+          <p className="text-[11px] text-on-surface-variant bg-surface-container-low border border-surface-outline rounded p-2">
+            This event has already started, so its date and time can no longer be changed.
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Input
             type="date"
             label="Date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
+            disabled={isTimeLocked}
             required
           />
           <Input
             type="time"
-            label="Time (IST)"
+            label="Start Time (IST)"
             value={time}
             onChange={(e) => setTime(e.target.value)}
+            disabled={isTimeLocked}
+            required
+          />
+          <Input
+            type="time"
+            label="End Time (IST)"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+            disabled={isTimeLocked}
             required
           />
         </div>
+        {!isTimeLocked && time && endTime && endTime <= time && (
+          <p className="text-[11px] text-status-blocked">End time must be after the start time.</p>
+        )}
       </form>
     </Modal>
   );

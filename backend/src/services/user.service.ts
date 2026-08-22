@@ -44,6 +44,7 @@ export class UserService {
       role: u.role,
       accountStatus: u.accountStatus,
       status: u.status,
+      presenceState: u.presenceState,
       title: u.title,
       avatarUrl: u.avatarUrl,
       capacityLimitHours: u.capacityLimitHours,

@@ -13,6 +13,7 @@ export interface User {
   subroom?: string; // e.g. 'B3'
   title?: string; // e.g. 'Frontend Engineer', 'Head of People'
   status?: 'ONLINE' | 'OFFLINE' | 'BUSY' | 'AWAY';
+  presenceState?: 'IN' | 'OUT' | 'UNKNOWN';
   capacityLimitHours?: number;
   currentAllocatedHours?: number;
   createdAt?: string;

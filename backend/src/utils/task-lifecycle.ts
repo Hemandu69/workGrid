@@ -1,4 +1,4 @@
-import { AccountStatus, TaskStatus, UserRole } from '@prisma/client';
+import { AccountStatus, TaskStatus, TaskType, UserRole } from '@prisma/client';
 
 /**
  * Roles that may receive task assignments. Deliberately mirrors the
@@ -58,6 +58,8 @@ export interface TaskActorContext {
   accountStatus: AccountStatus;
   organizationId: string;
   roomId?: string | null;
+  /** The actor's own section letter (e.g. "B") — required for team-task scope checks, since those can't be derived from an assignee's room when the task is unassigned. */
+  roomLetter?: string | null;
 }
 
 export interface TaskScopeContext {
@@ -65,6 +67,8 @@ export interface TaskScopeContext {
   creatorId: string | null;
   assigneeId: string | null;
   assigneeRoomId?: string | null;
+  taskType?: TaskType;
+  teamSection?: string | null;
 }
 
 function isAdmin(actor: TaskActorContext): boolean {
@@ -89,6 +93,11 @@ export function canViewTask(actor: TaskActorContext, task: TaskScopeContext): bo
   if (!isSameOrg(actor, task)) return false;
   if (isAdmin(actor)) return true;
   if (actor.id === task.creatorId || actor.id === task.assigneeId) return true;
+  // An unassigned TEAM task has no assigneeRoomId to compare against — only
+  // that section's own Team Lead may see it before it's been assigned.
+  if (task.taskType === TaskType.TEAM && task.assigneeId == null) {
+    return canManageTeamTask(actor, task);
+  }
   // SERVER gets the same room-wide *visibility* as TEAM_LEAD (section/room
   // context), even though their *mutation* rights stay narrower — see
   // canManageTask below.
@@ -96,6 +105,21 @@ export function canViewTask(actor: TaskActorContext, task: TaskScopeContext): bo
     return task.assigneeRoomId != null && actor.roomId === task.assigneeRoomId;
   }
   return false;
+}
+
+/**
+ * Authorization for operations on a TEAM task that has no current assignee
+ * (creating one, assigning it to its first member, or splitting it) — keyed
+ * off the task's own teamSection rather than an assignee's room, since none
+ * may exist yet. An ADMIN/SUPER_ADMIN may act on any section in their own
+ * organization; a TEAM_LEAD only on their own section. Organization match is
+ * checked first and unconditionally — isAdmin() alone must never be trusted
+ * across organizations.
+ */
+export function canManageTeamTask(actor: TaskActorContext, task: TaskScopeContext): boolean {
+  if (!isSameOrg(actor, task)) return false;
+  if (isAdmin(actor)) return true;
+  return actor.role === UserRole.TEAM_LEAD && Boolean(actor.roomLetter) && actor.roomLetter === (task.teamSection ?? null);
 }
 
 /** Can this actor change status/progress (excluding cancel)? */
@@ -111,6 +135,9 @@ export function canCancelTask(actor: TaskActorContext, task: TaskScopeContext): 
   if (!isSameOrg(actor, task)) return false;
   if (isAdmin(actor)) return true;
   if (actor.id === task.creatorId) return true;
+  if (task.taskType === TaskType.TEAM && task.assigneeId == null) {
+    return canManageTeamTask(actor, task);
+  }
   return isTeamLeadInScope(actor, task);
 }
 
@@ -128,10 +155,14 @@ export function canReassignTask(
   return oldInScope && newInScope;
 }
 
-/** Task creation eligibility (separate from route-level requireRole). */
+/**
+ * Task creation eligibility (separate from route-level requireRole). SERVER
+ * does not get general task-creation capability — only ADMIN/SUPER_ADMIN and
+ * a TEAM_LEAD creating for their own section may create tasks.
+ */
 export function canCreateTaskFor(actor: TaskActorContext, assigneeRoomId?: string | null): boolean {
   if (isAdmin(actor)) return true;
-  if (actor.role === UserRole.SERVER || actor.role === UserRole.TEAM_LEAD) {
+  if (actor.role === UserRole.TEAM_LEAD) {
     return Boolean(actor.roomId) && assigneeRoomId != null && actor.roomId === assigneeRoomId;
   }
   return false;
