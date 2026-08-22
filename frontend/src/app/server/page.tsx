@@ -25,7 +25,7 @@ export default function ServerDashboard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [room, setRoom] = useState<Room | null>(null);
   const [roomMembers, setRoomMembers] = useState<User[]>([]);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
 
   const [currentClock, setCurrentClock] = useState<string>('');
@@ -83,8 +83,12 @@ export default function ServerDashboard() {
     [
       'TASK_CREATED',
       'TASK_ASSIGNED',
+      'TASK_REASSIGNED',
       'TASK_UPDATED',
+      'TASK_COMPLETED',
+      'TASK_CANCELLED',
       'TASK_STATUS_CHANGED',
+      'TASK_PROGRESS_CHANGED',
       'ROOM_STATUS_CHANGED',
       'SUBROOM_STATUS_CHANGED',
       'LOCATION_CHANGED',
@@ -274,7 +278,7 @@ export default function ServerDashboard() {
 
               <TaskTable
                 tasks={tasks}
-                onSelectTask={(t) => setSelectedTask(t)}
+                onSelectTask={(t) => setSelectedTaskId(t.dbId || t.id)}
                 showAssignee={true}
               />
             </div>
@@ -301,14 +305,7 @@ export default function ServerDashboard() {
       </div>
 
       {/* Task Drawer */}
-      <TaskDetailDrawer
-        task={selectedTask}
-        onClose={() => setSelectedTask(null)}
-        onStatusChange={(taskId, newStatus) => {
-          setTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-          if (selectedTask) setSelectedTask({ ...selectedTask, status: newStatus });
-        }}
-      />
+      <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
 
       {/* Server Task Assignment Modal */}
       <CreateTaskModal

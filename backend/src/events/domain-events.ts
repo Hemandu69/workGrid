@@ -25,9 +25,12 @@ export type DomainEventType =
   // Tasks
   | 'TASK_CREATED'
   | 'TASK_ASSIGNED'
+  | 'TASK_REASSIGNED'
   | 'TASK_UPDATED'
   | 'TASK_COMPLETED'
+  | 'TASK_CANCELLED'
   | 'TASK_STATUS_CHANGED'
+  | 'TASK_PROGRESS_CHANGED'
   // Rooms & Operations
   | 'ROOM_STATUS_CHANGED'
   | 'SUBROOM_STATUS_CHANGED'

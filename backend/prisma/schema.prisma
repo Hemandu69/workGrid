@@ -118,22 +118,22 @@ enum EventResponseChoice {
 // Organization & Hierarchy
 // -----------------------------------------------------------------------------
 model Organization {
-  id            String         @id @default(uuid())
-  name          String
-  slug          String         @unique
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  users         User[]
-  rooms         Room[]
-  subrooms      Subroom[]
-  tasks         Task[]
-  campaigns     TaskCampaign[]
-  announcements Announcement[]
-  events        Event[]
-  orgEvents     OrganizationEvent[]
-  auditEvents   AuditEvent[]
-  roleAuditLogs RoleAuditLog[]
+  users             User[]
+  rooms             Room[]
+  subrooms          Subroom[]
+  tasks             Task[]
+  campaigns         TaskCampaign[]
+  announcements     Announcement[]
+  events            Event[]
+  orgEvents         OrganizationEvent[]
+  auditEvents       AuditEvent[]
+  roleAuditLogs     RoleAuditLog[]
   attendanceRecords AttendanceRecord[]
 
   @@map("organizations")
@@ -154,41 +154,41 @@ model User {
   currentAllocatedHours Int           @default(0)
   roomId                String?
   subroomId             String?
-  
+
   // Real Presence & Current Location Tracking (Separate from Permanent Room Assignment)
-  presenceState         PresenceState @default(UNKNOWN)
-  arrivedAt             DateTime?
-  leftAt                DateTime?
-  lastSeenAt            DateTime?     @default(now())
+  presenceState            PresenceState @default(UNKNOWN)
+  arrivedAt                DateTime?
+  leftAt                   DateTime?
+  lastSeenAt               DateTime?     @default(now())
   currentLocationRoomId    String?
   currentLocationSubroomId String?
-  currentLocationName      String?    // e.g. "B4", "Main Hall", "Cafeteria", "Outside"
+  currentLocationName      String? // e.g. "B4", "Main Hall", "Cafeteria", "Outside"
 
-  lastLoginAt           DateTime?
-  version               Int           @default(1)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  lastLoginAt DateTime?
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  room                  Room?         @relation("RoomMembers", fields: [roomId], references: [id], onDelete: SetNull)
-  subroom               Subroom?      @relation("SubroomMembers", fields: [subroomId], references: [id], onDelete: SetNull)
-  ledRooms              Room[]        @relation("RoomLeadServer")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room?        @relation("RoomMembers", fields: [roomId], references: [id], onDelete: SetNull)
+  subroom      Subroom?     @relation("SubroomMembers", fields: [subroomId], references: [id], onDelete: SetNull)
+  ledRooms     Room[]       @relation("RoomLeadServer")
 
-  assignedTasks         Task[]        @relation("TaskAssignee")
-  createdTasks          Task[]        @relation("TaskCreator")
-  createdCampaigns      TaskCampaign[] @relation("CampaignCreator")
-  taskComments          TaskComment[] @relation("CommentAuthor")
-  announcements         Announcement[] @relation("AnnouncementAuthor")
-  availabilitySlots     AvailabilitySlot[]
-  eventsRequired        EventRequiredServer[]
-  eventParticipations   EventParticipant[]
-  createdOrgEvents      OrganizationEvent[] @relation("OrgEventCreator")
-  orgEventResponses     OrganizationEventResponse[]
-  auditEvents           AuditEvent[]
-  roleAuditLogsTarget   RoleAuditLog[] @relation("TargetUserAudit")
-  roleAuditLogsChanged  RoleAuditLog[] @relation("ActorAudit")
-  passwordResetTokens   PasswordResetToken[]
-  attendanceRecords     AttendanceRecord[]
+  assignedTasks        Task[]                      @relation("TaskAssignee")
+  createdTasks         Task[]                      @relation("TaskCreator")
+  createdCampaigns     TaskCampaign[]              @relation("CampaignCreator")
+  taskComments         TaskComment[]               @relation("CommentAuthor")
+  announcements        Announcement[]              @relation("AnnouncementAuthor")
+  availabilitySlots    AvailabilitySlot[]
+  eventsRequired       EventRequiredServer[]
+  eventParticipations  EventParticipant[]
+  createdOrgEvents     OrganizationEvent[]         @relation("OrgEventCreator")
+  orgEventResponses    OrganizationEventResponse[]
+  auditEvents          AuditEvent[]
+  roleAuditLogsTarget  RoleAuditLog[]              @relation("TargetUserAudit")
+  roleAuditLogsChanged RoleAuditLog[]              @relation("ActorAudit")
+  passwordResetTokens  PasswordResetToken[]
+  attendanceRecords    AttendanceRecord[]
 
   @@index([organizationId, role])
   @@index([organizationId, accountStatus])
@@ -200,39 +200,39 @@ model User {
 // Rooms & Subrooms (Topology A-H, 1-8)
 // -----------------------------------------------------------------------------
 model Room {
-  id             String       @id @default(uuid())
+  id             String   @id @default(uuid())
   organizationId String
-  letter         String       // 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'
-  name           String       // e.g. "Sector B — Core Operations"
+  letter         String // 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'
+  name           String // e.g. "Sector B — Core Operations"
   leadServerId   String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leadServer     User?        @relation("RoomLeadServer", fields: [leadServerId], references: [id], onDelete: SetNull)
-  subrooms       Subroom[]
-  members        User[]       @relation("RoomMembers")
-  events         Event[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadServer   User?        @relation("RoomLeadServer", fields: [leadServerId], references: [id], onDelete: SetNull)
+  subrooms     Subroom[]
+  members      User[]       @relation("RoomMembers")
+  events       Event[]
 
   @@unique([organizationId, letter])
   @@map("rooms")
 }
 
 model Subroom {
-  id             String       @id @default(uuid())
-  organizationId String
-  roomId         String
-  code           String       // e.g. "B3"
-  number         Int          // 1 to 8
-  memberCapacity Int          @default(2)
-  serverSeatCount Int         @default(1)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id              String   @id @default(uuid())
+  organizationId  String
+  roomId          String
+  code            String // e.g. "B3"
+  number          Int // 1 to 8
+  memberCapacity  Int      @default(2)
+  serverSeatCount Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  room           Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  members        User[]       @relation("SubroomMembers")
-  events         Event[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  members      User[]       @relation("SubroomMembers")
+  events       Event[]
 
   @@unique([roomId, number])
   @@unique([organizationId, code])
@@ -243,39 +243,39 @@ model Subroom {
 // Multi-Scope Events (Company-Wide & Room-Specific)
 // -----------------------------------------------------------------------------
 model Event {
-  id                   String                @id @default(uuid())
+  id                   String      @id @default(uuid())
   organizationId       String
   title                String
   description          String?
-  scope                EventScope            @default(ROOM)
-  roomId               String?               // Nullable for COMPANY events
-  subroomId            String?               // Nullable for COMPANY events
-  status               EventStatus           @default(ACTIVE)
+  scope                EventScope  @default(ROOM)
+  roomId               String? // Nullable for COMPANY events
+  subroomId            String? // Nullable for COMPANY events
+  status               EventStatus @default(ACTIVE)
   startTime            DateTime
   endTime              DateTime
-  requiredServersCount Int?                  // Required supervisory servers
+  requiredServersCount Int? // Required supervisory servers
 
-  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  room                 Room?                 @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  subroom              Subroom?              @relation(fields: [subroomId], references: [id], onDelete: SetNull)
-  locations            EventLocation[]
-  requiredServers      EventRequiredServer[]
-  participants         EventParticipant[]
+  organization    Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room            Room?                 @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  subroom         Subroom?              @relation(fields: [subroomId], references: [id], onDelete: SetNull)
+  locations       EventLocation[]
+  requiredServers EventRequiredServer[]
+  participants    EventParticipant[]
 
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([organizationId, status, startTime])
   @@map("events")
 }
 
 model EventLocation {
-  id        String   @id @default(uuid())
+  id        String  @id @default(uuid())
   eventId   String
-  name      String   // e.g. "Main Auditorium", "Room A", "Room B", "Remote"
+  name      String // e.g. "Main Auditorium", "Room A", "Room B", "Remote"
   roomId    String?
   subroomId String?
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event     Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@map("event_locations")
 }
@@ -292,12 +292,12 @@ model EventRequiredServer {
 }
 
 model EventParticipant {
-  id        String   @id @default(uuid())
-  eventId   String
-  userId    String
-  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  joinedAt  DateTime @default(now())
+  id       String   @id @default(uuid())
+  eventId  String
+  userId   String
+  event    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
 
   @@unique([eventId, userId])
   @@map("event_participants")
@@ -318,37 +318,39 @@ model TaskCampaign {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  creator        User?        @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  tasks          Task[]
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  creator      User?        @relation("CampaignCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  tasks        Task[]
 
   @@map("task_campaigns")
 }
 
 model Task {
-  id             String        @id @default(uuid())
-  taskIdDisplay  String?       @unique // e.g. "TSK-8421"
+  id             String       @id @default(uuid())
+  taskIdDisplay  String?      @unique // e.g. "TSK-8421"
   organizationId String
   title          String
   description    String?
-  status         TaskStatus    @default(DRAFT)
-  priority       TaskPriority  @default(MEDIUM)
-  estimatedHours Float         @default(8.0)
-  allocatedHours Float         @default(0.0)
+  status         TaskStatus   @default(DRAFT)
+  priority       TaskPriority @default(MEDIUM)
+  progress       Int          @default(0) // 0-100, authoritative
+  estimatedHours Float        @default(8.0)
+  allocatedHours Float        @default(0.0)
   dueDate        DateTime?
   assigneeId     String?
   creatorId      String?
   campaignId     String?
-  tags           String[]      @default([])
-  version        Int           @default(1)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  tags           String[]     @default([])
+  version        Int          @default(1)
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  assignee       User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  creator        User?         @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
-  campaign       TaskCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
-  comments       TaskComment[]
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee     User?         @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creator      User?         @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  campaign     TaskCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  comments     TaskComment[]
 
   @@index([organizationId, status, dueDate])
   @@index([assigneeId, status])
@@ -363,8 +365,8 @@ model TaskComment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  author    User     @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt])
   @@map("task_comments")
@@ -388,8 +390,8 @@ model Announcement {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  author         User?              @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  author       User?        @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, publishedAt])
   @@map("announcements")
@@ -401,35 +403,35 @@ model Announcement {
 // merge with Announcements or the supervisory Event model.
 // -----------------------------------------------------------------------------
 model OrganizationEvent {
-  id             String              @id @default(uuid())
+  id             String         @id @default(uuid())
   organizationId String
   title          String
   description    String
   scheduledAt    DateTime
-  status         OrgEventStatus      @default(UPCOMING) // Authoritative only for CANCELLED; otherwise derived from scheduledAt at read time
+  status         OrgEventStatus @default(UPCOMING) // Authoritative only for CANCELLED; otherwise derived from scheduledAt at read time
   createdById    String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy      User?               @relation("OrgEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  responses      OrganizationEventResponse[]
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?                       @relation("OrgEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  responses    OrganizationEventResponse[]
 
   @@index([organizationId, status, scheduledAt])
   @@map("organization_events")
 }
 
 model OrganizationEventResponse {
-  id          String               @id @default(uuid())
+  id          String              @id @default(uuid())
   eventId     String
   userId      String
   response    EventResponseChoice
-  respondedAt DateTime             @default(now())
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  respondedAt DateTime            @default(now())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
 
-  event       OrganizationEvent    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event OrganizationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
   @@index([eventId, response])
@@ -443,13 +445,13 @@ model AvailabilitySlot {
   id        String    @id @default(uuid())
   userId    String
   day       DayOfWeek
-  hour      Int       // 0 to 23
+  hour      Int // 0 to 23
   state     SlotState @default(AVAILABLE)
   taskId    String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, day, hour])
   @@index([userId, day])
@@ -460,7 +462,7 @@ model AvailabilitySlot {
 // Audit Events
 // -----------------------------------------------------------------------------
 model AuditEvent {
-  id             String       @id @default(uuid())
+  id             String   @id @default(uuid())
   organizationId String
   userId         String?
   action         String
@@ -468,10 +470,10 @@ model AuditEvent {
   entityId       String?
   details        Json?
   ipAddress      String?
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime @default(now())
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt])
   @@map("audit_events")
@@ -481,18 +483,18 @@ model AuditEvent {
 // Role Audit Logs
 // -----------------------------------------------------------------------------
 model RoleAuditLog {
-  id             String       @id @default(uuid())
+  id             String    @id @default(uuid())
   organizationId String
   targetUserId   String
   changedById    String
   previousRole   UserRole?
   newRole        UserRole
   reason         String?
-  createdAt      DateTime     @default(now())
+  createdAt      DateTime  @default(now())
 
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  targetUser     User         @relation("TargetUserAudit", fields: [targetUserId], references: [id], onDelete: Cascade)
-  changedBy      User         @relation("ActorAudit", fields: [changedById], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  targetUser   User         @relation("TargetUserAudit", fields: [targetUserId], references: [id], onDelete: Cascade)
+  changedBy    User         @relation("ActorAudit", fields: [changedById], references: [id], onDelete: Cascade)
 
   @@index([organizationId, targetUserId])
   @@index([createdAt])
@@ -503,14 +505,14 @@ model RoleAuditLog {
 // Password Reset Tokens
 // -----------------------------------------------------------------------------
 model PasswordResetToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tokenHash])
   @@index([userId, expiresAt])
@@ -534,21 +536,20 @@ model SystemHealth {
 // Attendance Records (Global Daily IN / OUT Attendance & Presence Logging)
 // -----------------------------------------------------------------------------
 model AttendanceRecord {
-  id              String       @id @default(uuid())
+  id              String    @id @default(uuid())
   userId          String
   organizationId  String
   arrivedAt       DateTime
   leftAt          DateTime?
   durationSeconds Int?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([userId, arrivedAt])
   @@index([organizationId, arrivedAt])
   @@index([userId, leftAt])
   @@map("attendance_records")
 }
-

@@ -305,7 +305,41 @@ export function setupSocketIO(app: FastifyInstance): SocketIOServer {
       return;
     }
 
-    // E. Global Organization Events (Attendance, Tasks, Availability, Operations, Rooms, Announcements, Audit)
+    // E1. Task Events — never broadcast full task details organization-wide.
+    // Only the assignee(s), the creator, admins, and the org-wide operations
+    // room (admin + server + team_lead) are authorized to see a given task.
+    if (
+      eventType === 'TASK_CREATED' ||
+      eventType === 'TASK_ASSIGNED' ||
+      eventType === 'TASK_REASSIGNED' ||
+      eventType === 'TASK_UPDATED' ||
+      eventType === 'TASK_STATUS_CHANGED' ||
+      eventType === 'TASK_PROGRESS_CHANGED' ||
+      eventType === 'TASK_COMPLETED' ||
+      eventType === 'TASK_CANCELLED'
+    ) {
+      const payload = (event.payload || {}) as Record<string, unknown>;
+      const personIds = [
+        event.targetUserId,
+        event.actorId,
+        payload.assigneeId,
+        payload.previousAssigneeId,
+        payload.newAssigneeId,
+        payload.creatorId,
+      ].filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+      const rooms = [
+        `organization:${orgId}:admin`,
+        `organization:${orgId}:operations`,
+        ...Array.from(new Set(personIds)).map((id) => `user:${id}`),
+      ];
+
+      ioServerInstance.to(rooms).emit(eventType, event);
+      ioServerInstance.to(rooms).emit('DOMAIN_EVENT', event);
+      return;
+    }
+
+    // E. Global Organization Events (Attendance, Availability, Operations, Rooms, Announcements, Audit)
     // Broadcast to organization:<orgId> so all active members receive real-time sync
     ioServerInstance.to(`organization:${orgId}`).emit(eventType, event);
     ioServerInstance.to(`organization:${orgId}`).emit('DOMAIN_EVENT', event);

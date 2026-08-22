@@ -29,7 +29,7 @@ export default function AdminDashboard() {
     overdueRiskPercentage?: number;
   } | null>(null);
 
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -63,7 +63,7 @@ export default function AdminDashboard() {
   // Real-Time Domain Event Subscriptions — silent background refresh
   useDomainEvent(
     [
-      'TASK_CREATED', 'TASK_ASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_STATUS_CHANGED',
+      'TASK_CREATED', 'TASK_ASSIGNED', 'TASK_REASSIGNED', 'TASK_UPDATED', 'TASK_COMPLETED', 'TASK_CANCELLED', 'TASK_STATUS_CHANGED', 'TASK_PROGRESS_CHANGED',
       'ROOM_STATUS_CHANGED', 'SUBROOM_STATUS_CHANGED',
       'EMPLOYEE_CHECKED_IN', 'EMPLOYEE_CHECKED_OUT', 'ATTENDANCE_UPDATED',
     ],
@@ -216,7 +216,7 @@ export default function AdminDashboard() {
 
               <TaskTable
                 tasks={tasks}
-                onSelectTask={(t) => setSelectedTask(t)}
+                onSelectTask={(t) => setSelectedTaskId(t.dbId || t.id)}
                 showAssignee={true}
               />
             </div>
@@ -276,14 +276,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Task Drawer */}
-      <TaskDetailDrawer
-        task={selectedTask}
-        onClose={() => setSelectedTask(null)}
-        onStatusChange={(taskId, newStatus) => {
-          setTasks(tasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
-          if (selectedTask) setSelectedTask({ ...selectedTask, status: newStatus });
-        }}
-      />
+      <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
 
       {/* Create Task Modal */}
       <CreateTaskModal

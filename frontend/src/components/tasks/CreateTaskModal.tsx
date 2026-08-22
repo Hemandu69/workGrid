@@ -57,11 +57,15 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
     }
   }, [isOpen, loadDependencies]);
 
-  // Server role constraint: Servers can only assign to active members in their own room
+  // Mirrors the backend's authoritative checks — these only prevent an
+  // obviously-doomed selection, they are not themselves the source of truth.
+  // Only operational roles may receive task assignments (never HR/ADMIN/SUPER_ADMIN).
+  const taskEligibleUsers = users.filter((m) => m.role === 'MEMBER' || m.role === 'TEAM_LEAD' || m.role === 'SERVER');
+  // Server/Team Lead constraint: scoped to active members in their own room.
   const availableAssignees =
-    role === 'SERVER' && user.room
-      ? users.filter((m) => m.room === user.room)
-      : users;
+    (role === 'SERVER' || role === 'TEAM_LEAD') && user.room
+      ? taskEligibleUsers.filter((m) => m.room === user.room)
+      : taskEligibleUsers;
 
   const assigneeOptions = availableAssignees.map((m) => ({
     value: m.id,
