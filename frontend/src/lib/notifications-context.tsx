@@ -34,7 +34,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       .getEvents()
       .then((data) => {
         if (Array.isArray(data)) {
-          setEvents(data.filter((e) => e.status === 'UPCOMING' || e.status === 'LIVE'));
+          setEvents(
+            data.filter((e) => e.status === 'UPCOMING' || e.status === 'LIVE' || e.status === 'AWAITING_COMPLETION')
+          );
         }
       })
       .catch(() => {});
@@ -165,9 +167,20 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     refreshEvents();
   });
 
-  useDomainEvent(['ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_RESPONSE_CHANGED'], () => {
-    refreshEvents();
-  });
+  useDomainEvent(
+    ['ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_COMPLETED', 'ORG_EVENT_RESPONSE_CHANGED'],
+    () => {
+      refreshEvents();
+    }
+  );
+
+  // Light periodic refresh so a purely time-based transition (e.g. an event
+  // starting) eventually shows here too, without requiring a manual reload.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = setInterval(refreshEvents, 60000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, refreshEvents]);
 
   const markAllRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));

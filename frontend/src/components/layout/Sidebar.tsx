@@ -239,24 +239,27 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
           </div>
         </div>
 
-        {/* Quick Action Button */}
-        <div className="px-4 py-3">
-          <button
-            onClick={onQuickAction}
-            className="w-full bg-primary text-on-primary py-2 px-3 rounded text-xs font-medium hover:bg-primary-container transition-colors flex items-center justify-center gap-2 shadow-xs"
-          >
-            <span className="material-symbols-outlined text-[16px]">
-              {role === 'MEMBER' ? 'edit_calendar' : role === 'HR' ? 'person_add' : 'add'}
-            </span>
-            <span>
-              {role === 'MEMBER'
-                ? 'Edit Availability'
-                : role === 'HR'
-                ? 'Onboard Person'
-                : 'Create Task'}
-            </span>
-          </button>
-        </div>
+        {/* Quick Action Button — SERVER has no quick action here since it no
+            longer creates tasks; its real actions live on the Operations Grid. */}
+        {role !== 'SERVER' && (
+          <div className="px-4 py-3">
+            <button
+              onClick={onQuickAction}
+              className="w-full bg-primary text-on-primary py-2 px-3 rounded text-xs font-medium hover:bg-primary-container transition-colors flex items-center justify-center gap-2 shadow-xs"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                {role === 'MEMBER' ? 'edit_calendar' : role === 'HR' ? 'person_add' : 'add'}
+              </span>
+              <span>
+                {role === 'MEMBER'
+                  ? 'Edit Availability'
+                  : role === 'HR'
+                  ? 'Onboard Person'
+                  : 'Create Task'}
+              </span>
+            </button>
+          </div>
+        )}
 
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">

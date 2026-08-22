@@ -5,6 +5,7 @@ import {
   updateTaskStatusSchema,
   updateTaskProgressSchema,
   reassignTaskSchema,
+  splitTeamTaskSchema,
   addTaskCommentSchema,
 } from '../../schemas/task.schema.js';
 import { requireRole } from '../../plugins/auth.js';
@@ -113,10 +114,12 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /api/v1/tasks
-  // Protected: SUPER_ADMIN, ADMIN, SERVER, TEAM_LEAD can create/assign tasks
+  // Protected: SUPER_ADMIN, ADMIN, TEAM_LEAD can create/assign tasks. SERVER
+  // does not get general task-creation capability — a SERVER may still
+  // receive tasks assigned by others, just never create/assign them.
   fastify.post(
     '/',
-    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.SERVER, UserRole.TEAM_LEAD])] },
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEAD])] },
     async (request, reply) => {
       const parseResult = createTaskSchema.safeParse(request.body);
       if (!parseResult.success) {
@@ -208,6 +211,32 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send(task);
       } catch (err: unknown) {
         return sendError(reply, err, 'Failed to reassign task');
+      }
+    }
+  );
+
+  // POST /api/v1/tasks/:id/split — divide an unassigned team task among
+  // several members, creating a new individual task per member
+  fastify.post(
+    '/:id/split',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parseResult = splitTeamTaskSchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation failed',
+          details: parseResult.error.format(),
+        });
+      }
+
+      try {
+        const result = await TaskService.splitTeamTask(id, parseResult.data, request.user);
+        return reply.status(201).send(result);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to split team task');
       }
     }
   );

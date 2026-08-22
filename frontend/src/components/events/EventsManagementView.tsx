@@ -9,14 +9,25 @@ import { EventFormModal } from './EventFormModal';
 import { EventDetailDrawer } from './EventDetailDrawer';
 import { EventAnalyticsSummary } from './EventAnalyticsSummary';
 
-const TABS: OrgEventStatus[] = ['UPCOMING', 'LIVE', 'COMPLETED', 'CANCELLED'];
+const TABS: OrgEventStatus[] = ['UPCOMING', 'LIVE', 'AWAITING_COMPLETION', 'COMPLETED', 'CANCELLED'];
 
 const STATUS_STYLES: Record<OrgEventStatus, string> = {
   UPCOMING: 'bg-blue-100 text-blue-800',
   LIVE: 'bg-emerald-100 text-emerald-800',
+  AWAITING_COMPLETION: 'bg-amber-100 text-amber-800',
   COMPLETED: 'bg-slate-100 text-slate-600',
   CANCELLED: 'bg-rose-100 text-rose-700',
 };
+
+const STATUS_LABELS: Record<OrgEventStatus, string> = {
+  UPCOMING: 'Upcoming',
+  LIVE: 'Live',
+  AWAITING_COMPLETION: 'Awaiting Completion',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+};
+
+const REFRESH_INTERVAL_MS = 60000;
 
 export function EventsManagementView() {
   const [events, setEvents] = useState<OrgEvent[]>([]);
@@ -58,9 +69,20 @@ export function EventsManagementView() {
   }, [fetchEvents]);
 
   // Silent background refresh — no full-page spinner on live updates from other clients
-  useDomainEvent(['ORG_EVENT_CREATED', 'ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_RESPONSE_CHANGED'], () => {
-    fetchEvents(true);
-  });
+  useDomainEvent(
+    ['ORG_EVENT_CREATED', 'ORG_EVENT_UPDATED', 'ORG_EVENT_CANCELLED', 'ORG_EVENT_COMPLETED', 'ORG_EVENT_RESPONSE_CHANGED'],
+    () => {
+      fetchEvents(true);
+    }
+  );
+
+  // Light periodic refresh so purely time-based transitions (Upcoming→Live→Awaiting
+  // Completion) eventually show without a manual reload — the backend recomputes
+  // status fresh on every fetch, this just triggers that fetch on a bounded interval.
+  useEffect(() => {
+    const interval = setInterval(() => fetchEvents(true), REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchEvents]);
 
   const filtered = events.filter((e) => e.status === tab);
   const tabCounts = TABS.reduce<Record<OrgEventStatus, number>>((acc, t) => {
@@ -99,7 +121,7 @@ export function EventsManagementView() {
               tab === t ? 'border-primary text-primary' : 'border-transparent text-on-surface-variant hover:text-on-surface'
             }`}
           >
-            <span>{t.charAt(0) + t.slice(1).toLowerCase()}</span>
+            <span>{STATUS_LABELS[t]}</span>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-surface-container text-on-surface-variant">
               {tabCounts[t]}
             </span>
@@ -113,7 +135,7 @@ export function EventsManagementView() {
           <p className="text-xs text-on-surface-variant text-center py-8">Loading events...</p>
         ) : filtered.length === 0 ? (
           <div className="p-8 border border-surface-outline rounded bg-surface-container-low text-center text-xs text-on-surface-variant">
-            No {tab.toLowerCase()} events.
+            No {STATUS_LABELS[tab].toLowerCase()} events.
           </div>
         ) : (
           filtered.map((e) => (
@@ -126,10 +148,10 @@ export function EventsManagementView() {
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLES[e.status]}`}>
-                      {e.status}
+                      {STATUS_LABELS[e.status]}
                     </span>
                     <span className="text-[11px] font-mono text-on-surface-variant">
-                      {e.dateIST} • {e.timeIST}
+                      {e.dateIST} • {e.timeIST}–{e.endTimeIST}
                     </span>
                   </div>
                   <h3 className="text-sm font-bold text-primary">{e.title}</h3>

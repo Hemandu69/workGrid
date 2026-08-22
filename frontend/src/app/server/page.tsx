@@ -6,9 +6,7 @@ import { useAuth } from '../../lib/auth-context';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
 import { TaskTable } from '../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../components/tasks/TaskDetailDrawer';
-import { CreateTaskModal } from '../../components/tasks/CreateTaskModal';
 import { SubroomCard } from '../../components/rooms/SubroomCard';
-import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
@@ -26,7 +24,6 @@ export default function ServerDashboard() {
   const [room, setRoom] = useState<Room | null>(null);
   const [roomMembers, setRoomMembers] = useState<User[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
 
   const [currentClock, setCurrentClock] = useState<string>('');
   const [activeWindow, setActiveWindow] = useState<string>('');
@@ -141,15 +138,6 @@ export default function ServerDashboard() {
                 <span className="font-semibold text-primary">{activeWindow}</span>
               </div>
             )}
-
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setIsAssignModalOpen(true)}
-              leftIcon={<span className="material-symbols-outlined text-[16px]">add</span>}
-            >
-              Assign Team Task
-            </Button>
           </div>
         </div>
 
@@ -258,7 +246,7 @@ export default function ServerDashboard() {
                 Server Hierarchy Boundaries
               </div>
               <p className="text-on-surface-variant leading-relaxed">
-                As Section {serverRoomLetter} Lead, task assignment is scoped strictly to active members within Section {serverRoomLetter}. Cross-room assignment to other sections requires Admin authorization.
+                As Section {serverRoomLetter} Lead, you can view all tasks and members within Section {serverRoomLetter}. Task assignment is handled by Admins and Team Leads.
               </p>
             </div>
           </div>
@@ -306,13 +294,6 @@ export default function ServerDashboard() {
 
       {/* Task Drawer */}
       <TaskDetailDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
-
-      {/* Server Task Assignment Modal */}
-      <CreateTaskModal
-        isOpen={isAssignModalOpen}
-        onClose={() => setIsAssignModalOpen(false)}
-        onTaskCreated={() => loadServerData()}
-      />
     </AppShell>
   );
 }

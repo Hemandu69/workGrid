@@ -4,7 +4,7 @@ import { createOrgEventSchema, updateOrgEventSchema, updateOrgEventResponseSchem
 import { requireRole } from '../../plugins/auth.js';
 import { UserRole } from '@prisma/client';
 
-const VALID_STATUS_FILTERS: EffectiveOrgEventStatus[] = ['UPCOMING', 'LIVE', 'COMPLETED', 'CANCELLED'];
+const VALID_STATUS_FILTERS: EffectiveOrgEventStatus[] = ['UPCOMING', 'LIVE', 'AWAITING_COMPLETION', 'COMPLETED', 'CANCELLED'];
 
 function sendError(reply: any, err: unknown, fallbackMessage: string) {
   const statusCode = (err as any)?.statusCode || 500;
@@ -102,6 +102,21 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send(event);
       } catch (err: unknown) {
         return sendError(reply, err, 'Failed to cancel event');
+      }
+    }
+  );
+
+  // POST /api/v1/events/:id/complete — SUPER_ADMIN, ADMIN only
+  fastify.post(
+    '/:id/complete',
+    { preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      try {
+        const event = await OrgEventService.completeEvent(id, request.user);
+        return reply.send(event);
+      } catch (err: unknown) {
+        return sendError(reply, err, 'Failed to mark event as done');
       }
     }
   );

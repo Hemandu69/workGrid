@@ -73,7 +73,12 @@ Object.assign(mockPrisma, {
       const user = where?.id ? findUser(where.id) : where?.email ? mockUsers.find((u) => u.email === where.email) : null;
       return user ? attachRoomSubroom(user) : null;
     }),
-    findMany: vi.fn().mockImplementation(async () => mockUsers.map(attachRoomSubroom)),
+    findMany: vi.fn().mockImplementation(async ({ where }: any = {}) => {
+      let list = mockUsers.map(attachRoomSubroom);
+      if (where?.subroomId) list = list.filter((u) => u.subroomId === where.subroomId);
+      if (where?.id?.not) list = list.filter((u) => u.id !== where.id.not);
+      return list;
+    }),
     count: vi.fn().mockImplementation(async ({ where }: any) => {
       let list = [...mockUsers];
       if (where?.roomId) list = list.filter((u) => u.roomId === where.roomId);
@@ -443,6 +448,84 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
       expect(activeIn).toHaveLength(2);
       expect(activeIn.map((s) => s.assignedPosition).sort()).toEqual([1, 5]);
       expect(secB.assignedServers.find((s) => s.id === 'server-2')!.presenceState).toBe('OUT');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Partner derivation — "the other person(s) in my subroom", always derived
+  // live from current subroom membership, never stored.
+  // ---------------------------------------------------------------------------
+  describe('Subroom partner derivation', () => {
+    it('a 2-person subroom: each occupant sees the other as their partner', async () => {
+      // member-1 and member-2 both start in B2 (see resetMockUsers).
+      const res1 = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/member-1')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(res1.status).toBe(200);
+      expect(res1.body.partners.map((p: any) => p.id)).toEqual(['member-2']);
+
+      const res2 = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/member-2')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(res2.body.partners.map((p: any) => p.id)).toEqual(['member-1']);
+    });
+
+    it('a 1-person subroom: partners is an empty array, not null', async () => {
+      await supertest(app.server)
+        .patch('/api/v1/rooms/assignment/member-3')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`)
+        .send({ sectionLetter: 'C', subroomCode: 'C1' });
+
+      const res = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/member-3')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.partners).toEqual([]);
+    });
+
+    it('GET /assignment/me lets a MEMBER see their own partner without admin access', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/me')
+        .set('Authorization', `Bearer ${tokens['member-1']}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.personId).toBe('member-1');
+      expect(res.body.partners.map((p: any) => p.id)).toEqual(['member-2']);
+    });
+
+    it('partner updates automatically when subroom assignment changes — no stale/hardcoded value', async () => {
+      // Move member-2 out of B2 into an empty subroom; member-1's partner list
+      // must reflect the change immediately on the next read.
+      await supertest(app.server)
+        .patch('/api/v1/rooms/assignment/member-2')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`)
+        .send({ sectionLetter: 'C', subroomCode: 'C2' });
+
+      const afterMove = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/member-1')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(afterMove.body.partners).toEqual([]);
+
+      // A third member now joins member-2 in C2 — member-2 gains a new partner.
+      await supertest(app.server)
+        .patch('/api/v1/rooms/assignment/member-3')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`)
+        .send({ sectionLetter: 'C', subroomCode: 'C2' });
+
+      const member2Assignment = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/member-2')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(member2Assignment.body.partners.map((p: any) => p.id)).toEqual(['member-3']);
+    });
+
+    it('a SERVER never has subroom partners (section-only assignment)', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/rooms/assignment/server-1')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.partners).toEqual([]);
     });
   });
 });
