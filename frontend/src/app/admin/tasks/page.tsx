@@ -23,18 +23,17 @@ export default function AdminTasksPage() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const [tasksData, campaignsData] = await Promise.all([
+      const [tasksResult, campaignsData] = await Promise.all([
         apiClient.getTasks({
           roomLetter: roomFilter !== 'ALL' ? roomFilter.replace('Room', '').trim() : undefined,
           status: statusFilter !== 'ALL' ? statusFilter : undefined,
           search: searchQuery.trim() || undefined,
+          limit: 200,
         }),
         apiClient.getCampaigns().catch(() => []),
       ]);
 
-      if (Array.isArray(tasksData)) {
-        setTasks(tasksData);
-      }
+      setTasks(tasksResult.items);
       if (Array.isArray(campaignsData)) {
         setCampaigns(campaignsData);
       }

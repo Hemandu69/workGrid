@@ -23,10 +23,8 @@ export default function SuperAdminAnnouncementsPage() {
   const fetchAnnouncements = useCallback(async () => {
     try {
       setIsLoading(true);
-      const data = await apiClient.getAnnouncements();
-      if (Array.isArray(data)) {
-        setAnnouncements(data);
-      }
+      const data = await apiClient.getAnnouncements({ limit: 100 });
+      setAnnouncements(data.items);
     } catch {
       // Clean error handling
     } finally {

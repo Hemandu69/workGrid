@@ -57,21 +57,19 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     }
 
     apiClient
-      .getAnnouncements()
-      .then((anns) => {
-        if (Array.isArray(anns)) {
-          anns.forEach((a) =>
-            addNotification({
-              id: `ann-${a.id}`,
-              type: 'ANNOUNCEMENT',
-              title: `Announcement: ${a.title}`,
-              message: a.content,
-              read: false,
-              createdAt: a.createdAt,
-              priority: 'NORMAL',
-            })
-          );
-        }
+      .getAnnouncements({ limit: 50 })
+      .then((result) => {
+        result.items.forEach((a) =>
+          addNotification({
+            id: `ann-${a.id}`,
+            type: 'ANNOUNCEMENT',
+            title: `Announcement: ${a.title}`,
+            message: a.content,
+            read: false,
+            createdAt: a.createdAt,
+            priority: 'NORMAL',
+          })
+        );
       })
       .catch(() => {});
 

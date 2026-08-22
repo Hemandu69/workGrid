@@ -99,12 +99,14 @@ const { mockPrisma } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      count: vi.fn(),
     },
     room: {
       findFirst: vi.fn(),
     },
     user: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       findUnique: vi.fn(),
       update: vi.fn(),
     },
@@ -160,7 +162,7 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
       return true;
     }
 
-    mockPrisma.task.findMany.mockImplementation(({ where }: any) => {
+    function filterTasks(where: any): FakeTask[] {
       let result = tasks.filter((t) => t.organizationId === where.organizationId);
       if (where.status) result = result.filter((t) => t.status === where.status);
       if (where.assigneeId) result = result.filter((t) => t.assigneeId === where.assigneeId);
@@ -173,8 +175,17 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
           )
         );
       }
+      return result;
+    }
+
+    mockPrisma.task.findMany.mockImplementation(({ where, take, skip }: any) => {
+      let result = filterTasks(where);
+      if (typeof skip === 'number') result = result.slice(skip);
+      if (typeof take === 'number') result = result.slice(0, take);
       return Promise.resolve(result.map(hydrate));
     });
+
+    mockPrisma.task.count.mockImplementation(({ where }: any) => Promise.resolve(filterTasks(where).length));
 
     mockPrisma.task.create.mockImplementation(({ data }: any) => {
       const created = makeTask({ ...data, dueDate: data.dueDate || null });
@@ -195,6 +206,17 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
         (u: any) => u.organizationId === where.organizationId && ors.some((o: any) => (o.id && o.id === u.id) || (o.email && o.email === u.email))
       );
       return Promise.resolve(found || null);
+    });
+
+    // Batched lookup used by splitTeamTask: where.OR: [{id:{in:[...]}}, {email:{in:[...]}}]
+    mockPrisma.user.findMany.mockImplementation(({ where }: any) => {
+      const ors: any[] = where.OR || [];
+      const idIn: string[] = ors.find((o: any) => o.id?.in)?.id?.in || [];
+      const emailIn: string[] = ors.find((o: any) => o.email?.in)?.email?.in || [];
+      const found = Object.values(USERS).filter(
+        (u: any) => u.organizationId === where.organizationId && (idIn.includes(u.id) || emailIn.includes(u.email))
+      );
+      return Promise.resolve(found.map((u: any) => ({ ...u, room: u.room || null, subroom: null })));
     });
 
     mockPrisma.room.findFirst.mockImplementation(({ where }: any) => {
@@ -281,8 +303,9 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
       .set('Authorization', `Bearer ${tokens['member-b1']}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].assigneeId).toBe('member-b1');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].assigneeId).toBe('member-b1');
   });
 
   it('7. SERVER sees only tasks assigned within their own room', async () => {
@@ -292,8 +315,8 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
     const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['server-b']}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].assigneeId).toBe('member-b1');
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].assigneeId).toBe('member-b1');
   });
 
   it('8. TEAM_LEAD sees only tasks assigned within their own room', async () => {
@@ -303,7 +326,7 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
     const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['teamlead-b']}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.every((t: any) => t.assigneeId === 'member-b1')).toBe(true);
+    expect(res.body.items.every((t: any) => t.assigneeId === 'member-b1')).toBe(true);
   });
 
   it('9. ADMIN sees every task in their organization regardless of room', async () => {
@@ -313,7 +336,8 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
     const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['admin-1']}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
+    expect(res.body.items).toHaveLength(2);
+    expect(res.body.total).toBe(2);
   });
 
   it('10. a task belonging to another organization is never returned', async () => {
@@ -323,8 +347,8 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
     const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['admin-1']}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].id).not.toBe(undefined);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].id).not.toBe(undefined);
   });
 
   // --- Assignment validation (section 3) ----------------------------------
@@ -805,7 +829,7 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
     const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['teamlead-b']}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.some((t: any) => t.taskType === 'TEAM' && t.teamSection === 'B')).toBe(true);
+    expect(res.body.items.some((t: any) => t.taskType === 'TEAM' && t.teamSection === 'B')).toBe(true);
   });
 
   // --- Team tasks: assignment, reassignment, availability -----------------

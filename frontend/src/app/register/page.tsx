@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
 import { apiClient } from '../../lib/api-client';
+import { useEmailAvailability } from '../../lib/useEmailAvailability';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -17,10 +18,16 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const emailAvailability = useEmailAvailability(email, email.trim().length > 0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) {
       setError('Please fill in all required fields.');
+      return;
+    }
+    if (emailAvailability === 'taken') {
+      setError('An account with this email already exists.');
       return;
     }
 
@@ -102,6 +109,18 @@ export default function RegisterPage() {
                 placeholder="name@workgrid.corp"
                 className="w-full bg-surface-bright border border-surface-outline rounded px-3 py-2 h-[40px] text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-2 focus:border-primary transition-colors font-mono"
               />
+              {emailAvailability === 'invalid' && (
+                <p className="text-[11px] text-rose-600 pt-0.5">Enter a valid email address.</p>
+              )}
+              {emailAvailability === 'taken' && (
+                <p className="text-[11px] text-rose-600 pt-0.5">An account with this email already exists.</p>
+              )}
+              {emailAvailability === 'available' && (
+                <p className="text-[11px] text-emerald-700 pt-0.5">This email is available.</p>
+              )}
+              {emailAvailability === 'checking' && (
+                <p className="text-[11px] text-on-surface-variant pt-0.5">Checking availability...</p>
+              )}
             </div>
 
             <div className="space-y-1">

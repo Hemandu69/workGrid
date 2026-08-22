@@ -9,6 +9,8 @@ import {
   addTaskCommentSchema,
 } from '../../schemas/task.schema.js';
 import { requireRole } from '../../plugins/auth.js';
+import { paginationQuerySchema } from '../../schemas/pagination.schema.js';
+import { withIdempotency } from '../../utils/idempotency-helper.js';
 import { TaskPriority, TaskStatus, UserRole } from '@prisma/client';
 
 function sendError(reply: FastifyReply, err: unknown, fallbackMessage: string) {
@@ -49,8 +51,18 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
       const statusValue = query.status?.toUpperCase();
       const priorityValue = query.priority?.toUpperCase();
 
+      const paginationResult = paginationQuerySchema.safeParse(request.query);
+      if (!paginationResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Invalid pagination parameters',
+          details: paginationResult.error.format(),
+        });
+      }
+
       try {
-        const tasks = await TaskService.getTasks(
+        const result = await TaskService.getTasks(
           {
             status: statusValue && statusValue in TaskStatus ? (statusValue as TaskStatus) : undefined,
             priority: priorityValue && priorityValue in TaskPriority ? (priorityValue as TaskPriority) : undefined,
@@ -59,9 +71,10 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
             campaignId: query.campaignId || undefined,
             search: query.search || undefined,
           },
-          request.user
+          request.user,
+          paginationResult.data
         );
-        return reply.send(tasks);
+        return reply.send(result);
       } catch (err: unknown) {
         return sendError(reply, err, 'Failed to query tasks');
       }
@@ -132,8 +145,10 @@ export const taskRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       try {
-        const task = await TaskService.createTask(parseResult.data, request.user);
-        return reply.status(201).send(task);
+        await withIdempotency(request, reply, 'task.create', async () => {
+          const task = await TaskService.createTask(parseResult.data, request.user);
+          return { statusCode: 201, body: task };
+        });
       } catch (err: unknown) {
         return sendError(reply, err, 'Failed to create task');
       }

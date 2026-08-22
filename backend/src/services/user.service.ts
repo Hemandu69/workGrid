@@ -1,16 +1,20 @@
 import { prisma } from '../db/client.js';
 import { AccountStatus, UserRole, UserStatus } from '@prisma/client';
+import { DEFAULT_PAGE_LIMIT } from '../schemas/pagination.schema.js';
 
 export class UserService {
-  static async getUsers(filters: {
-    role?: UserRole;
-    accountStatus?: AccountStatus;
-    status?: UserStatus;
-    roomId?: string;
-    subroomId?: string;
-    search?: string;
-    organizationId?: string;
-  }) {
+  static async getUsers(
+    filters: {
+      role?: UserRole;
+      accountStatus?: AccountStatus;
+      status?: UserStatus;
+      roomId?: string;
+      subroomId?: string;
+      search?: string;
+      organizationId?: string;
+    },
+    pagination: { limit: number; offset: number } = { limit: DEFAULT_PAGE_LIMIT, offset: 0 }
+  ) {
     const where: any = {};
 
     if (filters.organizationId) where.organizationId = filters.organizationId;
@@ -28,31 +32,41 @@ export class UserService {
       ];
     }
 
-    const users = await prisma.user.findMany({
-      where,
-      orderBy: { name: 'asc' },
-      include: {
-        room: true,
-        subroom: true,
-      },
-    });
+    const [total, users] = await prisma.$transaction(async (tx) => [
+      await tx.user.count({ where }),
+      await tx.user.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        include: {
+          room: true,
+          subroom: true,
+        },
+        take: pagination.limit,
+        skip: pagination.offset,
+      }),
+    ]);
 
-    return users.map((u) => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      role: u.role,
-      accountStatus: u.accountStatus,
-      status: u.status,
-      presenceState: u.presenceState,
-      title: u.title,
-      avatarUrl: u.avatarUrl,
-      capacityLimitHours: u.capacityLimitHours,
-      currentAllocatedHours: u.currentAllocatedHours,
-      room: u.room ? `Room ${u.room.letter}` : undefined,
-      subroom: u.subroom ? u.subroom.code : undefined,
-      createdAt: u.createdAt,
-    }));
+    return {
+      items: users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        accountStatus: u.accountStatus,
+        status: u.status,
+        presenceState: u.presenceState,
+        title: u.title,
+        avatarUrl: u.avatarUrl,
+        capacityLimitHours: u.capacityLimitHours,
+        currentAllocatedHours: u.currentAllocatedHours,
+        room: u.room ? `Room ${u.room.letter}` : undefined,
+        subroom: u.subroom ? u.subroom.code : undefined,
+        createdAt: u.createdAt,
+      })),
+      total,
+      limit: pagination.limit,
+      offset: pagination.offset,
+    };
   }
 
   static async getUserById(id: string, organizationId?: string) {

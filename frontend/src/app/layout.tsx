@@ -4,6 +4,7 @@ import './globals.css';
 import { AuthProvider } from '../lib/auth-context';
 import { RealtimeProvider } from '../lib/realtime-context';
 import { NotificationsProvider } from '../lib/notifications-context';
+import { QueryProvider } from '../lib/query-client';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -30,11 +31,13 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-surface text-on-surface antialiased min-h-screen font-sans">
-        <AuthProvider>
-          <RealtimeProvider>
-            <NotificationsProvider>{children}</NotificationsProvider>
-          </RealtimeProvider>
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <RealtimeProvider>
+              <NotificationsProvider>{children}</NotificationsProvider>
+            </RealtimeProvider>
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );

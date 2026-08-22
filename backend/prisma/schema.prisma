@@ -198,6 +198,7 @@ model User {
   @@index([organizationId, role])
   @@index([organizationId, accountStatus])
   @@index([roomId, subroomId])
+  @@index([organizationId, presenceState])
   @@map("users")
 }
 
@@ -365,6 +366,7 @@ model Task {
   @@index([organizationId, status, dueDate])
   @@index([assigneeId, status])
   @@index([organizationId, taskType, teamSection, status])
+  @@index([organizationId, assigneeId, status])
   @@map("tasks")
 }
 
@@ -405,6 +407,7 @@ model Announcement {
   author       User?        @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, status, publishedAt])
+  @@index([organizationId, scope, targetRoom])
   @@map("announcements")
 }
 
@@ -489,6 +492,7 @@ model AuditEvent {
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
   @@map("audit_events")
 }
 
