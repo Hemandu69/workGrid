@@ -178,33 +178,35 @@ export class AvailabilityService {
       throw new Error(`User with ID ${userId} not found`);
     }
 
-    // Transactionally update slots
-    await prisma.$transaction(async (tx) => {
-      for (const slot of input.slots) {
-        await tx.availabilitySlot.upsert({
+    // A full-grid save touches ~90+ slots at once — looping individual
+    // upserts inside one interactive transaction was slow enough to blow
+    // Prisma's default transaction timeout (observed failing in practice).
+    // Bulk delete + createMany replaces the same (day, hour) rows in two
+    // round trips instead of one per slot.
+    if (input.slots.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        await tx.availabilitySlot.deleteMany({
           where: {
-            userId_day_hour: {
-              userId,
-              day: slot.day,
-              hour: slot.hour,
-            },
+            userId,
+            OR: input.slots.map((slot) => ({ day: slot.day, hour: slot.hour })),
           },
-          update: {
-            state: slot.state,
-            taskId: slot.taskId,
-          },
-          create: {
+        });
+        await tx.availabilitySlot.createMany({
+          data: input.slots.map((slot) => ({
             userId,
             day: slot.day,
             hour: slot.hour,
             state: slot.state,
             taskId: slot.taskId,
-          },
+          })),
         });
-      }
-    });
+      });
+    }
 
-    // Publish Real-Time Domain Event (Organization Scoped)
+    // Publish Real-Time Domain Event. Payload is intentionally minimal —
+    // never put name/status/location on the wire here; authorized clients
+    // refetch the (correctly role-scoped) REST endpoints on receipt. See
+    // socket.ts's dedicated AVAILABILITY_CHANGED dispatch branch for delivery.
     publishDomainEvent({
       type: 'AVAILABILITY_CHANGED',
       organizationId: user.organizationId,
@@ -213,7 +215,10 @@ export class AvailabilityService {
       actorId: userId,
       payload: {
         userId: user.id,
-        slotsUpdatedCount: input.slots.length,
+        personId: user.id,
+        organizationId: user.organizationId,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
       },
     });
 
@@ -254,8 +259,6 @@ export class AvailabilityService {
       throw error;
     }
 
-    const previousState = availabilityFromUserStatus(user.status);
-
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -271,6 +274,10 @@ export class AvailabilityService {
       roomLetter: user.room?.letter,
     });
 
+    // Payload is intentionally minimal — never put name/status/location on
+    // the wire here; authorized clients refetch the (correctly role-scoped)
+    // REST endpoints on receipt. See socket.ts's dedicated AVAILABILITY_CHANGED
+    // dispatch branch for delivery scoping.
     publishDomainEvent({
       type: 'AVAILABILITY_CHANGED',
       organizationId: user.organizationId,
@@ -280,18 +287,9 @@ export class AvailabilityService {
       payload: {
         userId: user.id,
         personId: user.id,
-        name: user.name,
-        role: user.role,
         organizationId: user.organizationId,
-        previousAvailabilityState: previousState,
-        availabilityState: state,
-        availabilityLabel: AVAILABILITY_LABELS[state],
-        status: updated.status,
-        presenceState: updated.presenceState,
-        currentLocation,
-        section: user.room?.letter,
-        subroomCode: user.subroom?.code,
-        timestamp: now.toISOString(),
+        roomId: user.roomId,
+        subroomId: user.subroomId,
       },
     });
 

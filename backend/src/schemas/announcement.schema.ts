@@ -12,3 +12,15 @@ export const createAnnouncementSchema = z.object({
 });
 
 export type CreateAnnouncementInput = z.infer<typeof createAnnouncementSchema>;
+
+export const updateAnnouncementSchema = z
+  .object({
+    title: z.string().min(3).max(200).optional(),
+    content: z.string().min(5).max(5000).optional(),
+    scope: z.nativeEnum(AudienceScope).optional(),
+    targetRoom: z.string().optional(),
+    scheduledFor: z.string().datetime().optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
+
+export type UpdateAnnouncementInput = z.infer<typeof updateAnnouncementSchema>;

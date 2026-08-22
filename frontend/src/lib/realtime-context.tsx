@@ -54,6 +54,10 @@ export type DomainEventType =
   | 'NOTIFICATION_CREATED'
   | 'NOTIFICATION_READ'
   | 'ANNOUNCEMENT_CREATED'
+  | 'ANNOUNCEMENT_UPDATED'
+  | 'ANNOUNCEMENT_DELETED'
+  | 'ANNOUNCEMENT_PINNED'
+  | 'ANNOUNCEMENT_UNPINNED'
   // Organization Events (scheduled events + attendance polling) — distinct
   // from the room/company supervisory EVENT_* types above.
   | 'ORG_EVENT_CREATED'

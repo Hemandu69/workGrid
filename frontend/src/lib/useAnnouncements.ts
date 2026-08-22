@@ -19,7 +19,13 @@ export function announcementQueryKey(filters: AnnouncementFilters = {}) {
   return [ANNOUNCEMENTS_QUERY_KEY_PREFIX, filters] as const;
 }
 
-const ANNOUNCEMENT_EVENT_TYPES: DomainEventType[] = ['ANNOUNCEMENT_CREATED'];
+const ANNOUNCEMENT_EVENT_TYPES: DomainEventType[] = [
+  'ANNOUNCEMENT_CREATED',
+  'ANNOUNCEMENT_UPDATED',
+  'ANNOUNCEMENT_DELETED',
+  'ANNOUNCEMENT_PINNED',
+  'ANNOUNCEMENT_UNPINNED',
+];
 
 function useAnnouncementRealtimeSync() {
   const queryClient = useQueryClient();

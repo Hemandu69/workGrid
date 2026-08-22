@@ -14,19 +14,24 @@ function sendAssignmentError(reply: any, err: unknown, fallbackMessage: string) 
 
 export const roomRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/rooms
-  fastify.get('/', async (request, reply) => {
-    try {
-      const rooms = await RoomService.getAllRooms();
-      return reply.send(rooms);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch rooms';
-      return reply.status(500).send({
-        statusCode: 500,
-        error: 'Internal Server Error',
-        message,
-      });
+  // Protected: authenticated users only, always scoped to their own organization.
+  fastify.get(
+    '/',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const rooms = await RoomService.getAllRooms(request.user.organizationId);
+        return reply.send(rooms);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to fetch rooms';
+        return reply.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message,
+        });
+      }
     }
-  });
+  );
 
   // GET /api/v1/rooms/:letter
   // If called with a SERVER token, enforces that the Server can only inspect their assigned room.

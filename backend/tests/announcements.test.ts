@@ -38,6 +38,8 @@ const { mockPrisma } = vi.hoisted(() => ({
     announcement: {
       count: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
     },
     $transaction: vi.fn(),
   },
@@ -52,6 +54,9 @@ describe('Announcement Endpoints (/api/v1/announcements)', () => {
   let app: FastifyInstance;
   let memberToken: string;
   let otherOrgMemberToken: string;
+  let adminToken: string;
+  let superAdminToken: string;
+  let otherOrgAdminToken: string;
 
   beforeAll(async () => {
     app = await buildApp();
@@ -72,6 +77,30 @@ describe('Announcement Endpoints (/api/v1/announcements)', () => {
       role: UserRole.MEMBER,
       organizationId: 'other-org-id',
     });
+
+    adminToken = app.jwt.sign({
+      id: 'test-admin-id',
+      email: 'admin@workgrid.corp',
+      name: 'Test Admin',
+      role: UserRole.ADMIN,
+      organizationId: 'test-org-id',
+    });
+
+    superAdminToken = app.jwt.sign({
+      id: 'test-superadmin-id',
+      email: 'superadmin@workgrid.corp',
+      name: 'Test Super Admin',
+      role: UserRole.SUPER_ADMIN,
+      organizationId: 'test-org-id',
+    });
+
+    otherOrgAdminToken = app.jwt.sign({
+      id: 'other-org-admin-id',
+      email: 'admin@other-org.corp',
+      name: 'Other Org Admin',
+      role: UserRole.ADMIN,
+      organizationId: 'other-org-id',
+    });
   });
 
   afterAll(async () => {
@@ -90,6 +119,13 @@ describe('Announcement Endpoints (/api/v1/announcements)', () => {
     return FIXTURE_ANNOUNCEMENTS.filter((a) => !orgId || a.organizationId === orgId).length;
   });
   mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
+  mockPrisma.announcement.findUnique.mockImplementation(async (args: any) => {
+    return FIXTURE_ANNOUNCEMENTS.find((a) => a.id === args?.where?.id) || null;
+  });
+  mockPrisma.announcement.update.mockImplementation(async (args: any) => {
+    const existing = FIXTURE_ANNOUNCEMENTS.find((a) => a.id === args?.where?.id);
+    return { ...existing, ...args.data };
+  });
 
   it('GET /api/v1/announcements requires authentication (401 without a token)', async () => {
     const res = await supertest(app.server).get('/api/v1/announcements');
@@ -127,5 +163,142 @@ describe('Announcement Endpoints (/api/v1/announcements)', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('Forbidden');
+  });
+
+  describe('PATCH /api/v1/announcements/:id (edit)', () => {
+    it('ADMIN can edit an announcement', async () => {
+      const res = await supertest(app.server)
+        .patch('/api/v1/announcements/ann-1-id')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ title: 'Updated Title' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe('Updated Title');
+    });
+
+    it('SUPER_ADMIN can edit an announcement', async () => {
+      const res = await supertest(app.server)
+        .patch('/api/v1/announcements/ann-1-id')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ content: 'Updated content' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.content).toBe('Updated content');
+    });
+
+    it('unauthorized MEMBER cannot edit', async () => {
+      const res = await supertest(app.server)
+        .patch('/api/v1/announcements/ann-1-id')
+        .set('Authorization', `Bearer ${memberToken}`)
+        .send({ title: 'Should not work' });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 404 for an announcement in another organization', async () => {
+      const res = await supertest(app.server)
+        .patch('/api/v1/announcements/ann-2-id')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ title: 'Cross-org edit attempt' });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('an ADMIN from another organization cannot edit this organization\'s announcement', async () => {
+      const res = await supertest(app.server)
+        .patch('/api/v1/announcements/ann-1-id')
+        .set('Authorization', `Bearer ${otherOrgAdminToken}`)
+        .send({ title: 'Cross-org edit attempt' });
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('DELETE /api/v1/announcements/:id', () => {
+    it('an authorized ADMIN can delete (soft-delete) an announcement', async () => {
+      const res = await supertest(app.server)
+        .delete('/api/v1/announcements/ann-1-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(204);
+      expect(mockPrisma.announcement.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'ann-1-id' },
+          data: { status: 'ARCHIVED' },
+        })
+      );
+    });
+
+    it('unauthorized MEMBER cannot delete', async () => {
+      const res = await supertest(app.server)
+        .delete('/api/v1/announcements/ann-1-id')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 404 for an announcement in another organization', async () => {
+      const res = await supertest(app.server)
+        .delete('/api/v1/announcements/ann-2-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('POST /api/v1/announcements/:id/pin and /unpin', () => {
+    it('pin persists pinned:true', async () => {
+      const res = await supertest(app.server)
+        .post('/api/v1/announcements/ann-1-id/pin')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.pinned).toBe(true);
+      expect(mockPrisma.announcement.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'ann-1-id' }, data: { pinned: true } })
+      );
+    });
+
+    it('unpin persists pinned:false', async () => {
+      const res = await supertest(app.server)
+        .post('/api/v1/announcements/ann-1-id/unpin')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.pinned).toBe(false);
+      expect(mockPrisma.announcement.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'ann-1-id' }, data: { pinned: false } })
+      );
+    });
+
+    it('unauthorized MEMBER cannot pin', async () => {
+      const res = await supertest(app.server)
+        .post('/api/v1/announcements/ann-1-id/pin')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('GET /api/v1/announcements default status filtering', () => {
+    it('excludes ARCHIVED announcements by default', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/announcements')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(200);
+      const calledWhere = mockPrisma.announcement.findMany.mock.calls.at(-1)?.[0]?.where;
+      expect(calledWhere.status).toEqual({ not: 'ARCHIVED' });
+    });
+
+    it('explicit ?status=ARCHIVED overrides the default exclusion', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/announcements?status=ARCHIVED')
+        .set('Authorization', `Bearer ${memberToken}`);
+
+      expect(res.status).toBe(200);
+      const calledWhere = mockPrisma.announcement.findMany.mock.calls.at(-1)?.[0]?.where;
+      expect(calledWhere.status).toBe('ARCHIVED');
+    });
   });
 });

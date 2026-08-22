@@ -20,6 +20,12 @@ export function userQueryKey(filters: UserFilters = {}) {
   return [USERS_QUERY_KEY_PREFIX, filters] as const;
 }
 
+// AVAILABILITY_CHANGED is deliberately excluded: it's now delivered only to
+// admins, the affected user's own sessions, and the SERVER(s) overseeing
+// their room (never broadcast org-wide, to avoid leaking one member's
+// availability to unrelated peers) — so subscribing here would almost never
+// fire for the MEMBER/TEAM_LEAD peer lists this hook backs. Those lists
+// pick up availability changes on next navigation/refetch instead.
 const USER_EVENT_TYPES: DomainEventType[] = [
   'EMPLOYEE_UPDATED',
   'EMPLOYEE_APPROVED',
@@ -27,7 +33,6 @@ const USER_EVENT_TYPES: DomainEventType[] = [
   'EMPLOYEE_DEACTIVATED',
   'ROLE_CHANGED',
   'ACCOUNT_STATUS_CHANGED',
-  'AVAILABILITY_CHANGED',
   'PRESENCE_CHANGED',
   'ROOM_ASSIGNMENT_CHANGED',
   'LOCATION_CHANGED',

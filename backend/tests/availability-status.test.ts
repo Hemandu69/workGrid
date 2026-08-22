@@ -196,7 +196,7 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(call.data).not.toHaveProperty('currentLocationSubroomId');
   });
 
-  it('4. emits AVAILABILITY_CHANGED carrying the new state and the target person', async () => {
+  it('4. emits AVAILABILITY_CHANGED identifying the target person, with no private detail in the payload', async () => {
     await supertest(app.server)
       .post('/api/v1/availability/status')
       .set('Authorization', `Bearer ${memberToken}`)
@@ -205,9 +205,16 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     const event = capturedEvents.find((e) => e.type === 'AVAILABILITY_CHANGED');
     expect(event).toBeDefined();
     expect(event!.targetUserId).toBe('usr-sarah');
-    expect(event!.payload.availabilityState).toBe('BUSY');
-    expect(event!.payload.previousAvailabilityState).toBe('FREE');
     expect(event!.payload.userId).toBe('usr-sarah');
+    expect(event!.payload.personId).toBe('usr-sarah');
+    // The wire payload is intentionally minimal — authorized clients refetch
+    // the role-scoped REST endpoints rather than trusting socket data.
+    expect(event!.payload).not.toHaveProperty('availabilityState');
+    expect(event!.payload).not.toHaveProperty('previousAvailabilityState');
+    expect(event!.payload).not.toHaveProperty('name');
+    expect(event!.payload).not.toHaveProperty('status');
+    expect(event!.payload).not.toHaveProperty('presenceState');
+    expect(event!.payload).not.toHaveProperty('currentLocation');
   });
 
   it('5. scopes the broadcast to the actor’s organization only', async () => {
@@ -333,7 +340,8 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(userState['usr-sarah'].status).toBe(UserStatus.BUSY);
 
     const availabilityEvents = capturedEvents.filter((e) => e.type === 'AVAILABILITY_CHANGED');
-    expect(availabilityEvents[availabilityEvents.length - 1].payload.availabilityState).toBe('BUSY');
+    expect(availabilityEvents).toHaveLength(3);
+    expect(availabilityEvents[availabilityEvents.length - 1].payload.userId).toBe('usr-sarah');
   });
 
   it('17. emits one AVAILABILITY_CHANGED per accepted change, each with a unique id', async () => {

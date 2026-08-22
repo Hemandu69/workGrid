@@ -3,7 +3,7 @@ import { Room } from '../types/room';
 import { Task, TaskCampaign, TaskComment, TaskPriority, TaskHistoryEntry, TaskAnalytics } from '../types/task';
 import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
-import { WeeklyAvailabilitySchedule } from '../types/availability';
+import { WeeklyAvailabilitySchedule, DayOfWeek, HourlySlot } from '../types/availability';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
 import { PaginatedResult, CursorResult } from '../types/pagination';
 
@@ -32,6 +32,19 @@ function buildQueryParams(filters: Record<string, string | number | undefined>):
     if (value !== undefined && value !== '') params.set(key, String(value));
   }
   return params;
+}
+
+/** The backend serializes `days` as an array of {day, slots} — not the Record<DayOfWeek, HourlySlot[]> the rest of the frontend expects. */
+interface RawWeeklyAvailabilitySchedule extends Omit<WeeklyAvailabilitySchedule, 'days'> {
+  days: Array<{ day: DayOfWeek; slots: HourlySlot[] }>;
+}
+
+function normalizeWeeklySchedule(raw: RawWeeklyAvailabilitySchedule): WeeklyAvailabilitySchedule {
+  const days = {} as Record<DayOfWeek, HourlySlot[]>;
+  for (const entry of raw.days) {
+    days[entry.day] = entry.slots;
+  }
+  return { ...raw, days };
 }
 
 async function request<T>(
@@ -323,17 +336,39 @@ export const apiClient = {
       token
     );
   },
+  updateAnnouncement: async (
+    announcementId: string,
+    data: Partial<{ title: string; content: string; scope: string; targetRoom: string }>,
+    token?: string
+  ): Promise<Announcement> => {
+    return request<Announcement>(
+      `/api/v1/announcements/${announcementId}`,
+      { method: 'PATCH', body: JSON.stringify(data) },
+      token
+    );
+  },
+  deleteAnnouncement: async (announcementId: string, token?: string): Promise<void> => {
+    await request<void>(`/api/v1/announcements/${announcementId}`, { method: 'DELETE' }, token);
+  },
+  setAnnouncementPinned: async (announcementId: string, pinned: boolean, token?: string): Promise<Announcement> => {
+    return request<Announcement>(
+      `/api/v1/announcements/${announcementId}/${pinned ? 'pin' : 'unpin'}`,
+      { method: 'POST' },
+      token
+    );
+  },
 
   // Availability
   getUserAvailability: async (userId: string): Promise<WeeklyAvailabilitySchedule> => {
-    return request<WeeklyAvailabilitySchedule>(`/api/v1/users/${userId}/availability`);
+    const raw = await request<RawWeeklyAvailabilitySchedule>(`/api/v1/users/${userId}/availability`);
+    return normalizeWeeklySchedule(raw);
   },
   updateUserAvailability: async (
     userId: string,
     schedule: { slots: { day: string; hour: number; state: string; taskId?: string }[]; timezone?: string },
     token?: string
   ): Promise<WeeklyAvailabilitySchedule> => {
-    return request<WeeklyAvailabilitySchedule>(
+    const raw = await request<RawWeeklyAvailabilitySchedule>(
       `/api/v1/users/${userId}/availability`,
       {
         method: 'PUT',
@@ -341,6 +376,7 @@ export const apiClient = {
       },
       token
     );
+    return normalizeWeeklySchedule(raw);
   },
   getPeopleAvailability: async (
     params: {

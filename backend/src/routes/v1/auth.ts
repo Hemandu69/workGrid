@@ -9,10 +9,20 @@ import {
 import { AuthService } from '../../services/auth.service.js';
 import { AUTH_COOKIE_NAME } from '../../plugins/auth.js';
 import { config } from '../../config/index.js';
+import {
+  EMAIL_AVAILABILITY_RATE_LIMIT_TTL_SECONDS,
+  LOGIN_RATE_LIMIT_TTL_SECONDS,
+  REGISTER_RATE_LIMIT_TTL_SECONDS,
+  PASSWORD_RESET_RATE_LIMIT_TTL_SECONDS,
+} from '../../redis/ttl-config.js';
 
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
-  // POST /api/v1/auth/login
-  fastify.post('/login', async (request, reply) => {
+  // POST /api/v1/auth/login — tighter than the global default since it's
+  // unauthenticated and the highest-value target for credential stuffing.
+  fastify.post(
+    '/login',
+    { config: { rateLimit: { max: 10, timeWindow: LOGIN_RATE_LIMIT_TTL_SECONDS * 1000 } } },
+    async (request, reply) => {
     const parseResult = loginSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -51,7 +61,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         message,
       });
     }
-  });
+    }
+  );
 
   // GET /api/v1/auth/email-availability — public (matches /register's own
   // no-auth requirement: you can't be logged in before you've registered).
@@ -59,7 +70,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   // and could otherwise be probed for email enumeration at volume.
   fastify.get(
     '/email-availability',
-    { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+    { config: { rateLimit: { max: 10, timeWindow: EMAIL_AVAILABILITY_RATE_LIMIT_TTL_SECONDS * 1000 } } },
     async (request, reply) => {
       const parseResult = emailAvailabilityQuerySchema.safeParse(request.query);
       if (!parseResult.success) {
@@ -86,7 +97,10 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /api/v1/auth/register (Optional public onboarding; defaults to MEMBER and PENDING)
-  fastify.post('/register', async (request, reply) => {
+  fastify.post(
+    '/register',
+    { config: { rateLimit: { max: 5, timeWindow: REGISTER_RATE_LIMIT_TTL_SECONDS * 1000 } } },
+    async (request, reply) => {
     const parseResult = registerSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -112,7 +126,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         message,
       });
     }
-  });
+    }
+  );
 
   // GET /api/v1/auth/me (Protected: Authoritative user identity source of truth)
   fastify.get('/me', { preHandler: [fastify.authenticate] }, async (request, reply) => {
@@ -155,8 +170,12 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     });
   });
 
-  // POST /api/v1/auth/forgot-password
-  fastify.post('/forgot-password', async (request, reply) => {
+  // POST /api/v1/auth/forgot-password — the tightest of these four: each
+  // accepted request sends an email, making this the highest-abuse-value target.
+  fastify.post(
+    '/forgot-password',
+    { config: { rateLimit: { max: 3, timeWindow: PASSWORD_RESET_RATE_LIMIT_TTL_SECONDS * 1000 } } },
+    async (request, reply) => {
     const parseResult = forgotPasswordSchema.safeParse(request.body);
     if (!parseResult.success) {
       return reply.status(400).send({
@@ -178,7 +197,8 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         message,
       });
     }
-  });
+    }
+  );
 
   // POST /api/v1/auth/reset-password
   fastify.post('/reset-password', async (request, reply) => {

@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { AnnouncementCard } from '../../../components/announcements/AnnouncementCard';
 import { CreateAnnouncementModal } from '../../../components/announcements/CreateAnnouncementModal';
@@ -8,37 +8,21 @@ import { EventsManagementView } from '../../../components/events/EventsManagemen
 import { Button } from '../../../components/ui/Button';
 import { Announcement } from '../../../types/announcement';
 import { apiClient } from '../../../lib/api-client';
-import { useDomainEvent } from '../../../lib/realtime-context';
+import { useAnnouncements } from '../../../lib/useAnnouncements';
 import { useAuth } from '../../../lib/auth-context';
 
 type AnnouncementsTab = 'ALL' | 'PUBLISHED' | 'DRAFT' | 'EVENTS';
 
 export default function SuperAdminAnnouncementsPage() {
   const { role } = useAuth();
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
   const [tab, setTab] = useState<AnnouncementsTab>('ALL');
-  const [isLoading, setIsLoading] = useState(true);
 
-  const fetchAnnouncements = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const data = await apiClient.getAnnouncements({ limit: 100 });
-      setAnnouncements(data.items);
-    } catch {
-      // Clean error handling
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const { data, isLoading } = useAnnouncements({ limit: 100 });
+  const announcements = data?.items ?? [];
 
-  useEffect(() => {
-    fetchAnnouncements();
-  }, [fetchAnnouncements]);
-
-  useDomainEvent('ANNOUNCEMENT_CREATED', () => {
-    fetchAnnouncements();
-  });
+  const canManage = role === 'ADMIN' || role === 'SUPER_ADMIN';
 
   const filtered = announcements.filter(
     (a) => tab === 'ALL' || tab === 'EVENTS' || a.status === tab
@@ -46,6 +30,24 @@ export default function SuperAdminAnnouncementsPage() {
 
   const dashboardHref = role === 'ADMIN' ? '/admin' : '/super-admin';
   const dashboardLabel = role === 'ADMIN' ? 'Admin' : 'Super Admin';
+
+  const handleCloseModal = () => {
+    setIsCreateOpen(false);
+    setEditingAnnouncement(null);
+  };
+
+  const handleEdit = (announcement: Announcement) => {
+    setEditingAnnouncement(announcement);
+    setIsCreateOpen(true);
+  };
+
+  const handleDelete = async (announcement: Announcement) => {
+    await apiClient.deleteAnnouncement(announcement.id);
+  };
+
+  const handleTogglePin = async (announcement: Announcement) => {
+    await apiClient.setAnnouncementPinned(announcement.id, !announcement.pinned);
+  };
 
   return (
     <AppShell
@@ -109,18 +111,25 @@ export default function SuperAdminAnnouncementsPage() {
               </div>
             ) : (
               filtered.map((ann) => (
-                <AnnouncementCard key={ann.id} announcement={ann} />
+                <AnnouncementCard
+                  key={ann.id}
+                  announcement={ann}
+                  canManage={canManage}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onTogglePin={handleTogglePin}
+                />
               ))
             )}
           </div>
         )}
       </div>
 
-      {/* Create Modal */}
+      {/* Create / Edit Modal */}
       <CreateAnnouncementModal
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        onCreated={() => fetchAnnouncements()}
+        onClose={handleCloseModal}
+        announcement={editingAnnouncement}
       />
     </AppShell>
   );
