@@ -88,7 +88,7 @@ export function ProvisionPersonModal({
         )}
 
         <div className="p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-900 leading-relaxed">
-          <strong>Onboarding Notice:</strong> Provisioned accounts are created with{' '}
+          <strong>Onboarding Notice:</strong> New accounts are created with{' '}
           <span className="font-mono font-semibold">PENDING</span> status by default. They can be reviewed, assigned specific roles, and activated before gaining operational access.
         </div>
 

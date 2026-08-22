@@ -142,7 +142,7 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
         {/* Task Title */}
         <Input
           label="Task Title"
-          placeholder="e.g. Audit Redis Rate Limiter Policies"
+          placeholder="e.g. Review Q3 Client Onboarding Checklist"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required

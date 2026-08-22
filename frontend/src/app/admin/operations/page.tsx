@@ -19,7 +19,6 @@ export default function AdminOperationsPage() {
   const { user, role } = useAuth();
   const [gridData, setGridData] = useState<OperationalGridResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isResettingSim, setIsResettingSim] = useState(false);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -89,8 +88,8 @@ export default function AdminOperationsPage() {
     fetchGrid(true);
   }, [fetchGrid]);
 
-  // Real-Time Domain Event Subscription — silently refresh grid on any operational state change
-  // (real attendance OR simulated personnel). Uses eventTypeKey stabilization in useDomainEvent.
+  // Real-Time Domain Event Subscription — silently refresh grid on any operational state change.
+  // Uses eventTypeKey stabilization in useDomainEvent.
   useDomainEvent(
     [
       'GRID_UPDATED',
@@ -109,28 +108,6 @@ export default function AdminOperationsPage() {
       fetchGridRef.current(false);
     }
   );
-
-  const handleToggleSimulated = async (id: string, presenceState?: 'IN' | 'OUT') => {
-    try {
-      await apiClient.toggleSimulatedPresence(id, presenceState);
-      // Silent refresh so KPIs/coverage update immediately even if Socket.IO is briefly delayed
-      fetchGrid(false);
-    } catch (err) {
-      console.error('Failed to toggle simulated presence:', err);
-    }
-  };
-
-  const handleResetSimulation = async () => {
-    try {
-      setIsResettingSim(true);
-      await apiClient.resetSimulation();
-      fetchGrid(false);
-    } catch (err) {
-      console.error('Failed to reset simulation:', err);
-    } finally {
-      setIsResettingSim(false);
-    }
-  };
 
   if (!isAuthorized) {
     return (
@@ -192,17 +169,6 @@ export default function AdminOperationsPage() {
                 <span>Live IST: {currentClock}</span>
               </div>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleResetSimulation}
-              isLoading={isResettingSim}
-              leftIcon={<span className="material-symbols-outlined text-[16px]">restart_alt</span>}
-              title="Reset simulated test personnel to initial fixture state"
-            >
-              Reset Simulation
-            </Button>
 
             <Button
               variant="primary"
@@ -288,7 +254,6 @@ export default function AdminOperationsPage() {
           <ServerCoverageCard
             rooms={gridData.rooms}
             onSelectServer={(id) => setSelectedPersonId(id)}
-            onToggleSimulated={handleToggleSimulated}
           />
         )}
 
@@ -323,7 +288,6 @@ export default function AdminOperationsPage() {
               rooms={gridData.rooms}
               onSelectPerson={(id) => setSelectedPersonId(id)}
               onSelectEvent={(id) => setSelectedEventId(id)}
-              onToggleSimulated={handleToggleSimulated}
               presenceFilter={presenceFilter}
               roleFilter={roleFilter}
             />

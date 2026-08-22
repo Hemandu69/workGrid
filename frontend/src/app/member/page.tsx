@@ -250,7 +250,7 @@ export default function MemberDashboard() {
                 </div>
 
                 <p className="text-[11px] text-on-surface-variant mt-2 leading-tight">
-                  Recurring 7-day schedule evaluated in UTC. Tasks are scheduled within non-conflicting capacity.
+                  Your weekly schedule repeats automatically. Tasks are placed into times that don&apos;t conflict with your existing work.
                 </p>
               </div>
             </Card>

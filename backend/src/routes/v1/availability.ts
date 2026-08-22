@@ -1,7 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { AvailabilityService } from '../../services/availability.service.js';
 import { updateWeeklyScheduleSchema, setAvailabilityStatusSchema } from '../../schemas/availability.schema.js';
-import { SimulationService } from '../../services/simulation.service.js';
 import { AvailabilityState } from '../../utils/availability-projection.js';
 import { requireRole } from '../../plugins/auth.js';
 import { UserRole } from '@prisma/client';
@@ -229,13 +228,10 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        const sim = SimulationService.getSimulatedPerson(targetPersonId);
-        const inScope = sim
-          ? sim.sectionLetter.toUpperCase() === serverRoomLetter
-          : await prisma.user
-              .findUnique({ where: { id: targetPersonId } })
-              .then((u) => Boolean(u && u.roomId && u.roomId === serverRoomId))
-              .catch(() => false);
+        const inScope = await prisma.user
+          .findUnique({ where: { id: targetPersonId } })
+          .then((u) => Boolean(u && u.roomId && u.roomId === serverRoomId))
+          .catch(() => false);
 
         if (!inScope) {
           return reply.status(403).send({

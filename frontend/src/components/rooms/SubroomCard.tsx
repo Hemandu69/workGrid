@@ -103,7 +103,7 @@ export function SubroomCard({ subroom, onManageCapacity, isUserSubroom }: Subroo
 
       {/* Footer Controls */}
       <div className="pt-2 border-t border-surface-outline flex items-center justify-between text-[11px] text-on-surface-variant">
-        <span className="font-mono">{occupancyPercentage}% Saturation</span>
+        <span className="font-mono">{occupancyPercentage}% Occupied</span>
         {onManageCapacity && (
           <button
             onClick={() => onManageCapacity(subroom)}
