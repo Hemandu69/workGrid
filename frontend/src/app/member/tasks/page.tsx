@@ -24,10 +24,9 @@ export default function MemberTasksPage() {
         status: statusFilter !== 'ALL' ? statusFilter : undefined,
         priority: priorityFilter !== 'ALL' ? priorityFilter : undefined,
         search: searchQuery.trim() || undefined,
+        limit: 200,
       });
-      if (data && Array.isArray(data)) {
-        setTasks(data);
-      }
+      setTasks(data.items);
     } catch {
       // Fallback
     }

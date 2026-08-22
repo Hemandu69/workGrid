@@ -5,6 +5,7 @@ import supertest from 'supertest';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { AccountStatus, UserRole } from '@prisma/client';
+import * as redisModule from '../src/redis/client.js';
 
 const mockTestUsers: any[] = [];
 const mockAuditEvents: any[] = [];
@@ -109,6 +110,14 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
   let activeUserCookie: string;
 
   beforeAll(async () => {
+    // BloomFilterService (touched by register()) fails open when Redis is
+    // unreachable — simulate that here rather than depending on a real
+    // Redis instance, consistent with the rest of the suite's mocked-only
+    // infrastructure convention.
+    vi.spyOn(redisModule, 'getRedisClient').mockImplementation(() => {
+      throw new Error('Redis unreachable (test)');
+    });
+
     app = await buildApp();
     await app.ready();
 
@@ -306,7 +315,7 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
       expect(res.body.user.accountStatus).toBe(AccountStatus.PENDING);
     });
 
-    it('POST /register should reject duplicate email with 400', async () => {
+    it('POST /register should reject duplicate email with 409 Conflict', async () => {
       const res = await supertest(app.server)
         .post('/api/v1/auth/register')
         .send({
@@ -315,7 +324,8 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
           password: 'password123',
         });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe('Conflict');
       expect(res.body.message).toContain('already exists');
     });
   });
@@ -365,6 +375,24 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
 
       // Restore user to ACTIVE
       mockTestUsers[userIndex].accountStatus = AccountStatus.ACTIVE;
+    });
+
+    it('A JWT signed before a password reset (stale version) should be rejected on REST calls (401), mirroring Socket.IO', async () => {
+      // Simulate a password reset bumping the DB user's version — activeUserToken
+      // was signed earlier in this suite and still carries the old version claim.
+      const userIndex = mockTestUsers.findIndex((u) => u.id === 'usr-active-01');
+      const originalVersion = mockTestUsers[userIndex].version;
+      mockTestUsers[userIndex].version = originalVersion + 1;
+
+      const res = await supertest(app.server)
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${activeUserToken}`);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toContain('revoked or updated');
+
+      // Restore version so subsequent tests in this file are unaffected.
+      mockTestUsers[userIndex].version = originalVersion;
     });
   });
 

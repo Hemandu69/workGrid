@@ -23,9 +23,12 @@ export interface RoomAssignmentState {
 const SECTION_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export class RoomService {
-  static async getAllRooms(organizationId?: string) {
+  static async getAllRooms(organizationId?: string, letter?: string) {
     const rooms = await prisma.room.findMany({
-      where: organizationId ? { organizationId } : undefined,
+      where: {
+        ...(organizationId ? { organizationId } : {}),
+        ...(letter ? { letter: letter.toUpperCase() } : {}),
+      },
       orderBy: { letter: 'asc' },
       include: {
         leadServer: {
@@ -129,8 +132,8 @@ export class RoomService {
   }
 
   static async getRoomByLetter(letter: string, organizationId?: string) {
-    const all = await this.getAllRooms(organizationId);
-    const room = all.find((r) => r.letter.toUpperCase() === letter.toUpperCase());
+    const all = await this.getAllRooms(organizationId, letter);
+    const room = all[0];
     if (!room) {
       throw new Error(`Room Section ${letter} not found`);
     }

@@ -17,10 +17,8 @@ export default function AdminTeamsPage() {
   const fetchUsers = useCallback(async () => {
     try {
       setIsLoading(true);
-      const data = await apiClient.getUsers({ search: search.trim() || undefined });
-      if (Array.isArray(data)) {
-        setUsers(data);
-      }
+      const data = await apiClient.getUsers({ search: search.trim() || undefined, limit: 200 });
+      setUsers(data.items);
     } catch {
       // Clean fallback
     } finally {

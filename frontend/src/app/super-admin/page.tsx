@@ -38,17 +38,17 @@ export default function SuperAdminDashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      const [statsData, annData, tasksData, roomsData, healthData] = await Promise.all([
+      const [statsData, annResult, tasksResult, roomsData, healthData] = await Promise.all([
         apiClient.getDashboardSummary().catch(() => null),
-        apiClient.getAnnouncements().catch(() => []),
-        apiClient.getTasks().catch(() => []),
+        apiClient.getAnnouncements({ limit: 50 }).catch(() => ({ items: [] as Announcement[] })),
+        apiClient.getTasks({ limit: 200 }).catch(() => ({ items: [] as Task[] })),
         apiClient.getRooms().catch(() => []),
         apiClient.getHealth().catch(() => null),
       ]);
 
       if (statsData) setStats(statsData as typeof stats);
-      if (Array.isArray(annData)) setAnnouncements(annData);
-      if (Array.isArray(tasksData)) setTasks(tasksData);
+      setAnnouncements(annResult.items);
+      setTasks(tasksResult.items);
       if (Array.isArray(roomsData)) setRooms(roomsData);
       setHealth(healthData);
     } catch {

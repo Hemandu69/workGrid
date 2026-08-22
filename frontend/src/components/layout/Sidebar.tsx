@@ -160,10 +160,10 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
   const loadOpenTaskCount = useCallback(() => {
     if (!user?.id) return;
     apiClient
-      .getTasks({ assigneeId: user.id })
-      .then((tasks) => {
+      .getTasks({ assigneeId: user.id, limit: 200 })
+      .then((result) => {
         setOpenTaskCount(
-          tasks.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length
+          result.items.filter((t) => t.status !== 'COMPLETED' && t.status !== 'CANCELLED').length
         );
       })
       .catch(() => setOpenTaskCount(0));

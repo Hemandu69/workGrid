@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { useAuth } from '../../lib/auth-context';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
@@ -10,19 +10,14 @@ import { SubroomCard } from '../../components/rooms/SubroomCard';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
-import { Task } from '../../types/task';
-import { Room } from '../../types/room';
-import { User } from '../../types/auth';
 import { formatToISTTime, formatUtcWindowToIST, getCurrentISTDateString } from '../../lib/time-utils';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
-import { apiClient } from '../../lib/api-client';
-import { useDomainEvent } from '../../lib/realtime-context';
+import { useTasks } from '../../lib/useTasks';
+import { useUsers } from '../../lib/useUsers';
+import { useRooms } from '../../lib/useRooms';
 
 export default function ServerDashboard() {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [room, setRoom] = useState<Room | null>(null);
-  const [roomMembers, setRoomMembers] = useState<User[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const [currentClock, setCurrentClock] = useState<string>('');
@@ -43,62 +38,15 @@ export default function ServerDashboard() {
 
   const serverRoomLetter = user.room ? user.room.replace('Room', '').replace('Sector', '').trim() : 'B';
 
-  const loadServerData = useCallback(async () => {
-    try {
-      const [roomsData, tasksData, usersData] = await Promise.all([
-        apiClient.getRooms().catch(() => []),
-        apiClient.getTasks({ roomLetter: serverRoomLetter }).catch(() => []),
-        apiClient.getUsers().catch(() => []),
-      ]);
+  // Shared, cached, realtime-synced — TASK_*/EMPLOYEE_*/ATTENDANCE_*/
+  // LOCATION_*/ROOM_* events invalidate these automatically.
+  const { data: roomsData } = useRooms();
+  const { data: tasksResult } = useTasks({ roomLetter: serverRoomLetter, limit: 200 });
+  const { data: usersResult } = useUsers({ limit: 200 });
 
-      if (Array.isArray(roomsData)) {
-        const found = roomsData.find((r) => r.letter === serverRoomLetter) || roomsData[0] || null;
-        setRoom(found);
-      }
-      if (Array.isArray(tasksData)) setTasks(tasksData);
-      if (Array.isArray(usersData)) {
-        const matched = usersData.filter((u) => u.room?.includes(serverRoomLetter));
-        setRoomMembers(matched);
-      }
-    } catch {
-      // Clean fallback
-    }
-  }, [serverRoomLetter]);
-
-  // Keep a stable ref to the latest loadServerData for real-time event handlers
-  const loadServerDataRef = useRef(loadServerData);
-  useEffect(() => {
-    loadServerDataRef.current = loadServerData;
-  });
-
-  useEffect(() => {
-    loadServerData();
-  }, [loadServerData]);
-
-  // Real-Time Domain Events — silent background refresh
-  useDomainEvent(
-    [
-      'TASK_CREATED',
-      'TASK_ASSIGNED',
-      'TASK_REASSIGNED',
-      'TASK_UPDATED',
-      'TASK_COMPLETED',
-      'TASK_CANCELLED',
-      'TASK_STATUS_CHANGED',
-      'TASK_PROGRESS_CHANGED',
-      'ROOM_STATUS_CHANGED',
-      'SUBROOM_STATUS_CHANGED',
-      'LOCATION_CHANGED',
-      'EMPLOYEE_CHECKED_IN',
-      'EMPLOYEE_CHECKED_OUT',
-      'ATTENDANCE_UPDATED',
-      'AVAILABILITY_CHANGED',
-      'ROOM_ASSIGNMENT_CHANGED',
-    ],
-    () => {
-      loadServerDataRef.current();
-    }
-  );
+  const room = (roomsData ?? []).find((r) => r.letter === serverRoomLetter) || roomsData?.[0] || null;
+  const tasks = tasksResult?.items ?? [];
+  const roomMembers = (usersResult?.items ?? []).filter((u) => u.room?.includes(serverRoomLetter));
 
   const totalMembers = room?.totalMembers ?? roomMembers.length;
   const totalCap = room?.totalCapacity ?? 32;

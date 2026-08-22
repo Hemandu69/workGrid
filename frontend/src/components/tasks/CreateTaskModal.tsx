@@ -1,22 +1,29 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { useAuth } from '../../lib/auth-context';
 import { TaskPriority, TaskType } from '../../types/task';
-import { User } from '../../types/auth';
-import { Room } from '../../types/room';
 import { TaskCampaign } from '../../types/task';
 import { apiClient } from '../../lib/api-client';
+import { useUsers } from '../../lib/useUsers';
+import { useRooms } from '../../lib/useRooms';
+import { Room } from '../../types/room';
 
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTaskCreated?: () => void;
 }
+
+// Stable empty-array reference so a still-loading query's `data ?? []`
+// fallback doesn't recreate a new array identity on every render (which
+// would otherwise retrigger the effect below on every re-render while
+// loading, per its `rooms` dependency).
+const EMPTY_ROOMS: Room[] = [];
 
 /** Extracts the section letter from a "Room B"-style display string. */
 function sectionLetterOf(room?: string): string {
@@ -43,43 +50,45 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
   const [dueDate, setDueDate] = useState(() => new Date(Date.now() + 86400000 * 4).toISOString().split('T')[0]);
   const [campaignId, setCampaignId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [users, setUsers] = useState<User[]>([]);
   const [campaigns, setCampaigns] = useState<TaskCampaign[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  // One key per fresh form-open, reused across retries of that same
+  // submission attempt so a slow-network retry never creates a duplicate
+  // task; a new attempt (reopening the form) gets a new key.
+  const idempotencyKeyRef = useRef<string>('');
 
-  const loadDependencies = useCallback(async () => {
-    try {
-      const [usersData, campaignsData, roomsData] = await Promise.all([
-        apiClient.getUsers().catch(() => []),
-        apiClient.getCampaigns().catch(() => []),
-        apiClient.getRooms().catch(() => []),
-      ]);
+  // Shared, cached queries — this modal is always mounted (visibility is
+  // purely the isOpen prop below), so previously it re-fetched users/rooms
+  // from scratch on every single open. Now it reads from the same cache the
+  // hosting dashboard already populated, and only actually refetches when
+  // the cache is genuinely stale or a realtime event invalidates it.
+  const { data: usersResult } = useUsers({ limit: 200 });
+  const { data: roomsData } = useRooms();
+  const users = usersResult?.items ?? [];
+  const rooms = roomsData ?? EMPTY_ROOMS;
 
-      if (Array.isArray(usersData)) {
-        setUsers(usersData);
-        if (usersData.length > 0 && !assigneeId) {
-          setAssigneeId(usersData[0].id);
-        }
-      }
-      if (Array.isArray(campaignsData)) {
-        setCampaigns(campaignsData);
-      }
-      if (Array.isArray(roomsData)) {
-        setRooms(roomsData);
-      }
-    } catch {
-      // Handled
-    }
-  }, [assigneeId]);
+  const loadCampaigns = useCallback(async () => {
+    const campaignsData = await apiClient.getCampaigns().catch(() => []);
+    if (Array.isArray(campaignsData)) setCampaigns(campaignsData);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
-      loadDependencies();
+      loadCampaigns();
       setTaskType('INDIVIDUAL');
       setTeamSection(role === 'TEAM_LEAD' ? ownSectionLetter : '');
+      idempotencyKeyRef.current = crypto.randomUUID();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Default the assignee to the first eligible user once the (cached or
+  // freshly fetched) user list is available and none has been chosen yet.
+  useEffect(() => {
+    if (!assigneeId && users.length > 0) {
+      setAssigneeId(users[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
 
   // The Team/Section <select> always visually shows its first option even
   // before a value is chosen — keep the real state in sync with that so
@@ -127,17 +136,21 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
 
     setIsSubmitting(true);
     try {
-      await apiClient.createTask({
-        title,
-        description,
-        priority,
-        estimatedHours: Number(estimatedHours) || 8,
-        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
-        campaignId: campaignId || undefined,
-        ...(taskType === 'TEAM'
-          ? { taskType: 'TEAM' as TaskType, teamSection }
-          : { taskType: 'INDIVIDUAL' as TaskType, assigneeId: assigneeId || availableAssignees[0]?.id }),
-      });
+      await apiClient.createTask(
+        {
+          title,
+          description,
+          priority,
+          estimatedHours: Number(estimatedHours) || 8,
+          dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+          campaignId: campaignId || undefined,
+          ...(taskType === 'TEAM'
+            ? { taskType: 'TEAM' as TaskType, teamSection }
+            : { taskType: 'INDIVIDUAL' as TaskType, assigneeId: assigneeId || availableAssignees[0]?.id }),
+        },
+        undefined,
+        idempotencyKeyRef.current
+      );
 
       setIsSubmitting(false);
       setTitle('');

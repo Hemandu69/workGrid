@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { useAuth } from '../../lib/auth-context';
 import { TaskCard } from '../../components/tasks/TaskCard';
@@ -11,83 +11,44 @@ import { Badge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
 import Link from 'next/link';
 import { Task } from '../../types/task';
-import { Announcement } from '../../types/announcement';
 import { WeeklyAvailabilitySchedule } from '../../types/availability';
-import { User } from '../../types/auth';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 import { apiClient } from '../../lib/api-client';
-import { useDomainEvent } from '../../lib/realtime-context';
+import { useTasks } from '../../lib/useTasks';
+import { useUsers } from '../../lib/useUsers';
+import { useAnnouncements } from '../../lib/useAnnouncements';
 
 export default function MemberDashboard() {
   const { user } = useAuth();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
-  const [subroomPeers, setSubroomPeers] = useState<User[]>([]);
 
-  const loadMemberData = useCallback(async () => {
+  // Shared, cached, realtime-synced.
+  const { data: tasksResult } = useTasks({ assigneeId: user?.id, limit: 200 });
+  const { data: annResult } = useAnnouncements({ limit: 50 });
+  const { data: usersResult } = useUsers({ role: 'MEMBER', limit: 200 });
+
+  const tasks = tasksResult?.items ?? [];
+  const announcements = annResult?.items ?? [];
+  const subroomPeers = (usersResult?.items ?? [])
+    .filter((u) => u.id !== user.id && (!user.subroom || u.subroom === user.subroom))
+    .slice(0, 3);
+
+  useEffect(() => {
     if (!user?.id) return;
-
-    try {
-      const [tasksData, annData, scheduleData, usersData] = await Promise.all([
-        apiClient.getTasks({ assigneeId: user.id }).catch(() => []),
-        apiClient.getAnnouncements().catch(() => []),
-        apiClient.getUserAvailability(user.id).catch(() => null),
-        apiClient.getUsers({ role: 'MEMBER' }).catch(() => []),
-      ]);
-
-      if (Array.isArray(tasksData)) setTasks(tasksData);
-      if (Array.isArray(annData)) setAnnouncements(annData);
-      if (scheduleData) setSchedule(scheduleData);
-      if (Array.isArray(usersData)) {
-        const peers = usersData.filter((u) => u.id !== user.id && (!user.subroom || u.subroom === user.subroom));
-        setSubroomPeers(peers.slice(0, 3));
-      }
-    } catch {
-      // Clean error handling
-    }
-  }, [user?.id, user?.subroom]);
-
-  // Keep a stable ref to the latest loadMemberData for real-time event handlers
-  const loadMemberDataRef = useRef(loadMemberData);
-  useEffect(() => {
-    loadMemberDataRef.current = loadMemberData;
-  });
-
-  useEffect(() => {
-    loadMemberData();
-  }, [loadMemberData]);
-
-  // Real-Time Subscriptions — silent background refresh
-  useDomainEvent(
-    [
-      'TASK_CREATED',
-      'TASK_ASSIGNED',
-      'TASK_REASSIGNED',
-      'TASK_UPDATED',
-      'TASK_COMPLETED',
-      'TASK_CANCELLED',
-      'TASK_STATUS_CHANGED',
-      'TASK_PROGRESS_CHANGED',
-      'ANNOUNCEMENT_CREATED',
-      'AVAILABILITY_CHANGED',
-      'ROOM_ASSIGNMENT_CHANGED',
-    ],
-    () => {
-      loadMemberDataRef.current();
-    }
-  );
+    apiClient.getUserAvailability(user.id).then(setSchedule).catch(() => null);
+  }, [user?.id]);
 
   const activeTask = tasks.find((t) => t.status === 'IN_PROGRESS') || tasks[0];
   const upcomingTasks = activeTask ? tasks.filter((t) => t.id !== activeTask.id) : tasks;
 
   const handleUpdateStatus = async (task: Task, newStatus: string) => {
+    // No local optimistic patch here — the backend's TASK_STATUS_CHANGED
+    // domain event round-trips back through the socket in well under a
+    // second and invalidates the shared tasks cache, so the list reflects
+    // the authoritative new status without a hand-rolled local mutation.
     try {
       await apiClient.updateTaskStatus(task.id, newStatus);
-      setTasks(
-        tasks.map((t) => (t.id === task.id ? { ...t, status: newStatus as Task['status'] } : t))
-      );
     } catch {
       // Handled
     }

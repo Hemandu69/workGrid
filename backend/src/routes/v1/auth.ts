@@ -4,6 +4,7 @@ import {
   registerSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  emailAvailabilityQuerySchema,
 } from '../../schemas/auth.schema.js';
 import { AuthService } from '../../services/auth.service.js';
 import { AUTH_COOKIE_NAME } from '../../plugins/auth.js';
@@ -51,6 +52,38 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
   });
+
+  // GET /api/v1/auth/email-availability — public (matches /register's own
+  // no-auth requirement: you can't be logged in before you've registered).
+  // Rate-limited tighter than the global default since it's unauthenticated
+  // and could otherwise be probed for email enumeration at volume.
+  fastify.get(
+    '/email-availability',
+    { config: { rateLimit: { max: 10, timeWindow: 60000 } } },
+    async (request, reply) => {
+      const parseResult = emailAvailabilityQuerySchema.safeParse(request.query);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'A valid email address is required',
+          details: parseResult.error.format(),
+        });
+      }
+
+      try {
+        const result = await AuthService.checkEmailAvailability(parseResult.data.email);
+        return reply.send(result);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to check email availability';
+        return reply.status(500).send({
+          statusCode: 500,
+          error: 'Internal Server Error',
+          message,
+        });
+      }
+    }
+  );
 
   // POST /api/v1/auth/register (Optional public onboarding; defaults to MEMBER and PENDING)
   fastify.post('/register', async (request, reply) => {
