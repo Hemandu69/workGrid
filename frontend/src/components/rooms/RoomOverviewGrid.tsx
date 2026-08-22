@@ -32,7 +32,7 @@ export function RoomOverviewGrid({
   if (!rooms || rooms.length === 0 || !activeRoom) {
     return (
       <div className="p-8 border border-surface-outline rounded bg-surface-container-low text-center text-xs text-on-surface-variant">
-        Loading room and section topology...
+        Loading room and section data...
       </div>
     );
   }

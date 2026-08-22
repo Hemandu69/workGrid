@@ -96,16 +96,11 @@ export default function AdminDashboard() {
               Operational Administration & Dispatch
             </h1>
             <p className="text-xs text-on-surface-variant mt-1">
-              Global task allocation, room saturation monitoring, and team oversight across Sections A through H.
+              Task allocation, room occupancy monitoring, and team oversight across Sections A through H.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <Link href="/admin/tasks">
-              <Button variant="outline" size="md">
-                Campaign Manager
-              </Button>
-            </Link>
             <Button
               variant="primary"
               size="md"
@@ -123,12 +118,12 @@ export default function AdminDashboard() {
             label="Total Personnel"
             value={orgScale.toLocaleString()}
             subtext={`${totalMembers} Assigned to subrooms`}
-            trend="100% Authoritative"
+            trend="Live Count"
             icon="groups"
             indicatorColor="primary"
           />
           <StatMetricCard
-            label="Subroom Saturation"
+            label="Room Usage"
             value={`${overallOccupancy}%`}
             subtext={`Across ${rooms.length * 8 || 64} Subrooms`}
             trend="Live Occupancy"
@@ -144,10 +139,10 @@ export default function AdminDashboard() {
             indicatorColor="busy"
           />
           <StatMetricCard
-            label="Task Overdue Risk"
+            label="Tasks At Risk of Being Late"
             value={`${stats?.overdueRiskPercentage ?? 0}%`}
-            subtext="Calculated from active task SLAs"
-            trend="Real-time Health"
+            subtext="Based on task due dates"
+            trend="Updated Live"
             icon="speed"
             indicatorColor={stats?.overdueRiskPercentage && stats.overdueRiskPercentage > 10 ? 'blocked' : 'available'}
           />
@@ -226,7 +221,7 @@ export default function AdminDashboard() {
           <div className="col-span-12 xl:col-span-4 space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Section Saturation Heatmap</CardTitle>
+                <CardTitle>Section Occupancy</CardTitle>
                 <Link href="/admin/rooms" className="text-xs text-secondary hover:text-primary font-medium">
                   Room Details →
                 </Link>
@@ -265,10 +260,10 @@ export default function AdminDashboard() {
             {/* Admin Policy Summary */}
             <div className="p-4 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2">
               <span className="font-bold text-primary text-[11px] uppercase tracking-wider block">
-                Administrative Authorities
+                What Admin Covers
               </span>
               <p className="text-on-surface-variant leading-relaxed">
-                Admins possess global scope across all Sections A–H. Room membership changes and capacity overrides are recorded as append-only audit events.
+                Admins can manage all Sections A–H. Every room assignment change is logged for accountability.
               </p>
             </div>
           </div>

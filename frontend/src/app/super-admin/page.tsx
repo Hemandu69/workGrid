@@ -18,6 +18,7 @@ import { Announcement } from '../../types/announcement';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 import { apiClient } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
+import { HealthResponse } from '../../types/health';
 
 export default function SuperAdminDashboard() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -31,22 +32,25 @@ export default function SuperAdminDashboard() {
     globalSaturationPercentage?: number;
     overdueRiskPercentage?: number;
   } | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [statsData, annData, tasksData, roomsData] = await Promise.all([
+      const [statsData, annData, tasksData, roomsData, healthData] = await Promise.all([
         apiClient.getDashboardSummary().catch(() => null),
         apiClient.getAnnouncements().catch(() => []),
         apiClient.getTasks().catch(() => []),
         apiClient.getRooms().catch(() => []),
+        apiClient.getHealth().catch(() => null),
       ]);
 
       if (statsData) setStats(statsData as typeof stats);
       if (Array.isArray(annData)) setAnnouncements(annData);
       if (Array.isArray(tasksData)) setTasks(tasksData);
       if (Array.isArray(roomsData)) setRooms(roomsData);
+      setHealth(healthData);
     } catch {
       // Clean fallback
     }
@@ -80,6 +84,17 @@ export default function SuperAdminDashboard() {
   const orgScale = stats?.organizationScale ?? tasks.length;
   const globalSaturation = stats?.globalSaturationPercentage ?? 0;
 
+  const healthLabel =
+    health?.status === 'ok' ? 'Online' : health?.status === 'degraded' ? 'Degraded' : health ? 'Offline' : '—';
+  const healthSubtext =
+    health?.status === 'ok'
+      ? 'All WorkGrid services are running normally'
+      : health
+      ? 'Some WorkGrid services need attention'
+      : 'Checking service status…';
+  const healthIndicator =
+    health?.status === 'ok' ? 'available' : health?.status === 'degraded' ? 'busy' : 'blocked';
+
   return (
     <AppShell
       breadcrumbs={[
@@ -107,11 +122,6 @@ export default function SuperAdminDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Link href="/admin/tasks">
-              <Button variant="outline" size="md">
-                Task Management Route
-              </Button>
-            </Link>
             <Button
               variant="primary"
               size="md"
@@ -126,37 +136,38 @@ export default function SuperAdminDashboard() {
         {/* Global Key Health Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatMetricCard
-            label="Organization Scale"
+            label="People in Organization"
             value={orgScale.toLocaleString()}
-            subtext="Active provisioned nodes"
-            trend="100% Operational"
+            subtext="Active employees"
+            trend="All Accounted For"
             icon="hub"
             indicatorColor="primary"
           />
           <StatMetricCard
-            label="Global Room Saturation"
+            label="Workspace Usage"
             value={`${globalSaturation}%`}
-            subtext="Sections A through H"
+            subtext="Current room occupancy"
             trend="Balanced Load"
             icon="grid_view"
             indicatorColor="available"
           />
           <StatMetricCard
-            label="Critical Blockages"
+            label="Tasks Needing Attention"
             value={`${blockedTasks.length} ${blockedTasks.length === 1 ? 'Task' : 'Tasks'}`}
-            subtext="Requires Admin policy review"
+            subtext="Tasks currently blocked"
             trend={blockedTasks.length > 0 ? "Attention Required" : "All Clear"}
             trendDirection={blockedTasks.length > 0 ? "down" : "up"}
             icon="error"
             indicatorColor={blockedTasks.length > 0 ? "blocked" : "available"}
           />
           <StatMetricCard
-            label="System Health"
-            value="100%"
-            subtext="PostgreSQL & Socket.IO realtime"
-            trend="Healthy"
+            label="WorkGrid Status"
+            value={healthLabel}
+            subtext={healthSubtext}
+            trend={health?.status === 'ok' ? 'Healthy' : health ? 'Needs Attention' : 'Checking'}
+            trendDirection={health?.status === 'ok' ? 'up' : health ? 'down' : 'neutral'}
             icon="dns"
-            indicatorColor="available"
+            indicatorColor={healthIndicator}
           />
         </div>
 
@@ -167,7 +178,7 @@ export default function SuperAdminDashboard() {
             {/* Rooms A-H Overview */}
             <Card>
               <CardHeader>
-                <CardTitle>Global Room & Subroom Saturation Topology</CardTitle>
+                <CardTitle>Room & Section Occupancy Overview</CardTitle>
                 <Link href="/admin/rooms" className="text-xs text-secondary hover:text-primary font-medium">
                   Detailed Grid →
                 </Link>
@@ -181,7 +192,7 @@ export default function SuperAdminDashboard() {
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-xs font-bold text-status-blocked uppercase tracking-wider flex items-center gap-1.5">
                     <span className="material-symbols-outlined text-[16px]">warning</span>
-                    Critical Blocked Tasks Requiring Overload Override
+                    Blocked Tasks Requiring Review
                   </h2>
                   <Badge status="BLOCKED">{blockedTasks.length} Blocked</Badge>
                 </div>
@@ -220,13 +231,13 @@ export default function SuperAdminDashboard() {
               </div>
             </Card>
 
-            {/* Super Admin Architecture Principles Card */}
+            {/* Super Admin Role Scope Card */}
             <div className="p-4 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2">
               <span className="font-bold text-primary text-[11px] uppercase tracking-wider block">
-                Super Admin Separation of Concerns
+                What Super Admin Covers
               </span>
               <p className="text-on-surface-variant leading-relaxed">
-                As Super Admin, global health, infrastructure telemetry, announcements, and organization configuration are prioritized. Routine task assignment is routed to the dedicated task management view.
+                As Super Admin, you oversee organization-wide health, announcements, and configuration. Day-to-day task assignment happens in the dedicated Task Management view.
               </p>
             </div>
           </div>

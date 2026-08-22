@@ -221,7 +221,7 @@ export default function HRDashboardPage() {
               <Badge role="HR Operations" variant="role" />
             </div>
             <p className="text-xs text-on-surface-variant mt-1">
-              Authoritative personnel directory for onboarding, account lifecycle states, and backend-enforced role assignments.
+              The official personnel directory for onboarding, account status, and role assignments.
             </p>
           </div>
 

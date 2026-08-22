@@ -6,6 +6,7 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import { AudienceScope } from '../../types/announcement';
+import { apiClient } from '../../lib/api-client';
 
 interface CreateAnnouncementModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
   const [targetRoom, setTargetRoom] = useState('Room B');
   const [pinned, setPinned] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const scopeOptions = [
     { value: 'GLOBAL', label: 'Global (All Members)' },
@@ -33,16 +35,31 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
     label: `Section ${l}`,
   }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    setError(null);
+    try {
+      await apiClient.createAnnouncement({
+        title: title.trim(),
+        content: content.trim(),
+        scope,
+        targetRoom: scope === 'ROOM_SPECIFIC' ? targetRoom : undefined,
+        pinned,
+      });
+      setTitle('');
+      setContent('');
+      setScope('GLOBAL');
+      setPinned(false);
       onCreated?.();
       onClose();
-    }, 400);
+    } catch {
+      setError('Could not publish the announcement. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -70,6 +87,12 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
       }
     >
       <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {error && (
+          <div className="p-2.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+            {error}
+          </div>
+        )}
+
         <Input
           label="Announcement Title"
           placeholder="e.g. Scheduled System Maintenance"
@@ -94,7 +117,7 @@ export function CreateAnnouncementModal({ isOpen, onClose, onCreated }: CreateAn
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Select
-            label="Audience Scope"
+            label="Who Sees This"
             options={scopeOptions}
             value={scope}
             onChange={(e) => setScope(e.target.value as AudienceScope)}
