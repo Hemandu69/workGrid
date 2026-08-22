@@ -142,8 +142,7 @@ export const apiClient = {
     );
   },
 
-  // Dynamic Room/Subroom Assignment — single authoritative source for both
-  // real users and simulated personnel.
+  // Dynamic Room/Subroom Assignment
   getRoomAssignment: async (personId: string, token?: string): Promise<RoomAssignment> => {
     return request<RoomAssignment>(`/api/v1/rooms/assignment/${personId}`, {}, token);
   },
@@ -382,9 +381,8 @@ export const apiClient = {
   },
 
   /**
-   * Sets the authoritative operational availability for a person. Works for
-   * real accounts and simulated test personnel through the same endpoint —
-   * omit `personId` to change your own.
+   * Sets the authoritative operational availability for a person — omit
+   * `personId` to change your own.
    */
   setAvailabilityStatus: async (
     state: AvailabilityState,
@@ -397,39 +395,12 @@ export const apiClient = {
     availabilityLabel: string;
     presenceState: string;
     currentLocation: string;
-    isSimulated: boolean;
   }> => {
     return request(
       '/api/v1/availability/status',
       {
         method: 'POST',
         body: JSON.stringify({ state, personId }),
-      },
-      token
-    );
-  },
-
-  // Operations Grid Test Personnel Simulation
-  toggleSimulatedPresence: async (
-    id: string,
-    presenceState?: 'IN' | 'OUT',
-    token?: string
-  ): Promise<{ success: boolean; person: GridMemberItem | GridServerItem }> => {
-    return request(
-      '/api/v1/operations/simulation/toggle',
-      {
-        method: 'POST',
-        body: JSON.stringify({ id, presenceState }),
-      },
-      token
-    );
-  },
-
-  resetSimulation: async (token?: string): Promise<{ success: boolean; message: string }> => {
-    return request(
-      '/api/v1/operations/simulation/reset',
-      {
-        method: 'POST',
       },
       token
     );
@@ -680,7 +651,6 @@ export interface RoomAssignment {
   personId: string;
   name: string;
   role: string;
-  isSimulated: boolean;
   section: string | null; // e.g. "B"
   subroom: string | null; // e.g. "B3" — always null for SERVER role
 }
@@ -715,7 +685,6 @@ export interface PersonAvailabilityDetailResponse {
     capacityLimitHours: number;
     currentAllocatedHours: number;
     availabilityState?: AvailabilityState;
-    isSimulated?: boolean;
   };
   currentStatus: {
     state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
@@ -791,7 +760,6 @@ export interface GridMemberItem {
   lastSeenIST: string;
   activeTaskId?: string;
   activeTaskTitle?: string;
-  isSimulated?: boolean;
 }
 
 export interface GridServerItem {
@@ -808,7 +776,6 @@ export interface GridServerItem {
   supervisoryPosition?: 1 | 3 | 5;
   arrivedAtIST?: string;
   lastSeenIST: string;
-  isSimulated?: boolean;
 }
 
 export interface GridSubroomCell {
@@ -843,7 +810,6 @@ export interface GridRoomColumn {
     currentLocation: string;
     preferredPosition?: 1 | 3 | 5;
     assignedPosition?: 1 | 3 | 5;
-    isSimulated?: boolean;
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;

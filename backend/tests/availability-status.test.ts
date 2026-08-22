@@ -4,7 +4,6 @@ import supertest from 'supertest';
 import { UserRole, UserStatus } from '@prisma/client';
 import { buildApp } from '../src/app.js';
 import { domainEventBus, DomainEvent } from '../src/events/domain-events.js';
-import { SimulationService } from '../src/services/simulation.service.js';
 
 /**
  * Mutable presence/status for the real accounts under test, so a single mock
@@ -155,7 +154,6 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     userState['usr-outside'] = { presenceState: 'OUT', status: UserStatus.OFFLINE };
     userState['usr-other-room'] = { presenceState: 'IN', status: UserStatus.ONLINE };
     updateCalls.length = 0;
-    SimulationService.resetSimulation();
 
     unsubscribe?.();
     capturedEvents = [];
@@ -173,7 +171,6 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(res.status).toBe(200);
     expect(res.body.availabilityState).toBe('BUSY');
     expect(res.body.availabilityLabel).toBe('Busy');
-    expect(res.body.isSimulated).toBe(false);
   });
 
   it('2. persists the change as the authoritative stored UserStatus', async () => {
@@ -323,118 +320,9 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(res.status).toBe(404);
   });
 
-  // --- Simulated test personnel -------------------------------------------
-
-  it('16. changes a simulated person’s availability through the same endpoint', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-
-    const res = await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'BUSY' });
-
-    expect(res.status).toBe(200);
-    expect(res.body.isSimulated).toBe(true);
-    expect(SimulationService.getSimulatedPerson(target.id)!.availabilityState).toBe('BUSY');
-  });
-
-  it('17. never writes a simulated person to PostgreSQL', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-
-    await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'BUSY' });
-
-    expect(updateCalls).toHaveLength(0);
-  });
-
-  it('18. emits the same event semantics for simulated personnel', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-
-    await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'BUSY' });
-
-    const event = capturedEvents.find((e) => e.type === 'AVAILABILITY_CHANGED')!;
-    expect(event.organizationId).toBe('org-1');
-    expect(event.payload.simulatedPersonId).toBe(target.id);
-    expect(event.payload.userId).toBeNull();
-    expect(event.payload.availabilityState).toBe('BUSY');
-    expect(event.payload.isSimulated).toBe(true);
-  });
-
-  it('19. refuses to change availability for a simulated person who is OUT', async () => {
-    const target = SimulationService.getSimulatedPersons().find((p) => p.presenceState === 'OUT')!;
-
-    const res = await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'FREE' });
-
-    expect(res.status).toBe(400);
-    expect(SimulationService.getSimulatedPerson(target.id)!.availabilityState).toBe('UNAVAILABLE');
-  });
-
-  it('20. keeps a simulated person’s room assignment across an availability change', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-    const originalSection = target.sectionLetter;
-    const originalSubroom = target.subroomCode;
-
-    await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'BUSY' });
-
-    const after = SimulationService.getSimulatedPerson(target.id)!;
-    expect(after.sectionLetter).toBe(originalSection);
-    expect(after.subroomCode).toBe(originalSubroom);
-  });
-
-  it('21. keeps availability across a simulated room reassignment', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-
-    await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'BUSY' });
-
-    SimulationService.reassignSimulatedPerson(target.id, 'G', 'G7');
-
-    const after = SimulationService.getSimulatedPerson(target.id)!;
-    expect(after.subroomCode).toBe('G7');
-    expect(after.availabilityState).toBe('BUSY');
-  });
-
-  it('22. resets a simulated person to UNAVAILABLE when they check OUT', async () => {
-    const target = SimulationService.getSimulatedPersons().find(
-      (p) => p.role === 'MEMBER' && p.presenceState === 'IN'
-    )!;
-
-    await supertest(app.server)
-      .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: target.id, state: 'BUSY' });
-
-    SimulationService.updateSimulatedPersonState(target.id, 'OUT');
-
-    expect(SimulationService.getSimulatedPerson(target.id)!.availabilityState).toBe('UNAVAILABLE');
-  });
-
   // --- Rapid consecutive changes ------------------------------------------
 
-  it('23. converges on the last state after rapid FREE→BUSY→FREE→BUSY changes', async () => {
+  it('16. converges on the last state after rapid FREE→BUSY→FREE→BUSY changes', async () => {
     for (const state of ['BUSY', 'FREE', 'BUSY'] as const) {
       await supertest(app.server)
         .post('/api/v1/availability/status')
@@ -448,7 +336,7 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(availabilityEvents[availabilityEvents.length - 1].payload.availabilityState).toBe('BUSY');
   });
 
-  it('24. emits one AVAILABILITY_CHANGED per accepted change, each with a unique id', async () => {
+  it('17. emits one AVAILABILITY_CHANGED per accepted change, each with a unique id', async () => {
     for (const state of ['BUSY', 'FREE'] as const) {
       await supertest(app.server)
         .post('/api/v1/availability/status')

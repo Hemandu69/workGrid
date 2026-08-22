@@ -8,7 +8,6 @@ interface OperationsGridCellProps {
   subroom: GridSubroomCell;
   onSelectPerson: (userId: string) => void;
   onSelectEvent?: (eventId: string) => void;
-  onToggleSimulated?: (id: string, presenceState?: 'IN' | 'OUT') => void;
   presenceFilter: string;
   roleFilter: string;
 }
@@ -17,7 +16,6 @@ export function OperationsGridCell({
   subroom,
   onSelectPerson,
   onSelectEvent,
-  onToggleSimulated,
   presenceFilter,
   roleFilter,
 }: OperationsGridCellProps) {
@@ -138,25 +136,6 @@ export function OperationsGridCell({
                         {member.activeTaskId}
                       </span>
                     )}
-
-                    {/* Simulation Quick State Toggle Control */}
-                    {member.isSimulated && onToggleSimulated && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleSimulated(member.id, isPresent ? 'OUT' : 'IN');
-                        }}
-                        className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold transition-all shadow-2xs border ${
-                          isPresent
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                            : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                        }`}
-                        title={`Toggle test presence (currently ${member.presenceState})`}
-                      >
-                        {isPresent ? 'IN' : 'OUT'}
-                      </button>
-                    )}
                   </div>
                 </div>
               );
@@ -217,23 +196,6 @@ export function OperationsGridCell({
                     >
                       {isPresent ? 'IN' : 'OUT'}
                     </span>
-                    {srv.isSimulated && onToggleSimulated && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleSimulated(srv.id, isPresent ? 'OUT' : 'IN');
-                        }}
-                        className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold transition-all border ${
-                          isPresent
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
-                            : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
-                        }`}
-                        title={`Toggle server test presence (currently ${srv.presenceState})`}
-                      >
-                        {isPresent ? 'IN' : 'OUT'}
-                      </button>
-                    )}
                   </div>
                 </div>
               );

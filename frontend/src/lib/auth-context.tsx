@@ -15,7 +15,6 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User | null>;
-  setRole: (role: UserRole) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -145,14 +144,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Development/Preview role switcher
-  const setRole = (newRole: UserRole) => {
-    setUser((prev) => ({
-      ...prev,
-      role: newRole,
-    }));
-  };
-
   return (
     <AuthContext.Provider
       value={{
@@ -165,7 +156,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         refreshUser,
-        setRole,
       }}
     >
       {children}

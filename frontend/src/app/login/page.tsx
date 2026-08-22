@@ -3,14 +3,13 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth, getRoleLandingPath } from '../../lib/auth-context';
-import { UserRole } from '../../types/auth';
 import { apiClient } from '../../lib/api-client';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, setRole } = useAuth();
+  const { login } = useAuth();
 
   const [email, setEmail] = useState('elena.vance@workgrid.corp');
   const [password, setPassword] = useState('password123');
@@ -237,14 +236,14 @@ export default function LoginPage() {
             </div>
           </form>
 
-          {/* Development / Demo Quick Logins */}
+          {/* Quick Sign-In Shortcuts */}
           <div className="mt-6 pt-4 border-t border-surface-outline">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                Development Preview Logins
+                Quick Sign-In
               </p>
               <span className="text-[9px] bg-surface-container px-1.5 py-0.5 rounded text-on-surface-variant font-mono">
-                Seeded Accounts
+                Sample Accounts
               </span>
             </div>
             <div className="grid grid-cols-2 gap-1.5 text-xs">
