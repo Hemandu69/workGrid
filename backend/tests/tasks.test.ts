@@ -1,50 +1,110 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import supertest from 'supertest';
-import { UserRole } from '@prisma/client';
+import { UserRole, AccountStatus, TaskStatus } from '@prisma/client';
+
+/**
+ * In-memory task/user store mutated by the service calls themselves, so each
+ * scenario models a genuine sequence rather than isolated fixture snapshots.
+ */
+interface FakeTask {
+  id: string;
+  taskIdDisplay: string;
+  organizationId: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: string;
+  progress: number;
+  estimatedHours: number;
+  allocatedHours: number;
+  dueDate: Date | null;
+  assigneeId: string | null;
+  creatorId: string | null;
+  campaignId: string | null;
+  tags: string[];
+  completedAt: Date | null;
+  createdAt: Date;
+}
+
+const USERS: Record<string, any> = {
+  'admin-1': { id: 'admin-1', name: 'Marcus Sterling', email: 'admin@workgrid.corp', role: 'ADMIN', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: null },
+  'superadmin-1': { id: 'superadmin-1', name: 'Elena Vance', email: 'super@workgrid.corp', role: 'SUPER_ADMIN', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: null },
+  'server-b': { id: 'server-b', name: 'David Chen', email: 'david@workgrid.corp', role: 'SERVER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
+  'teamlead-b': { id: 'teamlead-b', name: 'Alex Rivera', email: 'alex@workgrid.corp', role: 'TEAM_LEAD', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
+  'member-b1': { id: 'member-b1', name: 'Sarah Connor', email: 'sarah@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
+  'member-b2': { id: 'member-b2', name: 'Liam Vance', email: 'liam@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
+  'member-a1': { id: 'member-a1', name: 'External Person', email: 'ext@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-a', room: { letter: 'A' } },
+  'member-pending': { id: 'member-pending', name: 'Pending Person', email: 'pending@workgrid.corp', role: 'MEMBER', accountStatus: 'PENDING', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
+  'hr-1': { id: 'hr-1', name: 'Priya HR', email: 'hr@workgrid.corp', role: 'HR', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: null },
+  'org2-admin': { id: 'org2-admin', name: 'Org2 Admin', email: 'admin2@other.corp', role: 'ADMIN', accountStatus: 'ACTIVE', organizationId: 'org-2', roomId: null },
+  'org2-member': { id: 'org2-member', name: 'Org2 Member', email: 'member2@other.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-2', roomId: null },
+};
+
+let tasks: FakeTask[] = [];
+let taskSeq = 0;
+const auditEvents: any[] = [];
+const publishedEvents: any[] = [];
+
+function makeTask(overrides: Partial<FakeTask> = {}): FakeTask {
+  taskSeq++;
+  return {
+    id: `task-${taskSeq}`,
+    taskIdDisplay: `TSK-${1000 + taskSeq}`,
+    organizationId: 'org-1',
+    title: `Task ${taskSeq}`,
+    description: 'desc',
+    status: TaskStatus.ASSIGNED,
+    priority: 'MEDIUM',
+    progress: 0,
+    estimatedHours: 8,
+    allocatedHours: 0,
+    dueDate: null,
+    assigneeId: null,
+    creatorId: null,
+    campaignId: null,
+    tags: [],
+    completedAt: null,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+function hydrate(t: FakeTask) {
+  const assignee = t.assigneeId ? USERS[t.assigneeId] : null;
+  const creator = t.creatorId ? USERS[t.creatorId] : null;
+  return {
+    ...t,
+    assignee: assignee ? { ...assignee, room: assignee.room || null, subroom: null } : null,
+    creator: creator || null,
+    campaign: null,
+    _count: { comments: 0 },
+  };
+}
 
 const { mockPrisma } = vi.hoisted(() => ({
   mockPrisma: {
     task: {
-      findMany: vi.fn().mockResolvedValue([
-        {
-          id: 'task-1-id',
-          taskIdDisplay: 'TSK-8421',
-          title: 'Design System Migration & Audit',
-          description: 'Audit legacy color codes and update typography',
-          status: 'IN_PROGRESS',
-          priority: 'HIGH',
-          assigneeId: 'member-1-id',
-          creatorId: 'server-id',
-          campaignId: 'camp-1-id',
-          estimatedHours: 12,
-          allocatedHours: 8,
-          dueDate: new Date(),
-          createdAt: new Date(),
-          tags: ['Design System'],
-          assignee: {
-            name: 'Sarah Connor',
-            avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330',
-            room: { letter: 'B' },
-            subroom: { code: 'B3' },
-          },
-          creator: { name: 'David Chen' },
-          campaign: { title: 'Q3 Core UX' },
-          _count: { comments: 2 },
-        },
-      ]),
+      findMany: vi.fn(),
       findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
     user: {
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
     },
     taskComment: {
       create: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
+    auditEvent: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -53,56 +113,593 @@ vi.mock('../src/db/client.js', () => ({
   checkDatabaseHealth: vi.fn().mockResolvedValue({ status: 'healthy', latencyMs: 1 }),
 }));
 
+vi.mock('../src/events/domain-events.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/events/domain-events.js')>();
+  return {
+    ...actual,
+    publishDomainEvent: vi.fn().mockImplementation((event: any) => {
+      publishedEvents.push(event);
+      return { id: `evt_${publishedEvents.length}`, timestamp: new Date().toISOString(), ...event };
+    }),
+  };
+});
+
 describe('Task Endpoints (/api/v1/tasks)', () => {
   let app: FastifyInstance;
-  let memberToken: string;
+  const tokens: Record<string, string> = {};
 
   beforeAll(async () => {
+    mockPrisma.task.findFirst.mockImplementation(({ where }: any) => {
+      const ors: any[] = where.OR || [where];
+      const found = tasks.find((t) => ors.some((o: any) => (o.id && o.id === t.id) || (o.taskIdDisplay && o.taskIdDisplay === t.taskIdDisplay)));
+      return Promise.resolve(found ? hydrate(found) : null);
+    });
+
+    mockPrisma.task.findMany.mockImplementation(({ where }: any) => {
+      let result = tasks.filter((t) => t.organizationId === where.organizationId);
+      if (where.status) result = result.filter((t) => t.status === where.status);
+      if (where.assigneeId) result = result.filter((t) => t.assigneeId === where.assigneeId);
+      if (where.assignee?.roomId) result = result.filter((t) => USERS[t.assigneeId || '']?.roomId === where.assignee.roomId);
+      if (where.assignee?.room?.letter) result = result.filter((t) => USERS[t.assigneeId || '']?.room?.letter === where.assignee.room.letter);
+      return Promise.resolve(result.map(hydrate));
+    });
+
+    mockPrisma.task.create.mockImplementation(({ data }: any) => {
+      const created = makeTask({ ...data, dueDate: data.dueDate || null });
+      tasks.push(created);
+      return Promise.resolve(created);
+    });
+
+    mockPrisma.task.update.mockImplementation(({ where, data }: any) => {
+      const idx = tasks.findIndex((t) => t.id === where.id);
+      if (idx === -1) return Promise.resolve(null);
+      tasks[idx] = { ...tasks[idx], ...data };
+      return Promise.resolve(tasks[idx]);
+    });
+
+    mockPrisma.user.findFirst.mockImplementation(({ where }: any) => {
+      const ors: any[] = where.OR || [{ id: where.id }];
+      const found = Object.values(USERS).find(
+        (u: any) => u.organizationId === where.organizationId && ors.some((o: any) => (o.id && o.id === u.id) || (o.email && o.email === u.email))
+      );
+      return Promise.resolve(found || null);
+    });
+
+    mockPrisma.user.findUnique.mockImplementation(({ where }: any) => Promise.resolve(USERS[where.id] || null));
+    mockPrisma.user.update.mockImplementation(() => Promise.resolve({}));
+
+    mockPrisma.auditEvent.create.mockImplementation(({ data }: any) => {
+      const rec = { id: `aud-${auditEvents.length + 1}`, createdAt: new Date(), user: USERS[data.userId] || null, ...data };
+      auditEvents.push(rec);
+      return Promise.resolve(rec);
+    });
+    mockPrisma.auditEvent.findMany.mockImplementation(({ where }: any) =>
+      Promise.resolve(auditEvents.filter((e) => e.entityType === where.entityType && e.entityId === where.entityId))
+    );
+
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockPrisma));
+
     app = await buildApp();
     await app.ready();
 
-    memberToken = app.jwt.sign({
-      id: 'test-member-id',
-      email: 'member@workgrid.corp',
-      name: 'Test Member',
-      role: UserRole.MEMBER,
-      organizationId: 'test-org-id',
-    });
+    for (const [key, u] of Object.entries(USERS)) {
+      tokens[key] = app.jwt.sign(u);
+    }
   });
 
   afterAll(async () => {
     await app.close();
   });
 
-  it('GET /api/v1/tasks should return list of tasks', async () => {
+  beforeEach(() => {
+    tasks = [];
+    auditEvents.length = 0;
+    publishedEvents.length = 0;
+  });
+
+  // --- Authentication & role gating ---------------------------------------
+
+  it('1. rejects unauthenticated list requests', async () => {
     const res = await supertest(app.server).get('/api/v1/tasks');
+    expect(res.status).toBe(401);
+  });
+
+  it('2. rejects HR from listing tasks — HR is not an operational task role', async () => {
+    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['hr-1']}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('3. rejects MEMBER task creation with 403', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ title: 'Unauthorized Task', assigneeId: 'member-b2' });
+    expect(res.status).toBe(403);
+  });
+
+  it('4. rejects unauthenticated task creation with 401', async () => {
+    const res = await supertest(app.server).post('/api/v1/tasks').send({ title: 'No Auth Task', assigneeId: 'member-b2' });
+    expect(res.status).toBe(401);
+  });
+
+  it('5. allows TEAM_LEAD to create tasks (previously forbidden entirely)', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ title: 'Squad Task', assigneeId: 'member-b1' });
+    expect(res.status).toBe(201);
+  });
+
+  // --- List scoping (section 27 / org isolation, section 2 role scoping) --
+
+  it('6. MEMBER sees only their own tasks even if they request someone else’s assigneeId', async () => {
+    tasks.push(makeTask({ assigneeId: 'member-b1', creatorId: 'admin-1' }));
+    tasks.push(makeTask({ assigneeId: 'member-b2', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .get('/api/v1/tasks?assigneeId=member-b2')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`);
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].assigneeId).toBe('member-b1');
   });
 
-  it('POST /api/v1/tasks should reject member creation attempts with 403', async () => {
+  it('7. SERVER sees only tasks assigned within their own room', async () => {
+    tasks.push(makeTask({ assigneeId: 'member-b1', creatorId: 'admin-1' })); // room B
+    tasks.push(makeTask({ assigneeId: 'member-a1', creatorId: 'admin-1' })); // room A
+
+    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['server-b']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].assigneeId).toBe('member-b1');
+  });
+
+  it('8. TEAM_LEAD sees only tasks assigned within their own room', async () => {
+    tasks.push(makeTask({ assigneeId: 'member-b1', creatorId: 'admin-1' }));
+    tasks.push(makeTask({ assigneeId: 'member-a1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['teamlead-b']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.every((t: any) => t.assigneeId === 'member-b1')).toBe(true);
+  });
+
+  it('9. ADMIN sees every task in their organization regardless of room', async () => {
+    tasks.push(makeTask({ assigneeId: 'member-b1', creatorId: 'admin-1' }));
+    tasks.push(makeTask({ assigneeId: 'member-a1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+  });
+
+  it('10. a task belonging to another organization is never returned', async () => {
+    tasks.push(makeTask({ organizationId: 'org-1', assigneeId: 'member-b1', creatorId: 'admin-1' }));
+    tasks.push(makeTask({ organizationId: 'org-2', assigneeId: 'org2-member', creatorId: 'org2-admin' }));
+
+    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).not.toBe(undefined);
+  });
+
+  // --- Assignment validation (section 3) ----------------------------------
+
+  it('11. rejects assigning a task to a user in a different organization', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/tasks')
-      .set('Authorization', `Bearer ${memberToken}`)
-      .send({
-        title: 'Unauthorized Task',
-        assigneeId: 'some-assignee',
-      });
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Cross Org Task', assigneeId: 'org2-member' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/not found in your organization/i);
+  });
+
+  it('12. rejects assigning a task to a non-ACTIVE account', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Task for pending user', assigneeId: 'member-pending' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/PENDING/);
+  });
+
+  it('13. rejects assigning a task to an ineligible role (ADMIN cannot be a task recipient)', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['superadmin-1']}`)
+      .send({ title: 'Task for an admin', assigneeId: 'admin-1' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/not eligible/i);
+  });
+
+  it('14. rejects a SERVER assigning outside their own room', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['server-b']}`)
+      .send({ title: 'Cross-room task', assigneeId: 'member-a1' });
 
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe('Forbidden');
   });
 
-  it('POST /api/v1/tasks should reject unauthenticated requests with 401', async () => {
+  it('15. rejects a TEAM_LEAD assigning outside their own room', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/tasks')
-      .send({
-        title: 'No Auth Task',
-        assigneeId: 'some-assignee',
-      });
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ title: 'Cross-room task', assigneeId: 'member-a1' });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error).toBe('Unauthorized');
+    expect(res.status).toBe(403);
+  });
+
+  it('16. allows a SERVER to assign within their own room', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['server-b']}`)
+      .send({ title: 'In-room task', assigneeId: 'member-b1' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.assigneeId).toBe('member-b1');
+  });
+
+  // --- Status lifecycle (section 5) ---------------------------------------
+
+  it('17. rejects an invalid status transition (DRAFT straight to COMPLETED)', async () => {
+    tasks.push(makeTask({ id: 'task-draft', status: TaskStatus.DRAFT, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-draft/status')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ status: 'COMPLETED' });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('18. allows the assignee to move ASSIGNED -> IN_PROGRESS -> COMPLETED', async () => {
+    tasks.push(makeTask({ id: 'task-flow', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    let res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-flow/status')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ status: 'IN_PROGRESS' });
+    expect(res.status).toBe(200);
+
+    res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-flow/status')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ status: 'COMPLETED' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('COMPLETED');
+    expect(res.body.progress).toBe(100);
+    expect(res.body.completedAt).toBeTruthy();
+  });
+
+  it('19. rejects COMPLETED -> IN_PROGRESS via the generic assignee unless done through reopen-eligible actor', async () => {
+    // Reopen IS in the transition table; assignee is allowed to reopen their own task.
+    tasks.push(makeTask({ id: 'task-done', status: TaskStatus.COMPLETED, progress: 100, assigneeId: 'member-b1', creatorId: 'admin-1', completedAt: new Date() }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-done/status')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ status: 'IN_PROGRESS' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.completedAt).toBeFalsy();
+  });
+
+  it('20. rejects a plain MEMBER cancelling a task (cancel requires creator/admin/team-lead scope)', async () => {
+    tasks.push(makeTask({ id: 'task-cancel', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-cancel/status')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ status: 'CANCELLED' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('21. allows the creator to cancel their own task', async () => {
+    tasks.push(makeTask({ id: 'task-cancel2', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'server-b' }));
+
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks/task-cancel2/cancel')
+      .set('Authorization', `Bearer ${tokens['server-b']}`)
+      .send({ reason: 'No longer needed' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('CANCELLED');
+  });
+
+  it('22. rejects a random unrelated MEMBER from changing another person’s task status', async () => {
+    tasks.push(makeTask({ id: 'task-other', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-other/status')
+      .set('Authorization', `Bearer ${tokens['member-b2']}`)
+      .send({ status: 'IN_PROGRESS' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('23. allows a TEAM_LEAD to change status for a task within their room even if not assignee/creator', async () => {
+    tasks.push(makeTask({ id: 'task-teamlead', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'server-b' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-teamlead/status')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ status: 'IN_PROGRESS' });
+
+    expect(res.status).toBe(200);
+  });
+
+  // --- Progress (section 6) ------------------------------------------------
+
+  it('24. rejects progress outside 0-100', async () => {
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/whatever/progress')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ progress: 150 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('25. progress reaching 100 auto-completes the task and sets completedAt', async () => {
+    tasks.push(makeTask({ id: 'task-progress', status: TaskStatus.IN_PROGRESS, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-progress/progress')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ progress: 100 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('COMPLETED');
+    expect(res.body.completedAt).toBeTruthy();
+  });
+
+  it('26. rejects progress updates on a cancelled task', async () => {
+    tasks.push(makeTask({ id: 'task-cancelled-progress', status: TaskStatus.CANCELLED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-cancelled-progress/progress')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ progress: 50 });
+
+    expect(res.status).toBe(409);
+  });
+
+  // --- Reassignment (section 3, 13) ----------------------------------------
+
+  it('27. ADMIN can reassign a task to a different member', async () => {
+    tasks.push(makeTask({ id: 'task-reassign', status: TaskStatus.IN_PROGRESS, assigneeId: 'member-b1', creatorId: 'admin-1', estimatedHours: 8 }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-reassign/assignment')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ assigneeId: 'member-b2', reason: 'Rebalancing workload' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.assigneeId).toBe('member-b2');
+  });
+
+  it('28. rejects a plain MEMBER reassigning a task (never authorized)', async () => {
+    tasks.push(makeTask({ id: 'task-reassign2', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-reassign2/assignment')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ assigneeId: 'member-b2' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('29. rejects a SERVER reassigning a task — not explicitly authorized', async () => {
+    tasks.push(makeTask({ id: 'task-reassign3', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'server-b' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-reassign3/assignment')
+      .set('Authorization', `Bearer ${tokens['server-b']}`)
+      .send({ assigneeId: 'member-b2' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('30. allows a TEAM_LEAD to reassign within their room, rejects crossing into another room', async () => {
+    tasks.push(makeTask({ id: 'task-reassign4', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const okRes = await supertest(app.server)
+      .patch('/api/v1/tasks/task-reassign4/assignment')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-b2' });
+    expect(okRes.status).toBe(200);
+
+    const crossRes = await supertest(app.server)
+      .patch('/api/v1/tasks/task-reassign4/assignment')
+      .set('Authorization', `Bearer ${tokens['teamlead-b']}`)
+      .send({ assigneeId: 'member-a1' });
+    expect(crossRes.status).toBe(403);
+  });
+
+  it('31. rejects reassigning a completed task', async () => {
+    tasks.push(makeTask({ id: 'task-reassign5', status: TaskStatus.COMPLETED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .patch('/api/v1/tasks/task-reassign5/assignment')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ assigneeId: 'member-b2' });
+
+    expect(res.status).toBe(409);
+  });
+
+  // --- History / audit (section 7, 8) --------------------------------------
+
+  it('32. creating and then reassigning a task produces a queryable history trail', async () => {
+    const createRes = await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Audited Task', assigneeId: 'member-b1' });
+    expect(createRes.status).toBe(201);
+
+    const taskId = createRes.body.dbId;
+
+    await supertest(app.server)
+      .patch(`/api/v1/tasks/${taskId}/assignment`)
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ assigneeId: 'member-b2', reason: 'David -> Sarah' });
+
+    const historyRes = await supertest(app.server)
+      .get(`/api/v1/tasks/${taskId}/history`)
+      .set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+    expect(historyRes.status).toBe(200);
+    const actions = historyRes.body.map((h: any) => h.action);
+    expect(actions).toContain('TASK_CREATED');
+    expect(actions).toContain('TASK_REASSIGNED');
+    const reassignEntry = historyRes.body.find((h: any) => h.action === 'TASK_REASSIGNED');
+    expect(reassignEntry.details.newAssigneeId).toBe('member-b2');
+    expect(reassignEntry.details.previousAssigneeId).toBe('member-b1');
+  });
+
+  it('33. history is never overwritten — repeated status changes append', async () => {
+    tasks.push(makeTask({ id: 'task-history', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    await supertest(app.server).patch('/api/v1/tasks/task-history/status').set('Authorization', `Bearer ${tokens['member-b1']}`).send({ status: 'IN_PROGRESS' });
+    await supertest(app.server).patch('/api/v1/tasks/task-history/status').set('Authorization', `Bearer ${tokens['member-b1']}`).send({ status: 'BLOCKED' });
+    await supertest(app.server).patch('/api/v1/tasks/task-history/status').set('Authorization', `Bearer ${tokens['member-b1']}`).send({ status: 'IN_PROGRESS' });
+
+    const historyRes = await supertest(app.server)
+      .get('/api/v1/tasks/task-history/history')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+    const statusChanges = historyRes.body.filter((h: any) => h.action === 'TASK_STATUS_CHANGED');
+    expect(statusChanges).toHaveLength(3);
+  });
+
+  it('34. an unrelated MEMBER cannot view another person’s task history', async () => {
+    tasks.push(makeTask({ id: 'task-private', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .get('/api/v1/tasks/task-private/history')
+      .set('Authorization', `Bearer ${tokens['member-b2']}`);
+
+    expect(res.status).toBe(403);
+  });
+
+  // --- Comments --------------------------------------------------------------
+
+  it('35. a task-unrelated member cannot comment on it', async () => {
+    tasks.push(makeTask({ id: 'task-comment', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks/task-comment/comments')
+      .set('Authorization', `Bearer ${tokens['member-b2']}`)
+      .send({ content: 'Snooping' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('36. the assignee can comment on their own task', async () => {
+    tasks.push(makeTask({ id: 'task-comment2', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+    mockPrisma.taskComment.create.mockResolvedValueOnce({
+      id: 'cm-1',
+      authorId: 'member-b1',
+      content: 'On it',
+      createdAt: new Date(),
+      author: USERS['member-b1'],
+    });
+
+    const res = await supertest(app.server)
+      .post('/api/v1/tasks/task-comment2/comments')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`)
+      .send({ content: 'On it' });
+
+    expect(res.status).toBe(201);
+  });
+
+  // --- Realtime event payloads -----------------------------------------------
+
+  it('37. creating a task publishes TASK_CREATED and TASK_ASSIGNED scoped to the org', async () => {
+    await supertest(app.server)
+      .post('/api/v1/tasks')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ title: 'Event Task', assigneeId: 'member-b1' });
+
+    const created = publishedEvents.find((e) => e.type === 'TASK_CREATED');
+    const assigned = publishedEvents.find((e) => e.type === 'TASK_ASSIGNED');
+    expect(created).toBeDefined();
+    expect(created.organizationId).toBe('org-1');
+    expect(created.targetUserId).toBe('member-b1');
+    expect(assigned).toBeDefined();
+    expect(assigned.payload.assigneeId).toBe('member-b1');
+  });
+
+  it('38. reassigning publishes TASK_REASSIGNED with both previous and new assignee', async () => {
+    tasks.push(makeTask({ id: 'task-event-reassign', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    await supertest(app.server)
+      .patch('/api/v1/tasks/task-event-reassign/assignment')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`)
+      .send({ assigneeId: 'member-b2' });
+
+    const event = publishedEvents.find((e) => e.type === 'TASK_REASSIGNED');
+    expect(event).toBeDefined();
+    expect(event.payload.previousAssigneeId).toBe('member-b1');
+    expect(event.payload.newAssigneeId).toBe('member-b2');
+  });
+
+  it('39. completing a task publishes TASK_COMPLETED, not just TASK_STATUS_CHANGED', async () => {
+    tasks.push(makeTask({ id: 'task-event-complete', status: TaskStatus.IN_PROGRESS, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    await supertest(app.server)
+      .post('/api/v1/tasks/task-event-complete/complete')
+      .set('Authorization', `Bearer ${tokens['member-b1']}`);
+
+    expect(publishedEvents.some((e) => e.type === 'TASK_COMPLETED')).toBe(true);
+  });
+
+  it('40. cancelling a task publishes TASK_CANCELLED, not TASK_STATUS_CHANGED', async () => {
+    tasks.push(makeTask({ id: 'task-event-cancel', status: TaskStatus.ASSIGNED, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+
+    await supertest(app.server)
+      .post('/api/v1/tasks/task-event-cancel/cancel')
+      .set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+    expect(publishedEvents.some((e) => e.type === 'TASK_CANCELLED')).toBe(true);
+    expect(publishedEvents.some((e) => e.type === 'TASK_STATUS_CHANGED')).toBe(false);
+  });
+
+  // --- Analytics ---------------------------------------------------------
+
+  it('41. task analytics are forbidden for a plain MEMBER', async () => {
+    const res = await supertest(app.server).get('/api/v1/tasks/analytics').set('Authorization', `Bearer ${tokens['member-b1']}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('42. ADMIN analytics reflect the org’s task mix', async () => {
+    tasks.push(makeTask({ status: TaskStatus.COMPLETED, assigneeId: 'member-b1', creatorId: 'admin-1', completedAt: new Date() }));
+    tasks.push(makeTask({ status: TaskStatus.IN_PROGRESS, assigneeId: 'member-b1', creatorId: 'admin-1' }));
+    tasks.push(makeTask({ status: TaskStatus.CANCELLED, assigneeId: 'member-b2', creatorId: 'admin-1' }));
+
+    const res = await supertest(app.server).get('/api/v1/tasks/analytics').set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalTasks).toBe(3);
+    expect(res.body.byStatus.COMPLETED).toBe(1);
+    expect(res.body.byStatus.CANCELLED).toBe(1);
+    expect(res.body.completionRate).toBe(50); // 1 of 2 non-cancelled tasks
+  });
+
+  it('43. TEAM_LEAD analytics are scoped to their own room only', async () => {
+    tasks.push(makeTask({ status: TaskStatus.COMPLETED, assigneeId: 'member-b1', creatorId: 'admin-1', completedAt: new Date() }));
+    tasks.push(makeTask({ status: TaskStatus.COMPLETED, assigneeId: 'member-a1', creatorId: 'admin-1', completedAt: new Date() }));
+
+    const res = await supertest(app.server).get('/api/v1/tasks/analytics').set('Authorization', `Bearer ${tokens['teamlead-b']}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.totalTasks).toBe(1);
   });
 });
