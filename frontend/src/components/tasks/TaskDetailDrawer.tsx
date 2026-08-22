@@ -10,10 +10,17 @@ import { useAuth } from '../../lib/auth-context';
 import { apiClient, ApiError } from '../../lib/api-client';
 import { useDomainEvent } from '../../lib/realtime-context';
 import { formatToISTTime, formatToISTDate, formatToISTDateTime } from '../../lib/time-utils';
+import { SplitTeamTaskModal } from './SplitTeamTaskModal';
 
 interface TaskDetailDrawerProps {
   taskId: string | null;
   onClose: () => void;
+}
+
+/** Extracts the section letter from a "Room B"-style display string. */
+function sectionLetterOf(room?: string): string {
+  if (!room) return '';
+  return room.trim().split(' ').pop() || '';
 }
 
 /** Mirrors backend/src/utils/task-lifecycle.ts — keep in sync. */
@@ -41,6 +48,7 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
   const [assignees, setAssignees] = useState<User[]>([]);
   const [reassignTargetId, setReassignTargetId] = useState('');
   const [isReassignOpen, setIsReassignOpen] = useState(false);
+  const [isSplitOpen, setIsSplitOpen] = useState(false);
 
   // Monotonic fetch counter — a slow prior response can never overwrite a newer one.
   const fetchSeq = useRef(0);
@@ -111,19 +119,29 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
   const canCancel =
     role === 'SUPER_ADMIN' || role === 'ADMIN' || (Boolean(task) && Boolean(user) && user.id === task?.creatorId) || role === 'TEAM_LEAD';
 
+  // Mirrors the backend's canManageTeamTask — an unassigned team task can
+  // only be assigned/split by an org manager or that section's own Team Lead.
+  const canManageThisTeamTask =
+    role === 'SUPER_ADMIN' ||
+    role === 'ADMIN' ||
+    (role === 'TEAM_LEAD' && Boolean(task?.teamSection) && sectionLetterOf(user.room) === task?.teamSection);
+  const isUnassignedTeamTask = Boolean(task) && task?.taskType === 'TEAM' && !task?.assigneeId;
+
   useEffect(() => {
     if (!isReassignOpen) return;
     apiClient
       .getUsers()
-      .then((users) =>
-        setAssignees(
-          Array.isArray(users)
-            ? users.filter((u) => u.role === 'MEMBER' || u.role === 'TEAM_LEAD' || u.role === 'SERVER')
-            : []
-        )
-      )
+      .then((users) => {
+        if (!Array.isArray(users)) return setAssignees([]);
+        let eligible = users.filter((u) => u.role === 'MEMBER' || u.role === 'TEAM_LEAD' || u.role === 'SERVER');
+        // A team task can only go to a member of its own section.
+        if (task?.taskType === 'TEAM' && task.teamSection) {
+          eligible = eligible.filter((u) => sectionLetterOf(u.room) === task.teamSection);
+        }
+        setAssignees(eligible);
+      })
       .catch(() => setAssignees([]));
-  }, [isReassignOpen]);
+  }, [isReassignOpen, task?.taskType, task?.teamSection]);
 
   const runAction = async (fn: () => Promise<Task>) => {
     if (isMutating) return;
@@ -195,7 +213,12 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
               <>
                 <span className="font-mono text-xs font-bold text-primary">{task.id}</span>
                 <Badge priority={task.priority} />
-                <Badge status={task.status} />
+                <Badge status={task.status}>{isUnassignedTeamTask ? 'Open' : undefined}</Badge>
+                {task.taskType === 'TEAM' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-secondary-container text-on-secondary-container">
+                    Team Task · Section {task.teamSection}
+                  </span>
+                )}
               </>
             )}
           </div>
@@ -260,11 +283,15 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
                 <span
                   className="px-2.5 py-1 rounded text-xs font-semibold border bg-primary text-on-primary border-primary shadow-xs"
                 >
-                  {task.status.replace('_', ' ')}
+                  {isUnassignedTeamTask ? 'Open' : task.status.replace('_', ' ')}
                 </span>
                 {canManage &&
                   validNextStatuses
                     .filter((st) => st !== 'CANCELLED' || canCancel)
+                    // An unassigned team task can only move to ASSIGNED via
+                    // "Assign to Member"/"Split Among Team" — never a bare
+                    // status flip that would leave it assigned to no one.
+                    .filter((st) => !(isUnassignedTeamTask && st === 'ASSIGNED'))
                     .map((st) => (
                       <button
                         key={st}
@@ -307,23 +334,40 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-surface-outline text-xs">
               <div>
                 <span className="text-on-surface-variant block mb-1">Assignee</span>
-                <div className="flex items-center gap-2">
-                  <Avatar src={task.assigneeAvatar} name={task.assigneeName} size="sm" />
-                  <div>
-                    <p className="font-semibold text-primary">{task.assigneeName}</p>
-                    <p className="text-[10px] text-on-surface-variant font-mono">
-                      {task.assigneeSubroom} • {task.assigneeRoom}
-                    </p>
+                {isUnassignedTeamTask ? (
+                  <p className="font-semibold text-on-surface-variant italic">Unassigned — Section {task.teamSection}</p>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Avatar src={task.assigneeAvatar} name={task.assigneeName} size="sm" />
+                    <div>
+                      <p className="font-semibold text-primary">{task.assigneeName}</p>
+                      <p className="text-[10px] text-on-surface-variant font-mono">
+                        {task.assigneeSubroom} • {task.assigneeRoom}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                {canReassign && task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && (
-                  <button
-                    type="button"
-                    onClick={() => setIsReassignOpen((v) => !v)}
-                    className="mt-1.5 text-[10px] font-semibold text-secondary hover:text-primary transition-colors"
-                  >
-                    Reassign
-                  </button>
+                )}
+                {task.status !== 'COMPLETED' && task.status !== 'CANCELLED' && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    {(isUnassignedTeamTask ? canManageThisTeamTask : canReassign) && (
+                      <button
+                        type="button"
+                        onClick={() => setIsReassignOpen((v) => !v)}
+                        className="text-[10px] font-semibold text-secondary hover:text-primary transition-colors"
+                      >
+                        {isUnassignedTeamTask ? 'Assign to Member' : 'Reassign'}
+                      </button>
+                    )}
+                    {isUnassignedTeamTask && canManageThisTeamTask && (
+                      <button
+                        type="button"
+                        onClick={() => setIsSplitOpen(true)}
+                        className="text-[10px] font-semibold text-secondary hover:text-primary transition-colors"
+                      >
+                        Split Among Team
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -362,7 +406,7 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
             {isReassignOpen && (
               <div className="p-3 bg-surface-container-low border border-surface-outline rounded space-y-2">
                 <label className="block text-[10px] font-bold text-on-surface-variant uppercase tracking-wider">
-                  Reassign to
+                  {isUnassignedTeamTask ? 'Assign to' : 'Reassign to'}
                 </label>
                 <select
                   value={reassignTargetId}
@@ -388,7 +432,7 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
                     disabled={!reassignTargetId || isMutating}
                     onClick={handleReassign}
                   >
-                    Confirm Reassignment
+                    {isUnassignedTeamTask ? 'Confirm Assignment' : 'Confirm Reassignment'}
                   </Button>
                 </div>
               </div>
@@ -465,6 +509,18 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
           </div>
         )}
       </div>
+
+      {task && (
+        <SplitTeamTaskModal
+          isOpen={isSplitOpen}
+          onClose={() => setIsSplitOpen(false)}
+          task={task}
+          onSplit={() => {
+            setIsSplitOpen(false);
+            refresh(true);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -472,7 +528,9 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
 function describeHistoryEntry(action: string, details: Record<string, unknown>): string {
   switch (action) {
     case 'TASK_CREATED':
-      return `created this task, assigned to ${details.assigneeName || 'someone'}`;
+      return details.taskType === 'TEAM'
+        ? `created this team task for Section ${details.teamSection || '—'}`
+        : `created this task, assigned to ${details.assigneeName || 'someone'}`;
     case 'TASK_ASSIGNED':
       return `assigned this task to ${details.assigneeName || 'someone'}`;
     case 'TASK_REASSIGNED':
@@ -481,6 +539,10 @@ function describeHistoryEntry(action: string, details: Record<string, unknown>):
       return `changed status from ${details.previousStatus} to ${details.newStatus}`;
     case 'TASK_PROGRESS_CHANGED':
       return `updated progress from ${details.previousProgress}% to ${details.newProgress}%`;
+    case 'TASK_SPLIT': {
+      const names = Array.isArray(details.childAssigneeNames) ? (details.childAssigneeNames as string[]) : [];
+      return `split this task among ${names.length || 'several'} members${names.length ? ` (${names.join(', ')})` : ''}`;
+    }
     default:
       return action.replace(/_/g, ' ').toLowerCase();
   }

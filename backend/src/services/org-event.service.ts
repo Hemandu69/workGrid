@@ -5,9 +5,6 @@ import { AuthUserPayload } from '../plugins/auth.js';
 import { publishDomainEvent } from '../events/domain-events.js';
 import { convertISTToUTC, getISTDateTimeParts, formatToISTDate, formatToISTTime } from '../utils/time.js';
 
-/** How long after `scheduledAt` an event is considered LIVE before rolling to COMPLETED. */
-const LIVE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
 export class OrgEventNotFoundError extends Error {
   statusCode = 404;
   constructor(message = 'Event not found') {
@@ -29,18 +26,28 @@ export class OrgEventLockedError extends Error {
   }
 }
 
-/** Effective status is derived from scheduledAt + cancellation state, never trusted from a stale stored value. */
-export type EffectiveOrgEventStatus = 'UPCOMING' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
+/**
+ * Effective status is derived from scheduledAt/scheduledEndAt/completedAt + cancellation
+ * state, never trusted from a stale stored value. The clock alone can only ever move an
+ * event as far as AWAITING_COMPLETION — only an explicit completeEvent() call (setting
+ * completedAt) can make it COMPLETED.
+ */
+export type EffectiveOrgEventStatus = 'UPCOMING' | 'LIVE' | 'AWAITING_COMPLETION' | 'COMPLETED' | 'CANCELLED';
 
-export function deriveEventStatus(scheduledAt: Date, storedStatus: OrgEventStatus, now: Date = new Date()): EffectiveOrgEventStatus {
+export function deriveEventStatus(
+  scheduledAt: Date,
+  scheduledEndAt: Date,
+  completedAt: Date | null,
+  storedStatus: OrgEventStatus,
+  now: Date = new Date()
+): EffectiveOrgEventStatus {
   if (storedStatus === OrgEventStatus.CANCELLED) return 'CANCELLED';
+  if (completedAt != null) return 'COMPLETED';
 
-  const start = scheduledAt.getTime();
   const nowMs = now.getTime();
-
-  if (nowMs < start) return 'UPCOMING';
-  if (nowMs < start + LIVE_WINDOW_MS) return 'LIVE';
-  return 'COMPLETED';
+  if (nowMs < scheduledAt.getTime()) return 'UPCOMING';
+  if (nowMs < scheduledEndAt.getTime()) return 'LIVE';
+  return 'AWAITING_COMPLETION';
 }
 
 function scheduledAtFromDateTime(date: string, time: string): Date {
@@ -56,6 +63,8 @@ function serializeEvent(
     title: string;
     description: string;
     scheduledAt: Date;
+    scheduledEndAt: Date;
+    completedAt: Date | null;
     status: OrgEventStatus;
     createdAt: Date;
     updatedAt: Date;
@@ -64,7 +73,7 @@ function serializeEvent(
   },
   currentUserId?: string
 ) {
-  const effectiveStatus = deriveEventStatus(event.scheduledAt, event.status);
+  const effectiveStatus = deriveEventStatus(event.scheduledAt, event.scheduledEndAt, event.completedAt, event.status);
   const currentUserResponse = currentUserId
     ? event.responses?.find((r) => r.userId === currentUserId)?.response ?? null
     : null;
@@ -75,9 +84,12 @@ function serializeEvent(
     title: event.title,
     description: event.description,
     scheduledAt: event.scheduledAt.toISOString(),
+    scheduledEndAt: event.scheduledEndAt.toISOString(),
     dateIST: formatToISTDate(event.scheduledAt),
     timeIST: formatToISTTime(event.scheduledAt),
+    endTimeIST: formatToISTTime(event.scheduledEndAt),
     status: effectiveStatus,
+    completedAt: event.completedAt ? event.completedAt.toISOString() : null,
     createdById: event.createdBy?.id,
     createdByName: event.createdBy?.name || 'WorkGrid Administrator',
     createdAt: event.createdAt.toISOString(),
@@ -124,6 +136,7 @@ export class OrgEventService {
 
   static async createEvent(input: CreateOrgEventInput, user: AuthUserPayload) {
     const scheduledAt = scheduledAtFromDateTime(input.date, input.time);
+    const scheduledEndAt = scheduledAtFromDateTime(input.date, input.endTime);
 
     const event = await prisma.organizationEvent.create({
       data: {
@@ -131,6 +144,7 @@ export class OrgEventService {
         title: input.title,
         description: input.description,
         scheduledAt,
+        scheduledEndAt,
         createdById: user.id,
       },
       include: { createdBy: { select: CREATOR_SELECT } },
@@ -155,7 +169,7 @@ export class OrgEventService {
       throw new OrgEventNotFoundError();
     }
 
-    const effectiveStatus = deriveEventStatus(existing.scheduledAt, existing.status);
+    const effectiveStatus = deriveEventStatus(existing.scheduledAt, existing.scheduledEndAt, existing.completedAt, existing.status);
     if (effectiveStatus === 'COMPLETED') {
       throw new OrgEventLockedError('Completed events cannot be edited.');
     }
@@ -163,12 +177,21 @@ export class OrgEventService {
       throw new OrgEventLockedError('Cancelled events cannot be edited.');
     }
 
+    const wantsTimeChange = Boolean(input.date || input.time || input.endTime);
+    if (wantsTimeChange && (effectiveStatus === 'LIVE' || effectiveStatus === 'AWAITING_COMPLETION')) {
+      throw new OrgEventLockedError('The date and time of an event that has already started cannot be changed.');
+    }
+
     let scheduledAt = existing.scheduledAt;
-    if (input.date || input.time) {
+    let scheduledEndAt = existing.scheduledEndAt;
+    if (input.date || input.time || input.endTime) {
       const current = getISTDateTimeParts(existing.scheduledAt);
+      const currentEnd = getISTDateTimeParts(existing.scheduledEndAt);
       const date = input.date || current.dateStr;
       const time = input.time || `${String(current.hour).padStart(2, '0')}:${String(current.minute).padStart(2, '0')}`;
+      const endTime = input.endTime || `${String(currentEnd.hour).padStart(2, '0')}:${String(currentEnd.minute).padStart(2, '0')}`;
       scheduledAt = scheduledAtFromDateTime(date, time);
+      scheduledEndAt = scheduledAtFromDateTime(date, endTime);
     }
 
     const event = await prisma.organizationEvent.update({
@@ -177,6 +200,7 @@ export class OrgEventService {
         title: input.title ?? undefined,
         description: input.description ?? undefined,
         scheduledAt,
+        scheduledEndAt,
       },
       include: { createdBy: { select: CREATOR_SELECT } },
     });
@@ -200,7 +224,7 @@ export class OrgEventService {
       throw new OrgEventNotFoundError();
     }
 
-    const effectiveStatus = deriveEventStatus(existing.scheduledAt, existing.status);
+    const effectiveStatus = deriveEventStatus(existing.scheduledAt, existing.scheduledEndAt, existing.completedAt, existing.status);
     if (effectiveStatus === 'CANCELLED') {
       throw new OrgEventLockedError('Event is already cancelled.');
     }
@@ -228,9 +252,47 @@ export class OrgEventService {
   }
 
   /**
-   * Every authenticated organization user may set/change their response, including
-   * after the event starts — this preserves an accurate historical record. Only a
-   * cancelled event rejects new responses.
+   * The clock alone can only ever bring an event as far as AWAITING_COMPLETION — only an
+   * ADMIN/SUPER_ADMIN explicitly marking it done here sets completedAt, which is what
+   * deriveEventStatus treats as authoritative for COMPLETED.
+   */
+  static async completeEvent(eventId: string, user: AuthUserPayload) {
+    const existing = await prisma.organizationEvent.findUnique({ where: { id: eventId } });
+    if (!existing || existing.organizationId !== user.organizationId) {
+      throw new OrgEventNotFoundError();
+    }
+
+    const effectiveStatus = deriveEventStatus(existing.scheduledAt, existing.scheduledEndAt, existing.completedAt, existing.status);
+    if (effectiveStatus === 'CANCELLED') {
+      throw new OrgEventLockedError('Cancelled events cannot be marked as done.');
+    }
+    if (effectiveStatus === 'COMPLETED') {
+      throw new OrgEventLockedError('Event is already marked as done.');
+    }
+
+    const event = await prisma.organizationEvent.update({
+      where: { id: eventId },
+      data: { completedAt: new Date() },
+      include: { createdBy: { select: CREATOR_SELECT } },
+    });
+
+    const result = serializeEvent(event);
+
+    publishDomainEvent({
+      type: 'ORG_EVENT_COMPLETED',
+      organizationId: user.organizationId,
+      entityId: event.id,
+      actorId: user.id,
+      payload: { eventId: event.id, organizationId: user.organizationId, event: result },
+    });
+
+    return result;
+  }
+
+  /**
+   * Every authenticated organization user may set/change their response while the event
+   * is still open. Once an event is COMPLETED or CANCELLED, responses are locked to
+   * preserve the final historical record.
    */
   static async upsertResponse(eventId: string, response: EventResponseChoice, user: AuthUserPayload) {
     const event = await prisma.organizationEvent.findUnique({ where: { id: eventId } });
@@ -238,9 +300,12 @@ export class OrgEventService {
       throw new OrgEventNotFoundError();
     }
 
-    const effectiveStatus = deriveEventStatus(event.scheduledAt, event.status);
+    const effectiveStatus = deriveEventStatus(event.scheduledAt, event.scheduledEndAt, event.completedAt, event.status);
     if (effectiveStatus === 'CANCELLED') {
       throw new OrgEventLockedError('Cannot respond to a cancelled event.');
+    }
+    if (effectiveStatus === 'COMPLETED') {
+      throw new OrgEventLockedError('Cannot respond to a completed event.');
     }
 
     const existingResponse = await prisma.organizationEventResponse.findUnique({

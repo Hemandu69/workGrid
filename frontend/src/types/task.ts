@@ -9,6 +9,8 @@ export type TaskStatus =
 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
+export type TaskType = 'INDIVIDUAL' | 'TEAM';
+
 export interface TaskComment {
   id: string;
   authorId: string;
@@ -34,6 +36,10 @@ export interface Task {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  taskType: TaskType;
+  teamSection?: string;
+  parentTaskId?: string;
+  isDistributed?: boolean;
   progress: number;
   assigneeId: string;
   assigneeName: string;

@@ -93,6 +93,8 @@ Object.assign(mockPrisma, {
         title: data.title,
         description: data.description,
         scheduledAt: data.scheduledAt,
+        scheduledEndAt: data.scheduledEndAt,
+        completedAt: null,
         status: 'UPCOMING',
         createdById: data.createdById ?? null,
         createdAt: now,
@@ -110,6 +112,8 @@ Object.assign(mockPrisma, {
         ...(data.title !== undefined ? { title: data.title } : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
         ...(data.scheduledAt !== undefined ? { scheduledAt: data.scheduledAt } : {}),
+        ...(data.scheduledEndAt !== undefined ? { scheduledEndAt: data.scheduledEndAt } : {}),
+        ...(data.completedAt !== undefined ? { completedAt: data.completedAt } : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
         updatedAt: new Date(),
       };
@@ -195,15 +199,25 @@ describe('Organization Events — API, authorization, analytics & realtime event
   function futureDateParts(hoursFromNow: number) {
     const d = new Date(Date.now() + hoursFromNow * 3600000);
     const dateStr = d.toISOString().split('T')[0];
-    const time = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
-    return { date: dateStr, time };
+    // Fixed, safe time-of-day — keeps this independent of when the suite runs
+    // and avoids any midnight-rollover edge case with the endTime below.
+    return { date: dateStr, time: '10:00' };
   }
 
   const validPayload = () => ({
     title: 'Company Town Hall',
     description: 'Quarterly all-hands sync for every section.',
     ...futureDateParts(48),
+    endTime: '11:00',
   });
+
+  /** Directly rewrites an already-created mock event's start/end window in real JS Date terms, bypassing the IST string round-trip for precise LIVE/AWAITING_COMPLETION boundary tests. */
+  function setEventWindow(eventId: string, startOffsetMs: number, endOffsetMs: number) {
+    const idx = mockEvents.findIndex((e) => e.id === eventId);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    mockEvents[idx].scheduledAt = new Date(Date.now() + startOffsetMs);
+    mockEvents[idx].scheduledEndAt = new Date(Date.now() + endOffsetMs);
+  }
 
   // ---------------------------------------------------------------------------
   // 1. Creation authorization
@@ -404,29 +418,151 @@ describe('Organization Events — API, authorization, analytics & realtime event
     });
 
     it('a completed event cannot be edited or cancelled', async () => {
-      // Create an event scheduled far in the past so it's derived as COMPLETED
-      const past = new Date(Date.now() - 5 * 3600000);
-      const created = await supertest(app.server)
-        .post('/api/v1/events')
-        .set('Authorization', `Bearer ${tokens['admin-1']}`)
-        .send({
-          title: 'Past Event',
-          description: 'Already happened.',
-          date: past.toISOString().split('T')[0],
-          time: `${String(past.getUTCHours()).padStart(2, '0')}:${String(past.getUTCMinutes()).padStart(2, '0')}`,
-        });
-      expect(created.body.status).toBe('COMPLETED');
+      // Time passing alone can only ever bring an event to AWAITING_COMPLETION —
+      // it must be explicitly marked done to become COMPLETED.
+      const created = await createEvent();
+      setEventWindow(created.id, -3 * 3600000, -2 * 3600000);
+      const completed = await supertest(app.server)
+        .post(`/api/v1/events/${created.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(completed.body.status).toBe('COMPLETED');
 
       const editRes = await supertest(app.server)
-        .patch(`/api/v1/events/${created.body.id}`)
+        .patch(`/api/v1/events/${created.id}`)
         .set('Authorization', `Bearer ${tokens['admin-1']}`)
         .send({ title: 'Rewriting history' });
       const cancelRes = await supertest(app.server)
-        .post(`/api/v1/events/${created.body.id}/cancel`)
+        .post(`/api/v1/events/${created.id}/cancel`)
         .set('Authorization', `Bearer ${tokens['admin-1']}`);
 
       expect(editRes.status).toBe(400);
       expect(cancelRes.status).toBe(400);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 3b. Explicit completion & AWAITING_COMPLETION
+  // ---------------------------------------------------------------------------
+  describe('Event completion & AWAITING_COMPLETION', () => {
+    async function createEvent() {
+      const res = await supertest(app.server)
+        .post('/api/v1/events')
+        .set('Authorization', `Bearer ${tokens['admin-1']}`)
+        .send(validPayload());
+      return res.body;
+    }
+
+    it('status derivation: before the start time, status is UPCOMING', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, 2 * 3600000, 3 * 3600000);
+      const res = await supertest(app.server).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${tokens['member-1']}`);
+      expect(res.body.status).toBe('UPCOMING');
+    });
+
+    it('status derivation: between start and end, status is LIVE', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -5 * 60000, 30 * 60000);
+      const res = await supertest(app.server).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${tokens['member-1']}`);
+      expect(res.body.status).toBe('LIVE');
+    });
+
+    it('status derivation: after the end time passes, status is AWAITING_COMPLETION, never auto-COMPLETED', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -3 * 3600000, -2 * 3600000);
+      const res = await supertest(app.server).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${tokens['member-1']}`);
+      expect(res.body.status).toBe('AWAITING_COMPLETION');
+    });
+
+    it('an event does not automatically become COMPLETED no matter how long past its end time', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -30 * 24 * 3600000, -29 * 24 * 3600000); // ended a month ago
+      const res = await supertest(app.server).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${tokens['member-1']}`);
+      expect(res.body.status).toBe('AWAITING_COMPLETION');
+      expect(res.body.status).not.toBe('COMPLETED');
+    });
+
+    it('ADMIN can mark an event as done', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      const res = await supertest(app.server)
+        .post(`/api/v1/events/${event.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('COMPLETED');
+      expect(res.body.completedAt).toBeDefined();
+      expect(res.body.completedAt).not.toBeNull();
+    });
+
+    it('SUPER_ADMIN can mark an event as done', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      const res = await supertest(app.server)
+        .post(`/api/v1/events/${event.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['super-admin-1']}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('COMPLETED');
+    });
+
+    it('MEMBER, HR, SERVER, and TEAM_LEAD cannot mark an event as done (403)', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      for (const userId of ['member-1', 'hr-1', 'server-1', 'teamlead-1']) {
+        const res = await supertest(app.server)
+          .post(`/api/v1/events/${event.id}/complete`)
+          .set('Authorization', `Bearer ${tokens[userId]}`);
+        expect(res.status).toBe(403);
+      }
+    });
+
+    it('an event can also be marked done while still LIVE (before its scheduled end time)', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -5 * 60000, 30 * 60000);
+      const res = await supertest(app.server)
+        .post(`/api/v1/events/${event.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('COMPLETED');
+    });
+
+    it('a completed event cannot be completed twice (400)', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      await supertest(app.server).post(`/api/v1/events/${event.id}/complete`).set('Authorization', `Bearer ${tokens['admin-1']}`);
+      const res = await supertest(app.server)
+        .post(`/api/v1/events/${event.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('a cancelled event cannot be marked as done (400)', async () => {
+      const event = await createEvent();
+      await supertest(app.server).post(`/api/v1/events/${event.id}/cancel`).set('Authorization', `Bearer ${tokens['admin-1']}`);
+      const res = await supertest(app.server)
+        .post(`/api/v1/events/${event.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('publishes ORG_EVENT_COMPLETED with the eventId and organizationId', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      publishedEvents.length = 0;
+
+      await supertest(app.server).post(`/api/v1/events/${event.id}/complete`).set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+      const completedEvent = publishedEvents.find((e) => e.type === 'ORG_EVENT_COMPLETED');
+      expect(completedEvent).toBeDefined();
+      expect(completedEvent.payload.eventId).toBe(event.id);
+      expect(completedEvent.payload.organizationId).toBe('org-1');
+    });
+
+    it('a user from another organization cannot mark the event as done (404)', async () => {
+      const event = await createEvent();
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      const res = await supertest(app.server)
+        .post(`/api/v1/events/${event.id}/complete`)
+        .set('Authorization', `Bearer ${tokens['super-admin-2']}`);
+      expect(res.status).toBe(404);
     });
   });
 
@@ -514,6 +650,59 @@ describe('Organization Events — API, authorization, analytics & realtime event
       const recordsForUser = mockResponses.filter((r) => r.eventId === event.id && r.userId === 'member-1');
       expect(recordsForUser).toHaveLength(1);
       expect(recordsForUser[0].response).toBe('NOT_ATTENDING');
+    });
+
+    it('a response can be changed in any direction — ATTENDING -> MAYBE -> NOT_ATTENDING -> ATTENDING — while the event is open', async () => {
+      const event = await createEvent();
+      const sequence: Array<'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'ATTENDING'> = [
+        'ATTENDING',
+        'MAYBE',
+        'NOT_ATTENDING',
+        'ATTENDING',
+      ];
+      for (const response of sequence) {
+        const res = await supertest(app.server)
+          .put(`/api/v1/events/${event.id}/response`)
+          .set('Authorization', `Bearer ${tokens['member-1']}`)
+          .send({ response });
+        expect(res.status).toBe(200);
+        expect(res.body.response).toBe(response);
+      }
+    });
+
+    it('cannot respond to a completed event (400), and the final response is preserved', async () => {
+      const event = await createEvent();
+      await supertest(app.server)
+        .put(`/api/v1/events/${event.id}/response`)
+        .set('Authorization', `Bearer ${tokens['member-1']}`)
+        .send({ response: 'ATTENDING' });
+
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      await supertest(app.server).post(`/api/v1/events/${event.id}/complete`).set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+      const res = await supertest(app.server)
+        .put(`/api/v1/events/${event.id}/response`)
+        .set('Authorization', `Bearer ${tokens['member-1']}`)
+        .send({ response: 'NOT_ATTENDING' });
+      expect(res.status).toBe(400);
+
+      const detail = await supertest(app.server).get(`/api/v1/events/${event.id}`).set('Authorization', `Bearer ${tokens['member-1']}`);
+      expect(detail.body.currentUserResponse).toBe('ATTENDING');
+    });
+
+    it('analytics remain correct after the event is completed', async () => {
+      const event = await createEvent();
+      await supertest(app.server).put(`/api/v1/events/${event.id}/response`).set('Authorization', `Bearer ${tokens['member-1']}`).send({ response: 'ATTENDING' });
+      await supertest(app.server).put(`/api/v1/events/${event.id}/response`).set('Authorization', `Bearer ${tokens['member-2']}`).send({ response: 'MAYBE' });
+
+      setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
+      await supertest(app.server).post(`/api/v1/events/${event.id}/complete`).set('Authorization', `Bearer ${tokens['admin-1']}`);
+
+      const analytics = await supertest(app.server)
+        .get(`/api/v1/events/${event.id}/analytics`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`);
+      expect(analytics.body.attending).toBe(1);
+      expect(analytics.body.maybe).toBe(1);
     });
   });
 

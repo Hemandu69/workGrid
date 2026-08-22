@@ -38,9 +38,16 @@ export function TaskCard({ task, onOpenDetails, onUpdateStatus }: TaskCardProps)
               {task.campaignTitle}
             </span>
           )}
-          <h3 className="text-base font-semibold text-primary leading-snug hover:underline cursor-pointer" onClick={() => onOpenDetails?.(task)}>
-            {task.title}
-          </h3>
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-base font-semibold text-primary leading-snug hover:underline cursor-pointer" onClick={() => onOpenDetails?.(task)}>
+              {task.title}
+            </h3>
+            {task.taskType === 'TEAM' && (
+              <span className="shrink-0 px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-secondary-container text-on-secondary-container">
+                Team · {task.teamSection}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">

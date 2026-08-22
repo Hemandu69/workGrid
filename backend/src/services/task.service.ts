@@ -4,12 +4,14 @@ import {
   UpdateTaskStatusInput,
   UpdateTaskProgressInput,
   ReassignTaskInput,
+  SplitTeamTaskInput,
   AddTaskCommentInput,
 } from '../schemas/task.schema.js';
 import { AuthUserPayload } from '../plugins/auth.js';
-import { AccountStatus, TaskStatus, UserRole } from '@prisma/client';
+import { AccountStatus, TaskStatus, TaskType, UserRole } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
 import { AvailabilityService } from './availability.service.js';
+import { deriveAvailability, availabilityFromUserStatus } from '../utils/availability-projection.js';
 import {
   TASK_ELIGIBLE_ASSIGNEE_ROLES,
   TaskActorContext,
@@ -17,6 +19,7 @@ import {
   canCancelTask,
   canCreateTaskFor,
   canManageTask,
+  canManageTeamTask,
   canReassignTask,
   canViewTask,
   isValidStatusTransition,
@@ -36,13 +39,14 @@ export class TaskConflictError extends Error {
   statusCode = 409;
 }
 
-function toActorContext(user: AuthUserPayload): TaskActorContext {
+function toActorContext(user: AuthUserPayload, roomLetter?: string | null): TaskActorContext {
   return {
     id: user.id,
     role: user.role,
     accountStatus: user.accountStatus,
     organizationId: user.organizationId,
     roomId: user.roomId || null,
+    roomLetter: roomLetter ?? null,
   };
 }
 
@@ -50,6 +54,7 @@ const TASK_INCLUDE = {
   assignee: { include: { room: true, subroom: true } },
   creator: true,
   campaign: true,
+  childTasks: { select: { id: true } },
 } as const;
 
 export class TaskService {
@@ -65,6 +70,10 @@ export class TaskService {
       description: t.description || '',
       status: t.status,
       priority: t.priority,
+      taskType: t.taskType,
+      teamSection: t.teamSection || undefined,
+      parentTaskId: t.parentTaskId || undefined,
+      isDistributed: (t.childTasks?.length ?? 0) > 0,
       progress: t.progress,
       assigneeId: t.assigneeId || '',
       assigneeName: t.assignee?.name || 'Unassigned',
@@ -86,13 +95,34 @@ export class TaskService {
     };
   }
 
-  private static toScope(task: { organizationId: string; creatorId: string | null; assigneeId: string | null; assignee?: { roomId?: string | null } | null }): TaskScopeContext {
+  private static toScope(task: {
+    organizationId: string;
+    creatorId: string | null;
+    assigneeId: string | null;
+    assignee?: { roomId?: string | null } | null;
+    taskType?: TaskType;
+    teamSection?: string | null;
+  }): TaskScopeContext {
     return {
       organizationId: task.organizationId,
       creatorId: task.creatorId,
       assigneeId: task.assigneeId,
       assigneeRoomId: task.assignee?.roomId ?? null,
+      taskType: task.taskType,
+      teamSection: task.teamSection ?? null,
     };
+  }
+
+  /** Resolves the actor's own section letter — needed for team-task scope checks that can't rely on an assignee's room. */
+  private static async resolveRoomLetter(userId: string): Promise<string | null> {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { room: { select: { letter: true } } } });
+    return user?.room?.letter ?? null;
+  }
+
+  /** Builds the actor context used for authorization, resolving roomLetter only for TEAM_LEAD (the one role that needs it, for unassigned-team-task scope checks). */
+  private static async buildActorContext(user: AuthUserPayload): Promise<TaskActorContext> {
+    const roomLetter = user.role === UserRole.TEAM_LEAD ? await this.resolveRoomLetter(user.id) : null;
+    return toActorContext(user, roomLetter);
   }
 
   private static async findRawTask(idOrDisplayId: string) {
@@ -120,26 +150,41 @@ export class TaskService {
     requester: AuthUserPayload
   ) {
     const where: any = { organizationId: requester.organizationId };
+    const andConditions: any[] = [];
 
     if (filters.status) where.status = filters.status;
     if (filters.priority) where.priority = filters.priority;
     if (filters.campaignId) where.campaignId = filters.campaignId;
     if (filters.search) {
-      where.OR = [
-        { title: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
-        { taskIdDisplay: { contains: filters.search, mode: 'insensitive' } },
-      ];
+      andConditions.push({
+        OR: [
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+          { taskIdDisplay: { contains: filters.search, mode: 'insensitive' } },
+        ],
+      });
     }
 
     if (requester.role === UserRole.MEMBER) {
       // A member can only ever see their own assignments — the client-supplied
       // assigneeId is ignored entirely rather than trusted.
       where.assigneeId = requester.id;
-    } else if (requester.role === UserRole.TEAM_LEAD || requester.role === UserRole.SERVER) {
+    } else if (requester.role === UserRole.TEAM_LEAD) {
       if (!requester.roomId) {
-        const error = new TaskForbiddenError('You have no room assignment, so no tasks are in scope.');
-        throw error;
+        throw new TaskForbiddenError('You have no room assignment, so no tasks are in scope.');
+      }
+      // A Team Lead sees tasks assigned within their room, plus their own
+      // section's unassigned team tasks (which have no assignee to match on).
+      const roomLetter = await this.resolveRoomLetter(requester.id);
+      andConditions.push({
+        OR: [
+          { assignee: { roomId: requester.roomId } },
+          ...(roomLetter ? [{ taskType: TaskType.TEAM, teamSection: roomLetter, assigneeId: null }] : []),
+        ],
+      });
+    } else if (requester.role === UserRole.SERVER) {
+      if (!requester.roomId) {
+        throw new TaskForbiddenError('You have no room assignment, so no tasks are in scope.');
       }
       where.assignee = { roomId: requester.roomId };
     } else if (filters.assigneeId) {
@@ -150,6 +195,8 @@ export class TaskService {
     if (filters.roomLetter && (requester.role === UserRole.SUPER_ADMIN || requester.role === UserRole.ADMIN)) {
       where.assignee = { ...(where.assignee || {}), room: { letter: filters.roomLetter.toUpperCase() } };
     }
+
+    if (andConditions.length > 0) where.AND = andConditions;
 
     const tasks = await prisma.task.findMany({
       where,
@@ -164,7 +211,7 @@ export class TaskService {
     const task = await this.findRawTask(idOrDisplayId);
     if (!task) throw new TaskNotFoundError(`Task ${idOrDisplayId} not found`);
 
-    const actor = toActorContext(requester);
+    const actor = await this.buildActorContext(requester);
     const scope = this.toScope(task);
     if (!canViewTask(actor, scope)) {
       throw new TaskForbiddenError('You are not authorized to view this task.');
@@ -218,7 +265,7 @@ export class TaskService {
     const task = await this.findRawTask(idOrDisplayId);
     if (!task) throw new TaskNotFoundError(`Task ${idOrDisplayId} not found`);
 
-    const actor = toActorContext(requester);
+    const actor = await this.buildActorContext(requester);
     if (!canViewTask(actor, this.toScope(task))) {
       throw new TaskForbiddenError('You are not authorized to view this task.');
     }
@@ -231,18 +278,27 @@ export class TaskService {
       throw new TaskForbiddenError('Only ACTIVE accounts may create tasks.');
     }
 
+    if (input.taskType === TaskType.TEAM) {
+      return this.createTeamTask(input, user);
+    }
+
+    if (!input.assigneeId) {
+      throw new TaskValidationError('assigneeId is required for an individual task.');
+    }
+    const assigneeIdOrEmail = input.assigneeId;
+
     // Assignee must exist in the SAME organization — never trust that a
     // client-supplied id/email couldn't resolve to a different org's user.
     const assignee = await prisma.user.findFirst({
       where: {
         organizationId: user.organizationId,
-        OR: [{ id: input.assigneeId }, { email: input.assigneeId }],
+        OR: [{ id: assigneeIdOrEmail }, { email: assigneeIdOrEmail }],
       },
       include: { room: true },
     });
 
     if (!assignee) {
-      throw new TaskValidationError(`Assignee ${input.assigneeId} not found in your organization.`);
+      throw new TaskValidationError(`Assignee ${assigneeIdOrEmail} not found in your organization.`);
     }
 
     if (assignee.accountStatus !== AccountStatus.ACTIVE) {
@@ -273,6 +329,7 @@ export class TaskService {
           title: input.title,
           description: input.description,
           priority: input.priority,
+          taskType: TaskType.INDIVIDUAL,
           status: TaskStatus.ASSIGNED,
           progress: 0,
           estimatedHours: input.estimatedHours,
@@ -341,11 +398,97 @@ export class TaskService {
     return fullTask;
   }
 
+  /**
+   * A TEAM task belongs to a section, not a person — it starts unassigned
+   * (status DRAFT, displayed as "Open") and the section's Team Lead later
+   * assigns it to one member or splits it across several via splitTeamTask.
+   */
+  private static async createTeamTask(input: CreateTaskInput, user: AuthUserPayload) {
+    if (!input.teamSection) {
+      throw new TaskValidationError('teamSection is required for a team task.');
+    }
+    const teamSection = input.teamSection.toUpperCase();
+
+    const room = await prisma.room.findFirst({
+      where: { organizationId: user.organizationId, letter: teamSection },
+    });
+    if (!room) {
+      throw new TaskValidationError(`Section ${teamSection} does not exist in your organization.`);
+    }
+
+    const actorRoomLetter = user.role === UserRole.TEAM_LEAD ? await this.resolveRoomLetter(user.id) : null;
+    const actor = toActorContext(user, actorRoomLetter);
+    const newTaskScope: TaskScopeContext = {
+      organizationId: user.organizationId,
+      creatorId: user.id,
+      assigneeId: null,
+      taskType: TaskType.TEAM,
+      teamSection,
+    };
+    if (!canManageTeamTask(actor, newTaskScope)) {
+      throw new TaskForbiddenError('You can only create team tasks for your own section.');
+    }
+
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    const taskIdDisplay = `TSK-${randomSuffix}`;
+
+    const task = await prisma.$transaction(async (tx) => {
+      const created = await tx.task.create({
+        data: {
+          organizationId: user.organizationId,
+          taskIdDisplay,
+          title: input.title,
+          description: input.description,
+          priority: input.priority,
+          taskType: TaskType.TEAM,
+          teamSection,
+          status: TaskStatus.DRAFT,
+          progress: 0,
+          estimatedHours: input.estimatedHours,
+          allocatedHours: 0,
+          dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
+          assigneeId: null,
+          creatorId: user.id,
+          campaignId: input.campaignId,
+          tags: input.tags,
+        },
+      });
+
+      if (typeof (tx as any).auditEvent?.create === 'function') {
+        await (tx as any).auditEvent.create({
+          data: {
+            organizationId: user.organizationId,
+            userId: user.id,
+            action: 'TASK_CREATED',
+            entityType: 'Task',
+            entityId: created.id,
+            details: { title: created.title, taskType: 'TEAM', teamSection },
+          },
+        });
+      }
+
+      return created;
+    });
+
+    const fullTask = await this.getTaskById(task.id, user);
+
+    publishDomainEvent({
+      type: 'TASK_CREATED',
+      organizationId: user.organizationId,
+      entityId: task.id,
+      actorId: user.id,
+      payload: { ...fullTask, creatorId: user.id },
+    });
+
+    // No assignee yet — nothing to sync availability for.
+    return fullTask;
+  }
+
   static async updateTaskStatus(idOrDisplayId: string, input: UpdateTaskStatusInput, requester: AuthUserPayload) {
     const task = await this.findRawTask(idOrDisplayId);
     if (!task) throw new TaskNotFoundError(`Task ${idOrDisplayId} not found`);
 
-    const actor = toActorContext(requester);
+    const actor = await this.buildActorContext(requester);
     const scope = this.toScope(task);
     const authorized = input.status === TaskStatus.CANCELLED ? canCancelTask(actor, scope) : canManageTask(actor, scope);
     if (!authorized) {
@@ -429,7 +572,7 @@ export class TaskService {
     const task = await this.findRawTask(idOrDisplayId);
     if (!task) throw new TaskNotFoundError(`Task ${idOrDisplayId} not found`);
 
-    const actor = toActorContext(requester);
+    const actor = await this.buildActorContext(requester);
     const scope = this.toScope(task);
     if (!canManageTask(actor, scope)) {
       throw new TaskForbiddenError('You are not authorized to update this task’s progress.');
@@ -558,14 +701,28 @@ export class TaskService {
       throw new TaskValidationError(`${newAssignee.name}'s role is not eligible to receive task assignments.`);
     }
 
-    const actor = toActorContext(requester);
+    const actor = await this.buildActorContext(requester);
     const scope = this.toScope(task);
-    if (!canReassignTask(actor, scope, newAssignee.roomId)) {
+    const isUnassignedTeamTask = task.taskType === TaskType.TEAM && task.assigneeId == null;
+    const authorized = isUnassignedTeamTask
+      ? canManageTeamTask(actor, scope)
+      : canReassignTask(actor, scope, newAssignee.roomId);
+    if (!authorized) {
       throw new TaskForbiddenError('You are not authorized to reassign this task.');
     }
 
     if (newAssignee.id === task.assigneeId) {
       throw new TaskConflictError(`Task is already assigned to ${newAssignee.name}.`);
+    }
+
+    if (task.taskType === TaskType.TEAM) {
+      const availability = deriveAvailability({
+        presenceState: newAssignee.presenceState,
+        storedState: availabilityFromUserStatus(newAssignee.status),
+      });
+      if (availability.state === 'UNAVAILABLE') {
+        throw new TaskConflictError(`${newAssignee.name} is currently unavailable and cannot be assigned this team task.`);
+      }
     }
 
     const previousAssigneeId = task.assigneeId;
@@ -574,7 +731,11 @@ export class TaskService {
     const updated = await prisma.$transaction(async (tx) => {
       const result = await tx.task.update({
         where: { id: task.id },
-        data: { assigneeId: newAssignee.id },
+        data: {
+          assigneeId: newAssignee.id,
+          // First-time assignment of an unassigned team task also leaves DRAFT.
+          status: isUnassignedTeamTask ? TaskStatus.ASSIGNED : task.status,
+        },
       });
 
       if (previousAssigneeId) {
@@ -638,6 +799,174 @@ export class TaskService {
     return fullTask;
   }
 
+  /**
+   * Divides an unassigned TEAM task into several new INDIVIDUAL child tasks,
+   * one per member — the original team task is never deleted or duplicated;
+   * it stays as the parent record, and its "distributed" state is derived
+   * purely from whether it now has child tasks.
+   */
+  static async splitTeamTask(idOrDisplayId: string, input: SplitTeamTaskInput, requester: AuthUserPayload) {
+    const task = await this.findRawTask(idOrDisplayId);
+    if (!task) throw new TaskNotFoundError(`Task ${idOrDisplayId} not found`);
+
+    if (task.taskType !== TaskType.TEAM || task.assigneeId != null) {
+      throw new TaskConflictError('Only an unassigned team task can be split among members.');
+    }
+
+    const actor = await this.buildActorContext(requester);
+    if (!canManageTeamTask(actor, this.toScope(task))) {
+      throw new TaskForbiddenError('You are not authorized to split this team task.');
+    }
+
+    // Resolve + validate every candidate up front, before creating anything.
+    const resolved: Array<{ assignment: (typeof input.assignments)[number]; candidate: any }> = [];
+    for (const assignment of input.assignments) {
+      const candidate = await prisma.user.findFirst({
+        where: {
+          organizationId: task.organizationId,
+          OR: [{ id: assignment.assigneeId }, { email: assignment.assigneeId }],
+        },
+      });
+      if (!candidate) {
+        throw new TaskValidationError(`Assignee ${assignment.assigneeId} not found in your organization.`);
+      }
+      if (candidate.accountStatus !== AccountStatus.ACTIVE) {
+        throw new TaskValidationError(`${candidate.name} is currently ${candidate.accountStatus} and cannot receive task assignments.`);
+      }
+      if (!candidate.role || !TASK_ELIGIBLE_ASSIGNEE_ROLES.includes(candidate.role)) {
+        throw new TaskValidationError(`${candidate.name}'s role is not eligible to receive task assignments.`);
+      }
+      const availability = deriveAvailability({
+        presenceState: candidate.presenceState,
+        storedState: availabilityFromUserStatus(candidate.status),
+      });
+      if (availability.state === 'UNAVAILABLE') {
+        throw new TaskConflictError(`${candidate.name} is currently unavailable and cannot be assigned part of this team task.`);
+      }
+      resolved.push({ assignment, candidate });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const childRows: Array<{ id: string; candidateId: string; candidateName: string }> = [];
+
+      for (const { assignment, candidate } of resolved) {
+        const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+        const estimatedHours = assignment.estimatedHours ?? task.estimatedHours;
+
+        const child = await tx.task.create({
+          data: {
+            organizationId: task.organizationId,
+            taskIdDisplay: `TSK-${randomSuffix}`,
+            title: assignment.title,
+            description: assignment.description ?? task.description,
+            priority: task.priority,
+            taskType: TaskType.INDIVIDUAL,
+            parentTaskId: task.id,
+            status: TaskStatus.ASSIGNED,
+            progress: 0,
+            estimatedHours,
+            allocatedHours: 0,
+            dueDate: task.dueDate,
+            assigneeId: candidate.id,
+            creatorId: requester.id,
+            campaignId: task.campaignId,
+            tags: task.tags,
+          },
+        });
+
+        await tx.user.update({
+          where: { id: candidate.id },
+          data: { currentAllocatedHours: { increment: Math.round(estimatedHours) } },
+        });
+
+        if (typeof (tx as any).auditEvent?.create === 'function') {
+          await (tx as any).auditEvent.create({
+            data: {
+              organizationId: task.organizationId,
+              userId: requester.id,
+              action: 'TASK_CREATED',
+              entityType: 'Task',
+              entityId: child.id,
+              details: { title: child.title, assigneeId: candidate.id, assigneeName: candidate.name, parentTaskId: task.id },
+            },
+          });
+        }
+
+        childRows.push({ id: child.id, candidateId: candidate.id, candidateName: candidate.name });
+      }
+
+      if (typeof (tx as any).auditEvent?.create === 'function') {
+        await (tx as any).auditEvent.create({
+          data: {
+            organizationId: task.organizationId,
+            userId: requester.id,
+            action: 'TASK_SPLIT',
+            entityType: 'Task',
+            entityId: task.id,
+            details: {
+              childTaskIds: childRows.map((c) => c.id),
+              childAssigneeNames: childRows.map((c) => c.candidateName),
+            },
+          },
+        });
+      }
+
+      return childRows;
+    });
+
+    const children = await Promise.all(created.map((c) => this.getTaskById(c.id, requester)));
+
+    for (let i = 0; i < children.length; i++) {
+      const fullChild = children[i];
+      const candidateId = created[i].candidateId;
+
+      publishDomainEvent({
+        type: 'TASK_CREATED',
+        organizationId: task.organizationId,
+        entityId: fullChild.dbId,
+        targetUserId: candidateId,
+        actorId: requester.id,
+        payload: { ...fullChild, assigneeId: candidateId, creatorId: requester.id },
+      });
+
+      publishDomainEvent({
+        type: 'TASK_ASSIGNED',
+        organizationId: task.organizationId,
+        entityId: fullChild.dbId,
+        targetUserId: candidateId,
+        actorId: requester.id,
+        payload: {
+          taskId: fullChild.dbId,
+          taskIdDisplay: fullChild.id,
+          title: fullChild.title,
+          assigneeId: candidateId,
+          assigneeName: fullChild.assigneeName,
+          creatorId: requester.id,
+        },
+      });
+
+      await AvailabilityService.syncAvailabilityWithTasks(candidateId, requester.id).catch(() => null);
+    }
+
+    const fullParent = await this.getTaskById(task.id, requester);
+
+    publishDomainEvent({
+      type: 'TASK_UPDATED',
+      organizationId: task.organizationId,
+      entityId: task.id,
+      actorId: requester.id,
+      payload: {
+        taskId: task.id,
+        taskIdDisplay: task.taskIdDisplay,
+        assigneeId: task.assigneeId,
+        creatorId: task.creatorId,
+        task: fullParent,
+      },
+    });
+
+    return { parent: fullParent, children };
+  }
+
   static async cancelTask(idOrDisplayId: string, reason: string | undefined, requester: AuthUserPayload) {
     return this.updateTaskStatus(idOrDisplayId, { status: TaskStatus.CANCELLED, reason }, requester);
   }
@@ -650,7 +979,7 @@ export class TaskService {
     const task = await this.findRawTask(idOrDisplayId);
     if (!task) throw new TaskNotFoundError(`Task ${idOrDisplayId} not found`);
 
-    const actor = toActorContext(user);
+    const actor = await this.buildActorContext(user);
     if (!canViewTask(actor, this.toScope(task))) {
       throw new TaskForbiddenError('You are not authorized to comment on this task.');
     }
