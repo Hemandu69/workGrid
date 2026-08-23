@@ -113,3 +113,40 @@ describe('PersonAvailabilityDrawer — read-only + collapsible days', () => {
     await waitFor(() => expect(screen.getAllByText('12:00 AM – 12:00 AM')).toHaveLength(1));
   });
 });
+
+describe('PersonAvailabilityDrawer — Reassign Room affordance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedApi.getPersonAvailabilityDetail.mockResolvedValue(buildDetail());
+  });
+
+  it('renders an unmistakable "Reassign Room" button (not plain text) for ADMIN/SUPER_ADMIN', async () => {
+    mockRole = 'ADMIN';
+    render(<PersonAvailabilityDrawer userId="user-2" onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Sarah Connor')).toBeInTheDocument());
+
+    const reassignButton = screen.getByRole('button', { name: /Reassign Room/i });
+    expect(reassignButton).toBeInTheDocument();
+    expect(reassignButton).toHaveAttribute('title', "Change this person's assigned room");
+  });
+
+  it('does not render the Reassign Room control for a MEMBER viewer (unauthorized to manage room assignment)', async () => {
+    mockRole = 'MEMBER';
+    render(<PersonAvailabilityDrawer userId="user-2" onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Sarah Connor')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /Reassign Room/i })).not.toBeInTheDocument();
+  });
+
+  it('clicking Reassign Room opens the existing room assignment modal (functionality unchanged)', async () => {
+    mockRole = 'SUPER_ADMIN';
+    render(<PersonAvailabilityDrawer userId="user-2" onClose={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Sarah Connor')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Reassign Room/i }));
+
+    // RoomAssignmentModal's own title text confirms it opened.
+    await waitFor(() => expect(screen.getByText(/Reassign Room — Sarah Connor/i)).toBeInTheDocument());
+  });
+});

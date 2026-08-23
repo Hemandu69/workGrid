@@ -18,6 +18,10 @@ interface NavItem {
   icon: string;
   roles: UserRole[];
   badge?: string;
+  // When true, this item also stays highlighted active on any nested route
+  // (e.g. /hr/audit) — used for feature areas with child views that live
+  // under the same parent nav entry rather than getting their own.
+  matchPrefix?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -35,18 +39,14 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['SUPER_ADMIN'],
   },
 
-  // HR Dedicated Links (People Management)
+  // HR Dedicated Link (People Management — People Directory + Role Audit
+  // live together as tabs on this one feature area, see PeopleManagementTabs)
   {
-    label: 'People Directory',
+    label: 'People Management',
     href: '/hr',
     icon: 'badge',
     roles: ['HR', 'SUPER_ADMIN'],
-  },
-  {
-    label: 'Role Audit Trail',
-    href: '/hr/audit',
-    icon: 'history_edu',
-    roles: ['HR', 'SUPER_ADMIN'],
+    matchPrefix: true,
   },
 
   // Admin Operational Links
@@ -268,7 +268,9 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
           </div>
 
           {filteredNavItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href ||
+              (item.matchPrefix ? pathname.startsWith(`${item.href}/`) : false);
             const badgeValue =
               item.href === '/notifications'
                 ? unreadCount > 0
