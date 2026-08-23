@@ -8,6 +8,7 @@ import { TaskDetailDrawer } from '../../components/tasks/TaskDetailDrawer';
 import { CreateTaskModal } from '../../components/tasks/CreateTaskModal';
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
+import { SectionOccupancySummary } from '../../components/monitoring/SectionOccupancySummary';
 import { Badge } from '../../components/ui/Badge';
 import Link from 'next/link';
 import { TaskCampaign } from '../../types/task';
@@ -35,7 +36,7 @@ export default function AdminDashboard() {
   // invalidate these caches automatically instead of a hand-rolled listener
   // re-fetching this page's entire dataset.
   const { data: tasksResult } = useTasks({ limit: 200 });
-  const { data: roomsData } = useRooms();
+  const { data: roomsData, isLoading: isRoomsLoading } = useRooms();
   const tasks = tasksResult?.items ?? [];
   const rooms = roomsData ?? [];
 
@@ -220,43 +221,12 @@ export default function AdminDashboard() {
 
           {/* Section Saturation & Quick Controls (4 cols) */}
           <div className="col-span-12 xl:col-span-4 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Section Occupancy</CardTitle>
-                <Link href="/admin/rooms" className="text-xs text-secondary hover:text-primary font-medium">
-                  Room Details →
-                </Link>
-              </CardHeader>
-
-              <div className="space-y-3 text-xs">
-                {rooms.length === 0 ? (
-                  <p className="text-xs text-on-surface-variant py-2">Loading section data...</p>
-                ) : (
-                  rooms.map((room) => (
-                    <div key={room.letter} className="space-y-1">
-                      <div className="flex justify-between items-center tabular-nums">
-                        <span className="font-semibold text-primary">Section {room.letter}</span>
-                        <span className="font-mono text-on-surface-variant">
-                          {room.totalMembers} / {room.totalCapacity} ({room.occupancyPercentage}%)
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            room.occupancyPercentage > 90
-                              ? 'bg-status-blocked'
-                              : room.occupancyPercentage > 75
-                              ? 'bg-status-busy'
-                              : 'bg-status-available'
-                          }`}
-                          style={{ width: `${room.occupancyPercentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
+            <SectionOccupancySummary
+              rooms={rooms}
+              loading={isRoomsLoading}
+              detailHref="/admin/operations"
+              detailLabel="Room Details →"
+            />
 
             {/* Admin Policy Summary */}
             <div className="p-4 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2">
