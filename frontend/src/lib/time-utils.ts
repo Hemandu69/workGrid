@@ -28,6 +28,33 @@ export function getCurrentISTDateString(): string {
 }
 
 /**
+ * Returns the current wall-clock hour (0-23) in Asia/Kolkata — the correct
+ * value to compare against or default an AvailabilitySlot.hour-style field,
+ * which is a naive local hour, not a UTC hour.
+ */
+export function getCurrentISTHour(): number {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE,
+    hour: 'numeric',
+    hour12: false,
+  });
+  return parseInt(formatter.format(new Date()), 10) % 24;
+}
+
+/**
+ * Formats a naive 0-24 slot hour (already the person's local wall-clock
+ * hour — no timezone conversion) into a 12-hour clock label, e.g.
+ * 9 -> "09:00 AM", 24 -> "12:00 AM". Mirrors the backend's
+ * formatSlotHourLabel — the two must never mix in a Date/UTC conversion.
+ */
+export function formatSlotHourLabel(hour: number): string {
+  const h = hour % 24;
+  const period = h < 12 ? 'AM' : 'PM';
+  const displayHour = h % 12 === 0 ? 12 : h % 12;
+  return `${displayHour.toString().padStart(2, '0')}:00 ${period}`;
+}
+
+/**
  * Formats a Date/ISO string to IST time (e.g. "04:30 PM IST")
  */
 export function formatToISTTime(date: Date | string | number, includeTimezone = true): string {

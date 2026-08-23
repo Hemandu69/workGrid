@@ -3,7 +3,7 @@ import { Room } from '../types/room';
 import { Task, TaskCampaign, TaskComment, TaskPriority, TaskHistoryEntry, TaskAnalytics } from '../types/task';
 import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
-import { WeeklyAvailabilitySchedule, DayOfWeek, HourlySlot } from '../types/availability';
+import { WeeklyAvailabilitySchedule, DayOfWeek, HourlySlot, WeekAvailabilityResponse } from '../types/availability';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
 import { PaginatedResult, CursorResult } from '../types/pagination';
 
@@ -377,6 +377,37 @@ export const apiClient = {
       token
     );
     return normalizeWeeklySchedule(raw);
+  },
+  getWeekAvailability: async (
+    userId: string,
+    params: { weekStart: string; month?: number; year?: number },
+    token?: string
+  ): Promise<WeekAvailabilityResponse> => {
+    const query = buildQueryParams({ weekStart: params.weekStart, month: params.month, year: params.year });
+    return request<WeekAvailabilityResponse>(
+      `/api/v1/users/${userId}/availability/calendar?${query.toString()}`,
+      {},
+      token
+    );
+  },
+  updateWeekAvailability: async (
+    userId: string,
+    input: {
+      weekStart: string;
+      month?: number;
+      year?: number;
+      days: { date: string; slots: { hour: number; state: string; taskId?: string }[] }[];
+    },
+    token?: string
+  ): Promise<WeekAvailabilityResponse> => {
+    return request<WeekAvailabilityResponse>(
+      `/api/v1/users/${userId}/availability/calendar`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      },
+      token
+    );
   },
   getPeopleAvailability: async (
     params: {

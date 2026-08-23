@@ -78,6 +78,7 @@ function currentUser(withRelations = true) {
     ...BASE_USER,
     ...live,
     availabilitySlots: [],
+    availabilityOverrides: [],
     assignedTasks:
       activeTaskCount > 0
         ? [

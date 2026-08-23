@@ -34,3 +34,22 @@ export interface WeeklyAvailabilitySchedule {
   allocatedHours: number;
   remainingAvailableHours: number;
 }
+
+/** One real calendar date's effective (override-resolved) availability. */
+export interface CalendarDaySlots {
+  date: string; // YYYY-MM-DD
+  dayOfWeek: DayOfWeek;
+  slots: HourlySlot[];
+}
+
+/** The calendar-aware Weekly Availability page's per-week response. */
+export interface WeekAvailabilityResponse {
+  userId: string;
+  timezone: string;
+  weekStart: string; // YYYY-MM-DD, Monday
+  weekEnd: string; // YYYY-MM-DD, Sunday
+  days: CalendarDaySlots[]; // always 7, Monday -> Sunday
+  totalCapacityHours: number;
+  allocatedHours: number;
+  remainingAvailableHours: number;
+}

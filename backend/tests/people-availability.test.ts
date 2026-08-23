@@ -26,6 +26,7 @@ const { mockPrisma } = vi.hoisted(() => ({
             { day: 'THURSDAY', hour: 11, state: 'AVAILABLE' },
             { day: 'THURSDAY', hour: 12, state: 'BUSY' },
           ],
+          availabilityOverrides: [],
           assignedTasks: [
             {
               id: 'task-1-id',
@@ -56,6 +57,7 @@ const { mockPrisma } = vi.hoisted(() => ({
             { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
             { day: 'THURSDAY', hour: 11, state: 'AVAILABLE' },
           ],
+          availabilityOverrides: [],
           assignedTasks: [],
         },
       ]),
@@ -93,6 +95,7 @@ const { mockPrisma } = vi.hoisted(() => ({
               { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
               { day: 'FRIDAY', hour: 10, state: 'AVAILABLE' },
             ],
+            availabilityOverrides: [],
             assignedTasks: [
               {
                 id: 'task-1-id',

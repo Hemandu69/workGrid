@@ -1,5 +1,5 @@
 import { prisma } from '../db/client.js';
-import { UpdateWeeklyScheduleInput } from '../schemas/availability.schema.js';
+import { UpdateWeeklyScheduleInput, UpdateWeekAvailabilityInput } from '../schemas/availability.schema.js';
 import { DayOfWeek, SlotState, UserRole, UserStatus, TaskStatus, TaskPriority, PresenceState } from '@prisma/client';
 import { publishDomainEvent } from '../events/domain-events.js';
 import {
@@ -18,8 +18,9 @@ import {
   formatToISTTime,
   formatToISTDate,
   formatToISTDateTime,
-  formatUtcWindowToIST,
-  createUtcTimestamp,
+  formatSlotHourLabel,
+  getCurrentLocalHour,
+  getCurrentLocalDateString,
 } from '../utils/time.js';
 
 export interface TimeSlotWindow {
@@ -94,6 +95,25 @@ export interface NextFreeInfo {
 }
 
 export class AvailabilityService {
+  /**
+   * Single source of truth for resolving one hour's effective state: a
+   * date-specific override always wins over the recurring weekly pattern,
+   * and a missing entry is UNAVAILABLE. Every read path (member's own
+   * calendar view, the admin overview list, the admin detail drawer) calls
+   * this exact function so they can never disagree about which value wins.
+   */
+  private static resolveHourState(
+    hour: number,
+    daySlots: { hour: number; state: SlotState }[],
+    dayOverrides: { hour: number; state: SlotState }[]
+  ): 'FREE' | 'BUSY' | 'UNAVAILABLE' {
+    const source = dayOverrides.find((o) => o.hour === hour) ?? daySlots.find((s) => s.hour === hour);
+    if (!source) return 'UNAVAILABLE';
+    if (source.state === SlotState.AVAILABLE) return 'FREE';
+    if (source.state === SlotState.BUSY) return 'BUSY';
+    return 'UNAVAILABLE';
+  }
+
   static async getUserAvailability(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -221,6 +241,160 @@ export class AvailabilityService {
     });
 
     return this.getUserAvailability(userId);
+  }
+
+  /**
+   * Builds the 7 real calendar dates (Mon-Sun) starting from weekStartStr.
+   */
+  private static buildWeekDateRange(weekStartStr: string): string[] {
+    const weekStart = new Date(weekStartStr + 'T00:00:00.000Z');
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setUTCDate(weekStart.getUTCDate() + i);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+    return dates;
+  }
+
+  /**
+   * Effective availability for one real calendar week: a date-specific
+   * AvailabilityOverride always wins over the recurring AvailabilitySlot
+   * pattern for that exact date — this is the single source of truth the
+   * calendar-aware member page reads from and writes back to, and (via the
+   * same resolveHourState precedence used elsewhere) the exact data the
+   * admin surfaces already read as well.
+   */
+  static async getEffectiveWeekAvailability(
+    userId: string,
+    weekStartStr: string,
+    filterMonth?: number,
+    filterYear?: number
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error(`User with ID ${userId} not found`);
+    }
+
+    const rangeDateStrs = this.buildWeekDateRange(weekStartStr);
+
+    const [slots, overrides] = await Promise.all([
+      prisma.availabilitySlot.findMany({ where: { userId } }),
+      prisma.availabilityOverride.findMany({ where: { userId, date: { in: rangeDateStrs } } }),
+    ]);
+
+    const days = rangeDateStrs.map((dateStr, i) => {
+      const curDate = new Date(rangeDateStrs[0] + 'T00:00:00.000Z');
+      curDate.setUTCDate(curDate.getUTCDate() + i);
+      const dayOfWeek = this.getDayOfWeek(curDate);
+      const daySlots = slots.filter((s) => s.day === dayOfWeek);
+      const dayOverrides = overrides.filter((o) => o.date === dateStr);
+
+      const hourSlots = Array.from({ length: 24 }, (_, hour) => {
+        const source = dayOverrides.find((o) => o.hour === hour) ?? daySlots.find((s) => s.hour === hour);
+        return {
+          hour,
+          state: source ? source.state : SlotState.UNAVAILABLE,
+          taskId: source?.taskId || undefined,
+        };
+      });
+
+      return { date: dateStr, dayOfWeek, slots: hourSlots };
+    });
+
+    // When a target month is given, totals only count dates that actually
+    // fall inside that month — an out-of-month edge day (e.g. Aug 31 while
+    // viewing September) must never contribute to the displayed totals.
+    const daysForTotals =
+      filterMonth !== undefined && filterYear !== undefined
+        ? days.filter((d) => {
+            const [y, m] = d.date.split('-').map(Number);
+            return y === filterYear && m === filterMonth;
+          })
+        : days;
+
+    const totalAvailableHours = daysForTotals.reduce(
+      (sum, day) => sum + day.slots.filter((s) => s.state === SlotState.AVAILABLE).length,
+      0
+    );
+    const allocatedHours = user.currentAllocatedHours;
+    const remainingAvailableHours = Math.max(0, totalAvailableHours - allocatedHours);
+
+    return {
+      userId: user.id,
+      timezone: APP_TIMEZONE,
+      weekStart: rangeDateStrs[0],
+      weekEnd: rangeDateStrs[6],
+      days,
+      totalCapacityHours: totalAvailableHours || user.capacityLimitHours,
+      allocatedHours,
+      remainingAvailableHours,
+    };
+  }
+
+  /**
+   * Saves date-specific overrides for a set of real dates within one week.
+   * Only the exact (date, hour) pairs submitted are replaced — mirrors
+   * updateWeeklySchedule's bulk delete+createMany pattern (chosen there
+   * after looping per-slot upserts blew the transaction timeout on a full
+   * grid save) so an out-of-range hour's override, or any other date, is
+   * never touched by a single day's edit.
+   */
+  static async updateWeekAvailability(
+    userId: string,
+    input: UpdateWeekAvailabilityInput,
+    actor: { id: string }
+  ) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new Error(`User with ID ${userId} not found`);
+    }
+
+    const validDateStrs = new Set(this.buildWeekDateRange(input.weekStart));
+    const days = input.days.filter((day) => validDateStrs.has(day.date));
+
+    const allSlots = days.flatMap((day) =>
+      day.slots.map((slot) => ({ date: day.date, hour: slot.hour, state: slot.state, taskId: slot.taskId }))
+    );
+
+    if (allSlots.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        await tx.availabilityOverride.deleteMany({
+          where: {
+            userId,
+            OR: allSlots.map((s) => ({ date: s.date, hour: s.hour })),
+          },
+        });
+        await tx.availabilityOverride.createMany({
+          data: allSlots.map((s) => ({
+            userId,
+            date: s.date,
+            hour: s.hour,
+            state: s.state,
+            taskId: s.taskId,
+          })),
+        });
+      });
+    }
+
+    // Same minimal-payload AVAILABILITY_CHANGED event as every other
+    // availability mutation — one publish per week-save, not per day.
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: actor.id,
+      payload: {
+        userId: user.id,
+        personId: user.id,
+        organizationId: user.organizationId,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
+      },
+    });
+
+    return this.getEffectiveWeekAvailability(userId, input.weekStart, input.month, input.year);
   }
 
   /**
@@ -467,10 +641,12 @@ export class AvailabilityService {
     organizationId?: string;
   }) {
     const now = new Date();
-    const dateStr = filters.date || now.toISOString().split('T')[0];
+    const todayLocalStr = getCurrentLocalDateString(now);
+    const dateStr = filters.date || todayLocalStr;
     const targetDate = new Date(dateStr + 'T00:00:00.000Z');
 
-    const startHour = filters.startHour !== undefined ? Math.max(0, Math.min(23, Number(filters.startHour))) : now.getUTCHours();
+    const nowLocalHour = getCurrentLocalHour(now);
+    const startHour = filters.startHour !== undefined ? Math.max(0, Math.min(23, Number(filters.startHour))) : nowLocalHour;
     const endHour = filters.endHour !== undefined ? Math.max(startHour + 1, Math.min(24, Number(filters.endHour))) : Math.min(24, startHour + 1);
 
     const dayOfWeek = this.getDayOfWeek(targetDate);
@@ -478,9 +654,8 @@ export class AvailabilityService {
     // Does the selected window cover the present moment? If so the live
     // authoritative state (presence + stored availability) is projected instead
     // of the schedule, so the view never contradicts what is happening now.
-    const nowHour = now.getUTCHours();
     const windowIncludesNow =
-      dateStr === now.toISOString().split('T')[0] && nowHour >= startHour && nowHour < endHour;
+      dateStr === todayLocalStr && nowLocalHour >= startHour && nowLocalHour < endHour;
 
     // Build database query for users
     const where: any = {};
@@ -508,6 +683,9 @@ export class AvailabilityService {
         availabilitySlots: {
           where: { day: dayOfWeek },
         },
+        availabilityOverrides: {
+          where: { date: dateStr },
+        },
         assignedTasks: {
           where: {
             status: { in: [TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED, TaskStatus.BLOCKED] },
@@ -526,7 +704,9 @@ export class AvailabilityService {
       let unavailableHours = 0;
 
       for (let h = startHour; h < endHour; h++) {
-        const slot = user.availabilitySlots.find((s) => s.hour === h);
+        // A date-specific override for dateStr always wins over the
+        // recurring weekly slot — same precedence used everywhere else.
+        const slot = user.availabilityOverrides.find((o) => o.hour === h) ?? user.availabilitySlots.find((s) => s.hour === h);
         if (slot) {
           if (slot.state === SlotState.AVAILABLE) {
             availableHours++;
@@ -598,12 +778,13 @@ export class AvailabilityService {
         reason = scheduledReason;
       }
 
-      const untilDate = createUtcTimestamp(dateStr, endHour);
-      const until = formatToISTTime(untilDate);
-      
-      const freeWindowStart = createUtcTimestamp(dateStr, startHour);
-      const freeWindowEnd = createUtcTimestamp(dateStr, startHour + availableHours);
-      const freeWindow = status === 'PARTIALLY_AVAILABLE' ? `${formatToISTTime(freeWindowStart, false)} – ${formatToISTTime(freeWindowEnd)}` : undefined;
+      // Naive local-hour formatting — no Date/timezone conversion, matching
+      // the fix in getPersonDetailedAvailability (see formatSlotHourLabel).
+      const until = formatSlotHourLabel(endHour);
+      const freeWindow =
+        status === 'PARTIALLY_AVAILABLE'
+          ? `${formatSlotHourLabel(startHour)} – ${formatSlotHourLabel(startHour + availableHours)}`
+          : undefined;
 
       let currentDurationFormatted: string | undefined;
       if (user.arrivedAt && user.presenceState === 'IN') {
@@ -668,17 +849,20 @@ export class AvailabilityService {
       filteredPeople = evaluatedPeople.filter((p) => p.status === filters.status);
     }
 
-    const istWindow = formatUtcWindowToIST(dateStr, startHour, endHour);
+    // Naive local-hour formatting — no Date/timezone conversion — matching
+    // the fix everywhere else in this file (see formatSlotHourLabel).
+    const windowStartFormatted = formatSlotHourLabel(startHour);
+    const windowEndFormatted = formatSlotHourLabel(endHour);
 
     return {
       timeSlot: {
         date: dateStr,
         startHour,
         endHour,
-        startFormatted: istWindow.startIST,
-        endFormatted: istWindow.endIST,
-        activeWindow: istWindow.activeWindowIST,
-        dateFormatted: istWindow.dateIST,
+        startFormatted: windowStartFormatted,
+        endFormatted: windowEndFormatted,
+        activeWindow: `${windowStartFormatted} – ${windowEndFormatted}`,
+        dateFormatted: formatToISTDate(targetDate),
         timezone: APP_TIMEZONE,
         timezoneLabel: TIMEZONE_LABEL,
       },
@@ -697,12 +881,29 @@ export class AvailabilityService {
    * Detailed weekly timeline and commitments for a selected person in IST
    */
   static async getPersonDetailedAvailability(userId: string, startDateStr?: string) {
+    const now = new Date();
+    const todayLocalStr = getCurrentLocalDateString(now);
+    const startDate = startDateStr ? new Date(startDateStr + 'T00:00:00.000Z') : new Date(todayLocalStr + 'T00:00:00.000Z');
+
+    // Computed up-front so the same 7-date range can filter the overrides
+    // query below — an override for any of these exact dates must win over
+    // the recurring pattern for that date's weekday.
+    const rangeDateStrs: string[] = [];
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const d = new Date(startDate);
+      d.setUTCDate(startDate.getUTCDate() + dayOffset);
+      rangeDateStrs.push(d.toISOString().split('T')[0]);
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         room: true,
         subroom: true,
         availabilitySlots: true,
+        availabilityOverrides: {
+          where: { date: { in: rangeDateStrs } },
+        },
         assignedTasks: {
           where: {
             status: { in: [TaskStatus.IN_PROGRESS, TaskStatus.ASSIGNED, TaskStatus.BLOCKED, TaskStatus.SUBMITTED] },
@@ -716,9 +917,6 @@ export class AvailabilityService {
       throw new Error(`User with ID ${userId} not found`);
     }
 
-    const now = new Date();
-    const startDate = startDateStr ? new Date(startDateStr + 'T00:00:00.000Z') : new Date(now.toISOString().split('T')[0] + 'T00:00:00.000Z');
-
     // Evaluate 7 days starting from startDate
     const daysTimeline: DayAvailabilityTimeline[] = [];
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -726,28 +924,23 @@ export class AvailabilityService {
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
       const curDate = new Date(startDate);
       curDate.setUTCDate(startDate.getUTCDate() + dayOffset);
-      const curDateStr = curDate.toISOString().split('T')[0];
+      const curDateStr = rangeDateStrs[dayOffset];
       const curDayOfWeek = this.getDayOfWeek(curDate);
-      const isToday = curDateStr === now.toISOString().split('T')[0];
+      const isToday = curDateStr === todayLocalStr;
 
       const daySlots = user.availabilitySlots.filter((s) => s.day === curDayOfWeek);
+      const dayOverrides = user.availabilityOverrides.filter((o) => o.date === curDateStr);
       const windows: DayTimelineWindow[] = [];
 
       let windowStart = 0;
       let currentHourState: 'FREE' | 'BUSY' | 'UNAVAILABLE' = 'UNAVAILABLE';
 
-      // No hardcoded 9-5 default here — an hour with no saved AvailabilitySlot
-      // row is UNAVAILABLE, exactly matching getUserAvailability's own default,
-      // so the member's own grid and this admin-facing timeline can never disagree.
-      const getHourState = (hour: number): 'FREE' | 'BUSY' | 'UNAVAILABLE' => {
-        const slot = daySlots.find((s) => s.hour === hour);
-        if (slot) {
-          if (slot.state === SlotState.AVAILABLE) return 'FREE';
-          if (slot.state === SlotState.BUSY) return 'BUSY';
-          return 'UNAVAILABLE';
-        }
-        return 'UNAVAILABLE';
-      };
+      // A date-specific override always wins over the recurring pattern; a
+      // missing entry is UNAVAILABLE, exactly matching getUserAvailability's
+      // own default, so the member's own grid and this admin-facing timeline
+      // can never disagree. See the shared resolveHourState helper.
+      const getHourState = (hour: number): 'FREE' | 'BUSY' | 'UNAVAILABLE' =>
+        this.resolveHourState(hour, daySlots, dayOverrides);
 
       currentHourState = getHourState(0);
       windowStart = 0;
@@ -757,15 +950,14 @@ export class AvailabilityService {
         if (nextState !== currentHourState || h === 24) {
           // Every merged range is pushed — including genuine UNAVAILABLE
           // ranges outside the old 8-18 window — so the timeline never
-          // silently drops part of the day.
-          const startTimestamp = createUtcTimestamp(curDateStr, windowStart);
-          const endTimestamp = createUtcTimestamp(curDateStr, h);
-
+          // silently drops part of the day. Hours are formatted directly
+          // (no Date/timezone conversion) since they're already the
+          // person's naive local wall-clock hours — see formatSlotHourLabel.
           windows.push({
             startHour: windowStart,
             endHour: h,
-            startFormatted: formatToISTTime(startTimestamp, false),
-            endFormatted: formatToISTTime(endTimestamp, true),
+            startFormatted: formatSlotHourLabel(windowStart),
+            endFormatted: formatSlotHourLabel(h),
             state: currentHourState,
             label: currentHourState === 'FREE' ? 'Free / Available' : currentHourState === 'BUSY' ? 'Busy' : 'Unavailable',
             reason: currentHourState === 'BUSY' && user.assignedTasks[0] ? user.assignedTasks[0].title : undefined,
@@ -884,11 +1076,11 @@ export class AvailabilityService {
    * status box, the timeline and the next-free card can never disagree.
    */
   private static findActiveWindow(daysTimeline: DayAvailabilityTimeline[], now: Date) {
-    const currentUTCHour = now.getUTCHours();
+    const currentLocalHour = getCurrentLocalHour(now);
     const today = daysTimeline.find((d) => d.isToday) || daysTimeline[0];
     if (!today) return null;
     return (
-      today.windows.find((w) => currentUTCHour >= w.startHour && currentUTCHour < w.endHour) || null
+      today.windows.find((w) => currentLocalHour >= w.startHour && currentLocalHour < w.endHour) || null
     );
   }
 
@@ -896,7 +1088,7 @@ export class AvailabilityService {
    * Next window in which the person is FREE, derived from the same timeline.
    */
   private static computeNextFree(daysTimeline: DayAvailabilityTimeline[], now: Date): NextFreeInfo {
-    const currentUTCHour = now.getUTCHours();
+    const currentLocalHour = getCurrentLocalHour(now);
     const activeWindowNow = this.findActiveWindow(daysTimeline, now);
 
     if (activeWindowNow && activeWindowNow.state === 'FREE') {
@@ -905,14 +1097,14 @@ export class AvailabilityService {
         statusText: `Available until ${activeWindowNow.endFormatted}`,
         nextFreeDate: 'Today',
         nextFreeTime: activeWindowNow.endFormatted,
-        durationFormatted: `${Math.max(0, activeWindowNow.endHour - currentUTCHour)}h remaining`,
+        durationFormatted: `${Math.max(0, activeWindowNow.endHour - currentLocalHour)}h remaining`,
       };
     }
 
     for (const day of daysTimeline) {
       for (const window of day.windows) {
         if (window.state !== 'FREE') continue;
-        if (day.isToday && window.startHour <= currentUTCHour) continue;
+        if (day.isToday && window.startHour <= currentLocalHour) continue;
         return {
           isCurrentlyFree: false,
           statusText: `${day.isToday ? 'Today' : day.dayName} at ${window.startFormatted}`,
