@@ -111,6 +111,38 @@ export function getISTDateTimeParts(date: Date): { dateStr: string; hour: number
 }
 
 /**
+ * Formats a naive 0-24 slot hour (already the person's local wall-clock
+ * hour — AvailabilitySlot.hour is stored and edited as a plain local
+ * number, never UTC — so no timezone conversion happens here) into a
+ * 12-hour clock label, e.g. 9 -> "09:00 AM", 24 -> "12:00 AM" (midnight,
+ * the end-of-day boundary — never treated as a next-day timestamp).
+ */
+export function formatSlotHourLabel(hour: number): string {
+  const h = hour % 24;
+  const period = h < 12 ? 'AM' : 'PM';
+  const displayHour = h % 12 === 0 ? 12 : h % 12;
+  return `${displayHour.toString().padStart(2, '0')}:00 ${period}`;
+}
+
+/**
+ * The current wall-clock hour (0-23) in APP_TIMEZONE — the correct value
+ * to compare against AvailabilitySlot.hour, which is a naive local hour,
+ * not a UTC hour.
+ */
+export function getCurrentLocalHour(now: Date = new Date()): number {
+  return getISTDateTimeParts(now).hour;
+}
+
+/**
+ * Today's calendar date (YYYY-MM-DD) in APP_TIMEZONE — the correct "today"
+ * for comparing against real calendar dates, since the UTC calendar date
+ * can differ from the IST one near midnight.
+ */
+export function getCurrentLocalDateString(now: Date = new Date()): string {
+  return getISTDateTimeParts(now).dateStr;
+}
+
+/**
  * Converts an IST date string & hour into corresponding UTC date string & hour
  */
 export function convertISTToUTC(istDateStr: string, istHour: number, istMinute: number = 0): {

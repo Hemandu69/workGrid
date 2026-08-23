@@ -8,6 +8,12 @@ interface AvailabilityGridProps {
   initialSchedule: WeeklyAvailabilitySchedule;
   onSave?: (schedule: WeeklyAvailabilitySchedule) => Promise<void>;
   readOnly?: boolean;
+  /** Real calendar date shown under the day name, e.g. "Sep 1". Omit to keep the plain recurring-day header. */
+  dateLabels?: Partial<Record<DayOfWeek, string>>;
+  /** Days whose row is outside the selected month — greyed out, non-interactive. */
+  disabledDays?: Partial<Record<DayOfWeek, boolean>>;
+  /** The day-of-week row to highlight as "today", if any. */
+  todayDayOfWeek?: DayOfWeek | null;
 }
 
 const DAYS: Array<{ key: DayOfWeek; label: string; short: string }> = [
@@ -26,6 +32,9 @@ export function AvailabilityGrid({
   initialSchedule,
   onSave,
   readOnly = false,
+  dateLabels,
+  disabledDays,
+  todayDayOfWeek = null,
 }: AvailabilityGridProps) {
   const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule>(initialSchedule);
   const [selectedToolState, setSelectedToolState] = useState<SlotState>('AVAILABLE');
@@ -33,7 +42,7 @@ export function AvailabilityGrid({
   const [isSaving, setIsSaving] = useState(false);
 
   const toggleSlot = (day: DayOfWeek, hour: number) => {
-    if (readOnly) return;
+    if (readOnly || disabledDays?.[day]) return;
 
     const currentSlot = schedule.days[day].find((s) => s.hour === hour);
     // Task-allocated Busy (has a taskId) is never user-editable here; a
@@ -186,11 +195,23 @@ export function AvailabilityGrid({
           <tbody>
             {DAYS.map(({ key, label }) => {
               const daySlots = schedule.days[key] || [];
+              const isDayDisabled = Boolean(disabledDays?.[key]);
+              const isToday = todayDayOfWeek === key;
+              const dateLabel = dateLabels?.[key];
 
               return (
-                <tr key={key} className="border-b border-surface-outline">
-                  <td className="py-2 px-3 font-semibold text-left text-xs text-primary bg-surface-container-low/40 whitespace-nowrap">
-                    {label}
+                <tr
+                  key={key}
+                  className={`border-b border-surface-outline ${isDayDisabled ? 'opacity-40' : ''} ${
+                    isToday ? 'bg-primary/5' : ''
+                  }`}
+                >
+                  <td className="py-2 px-3 text-left text-xs text-primary bg-surface-container-low/40 whitespace-nowrap">
+                    <div className={`font-semibold ${isToday ? 'text-primary' : ''}`}>
+                      {label}
+                      {isToday && <span className="ml-1.5 text-[9px] font-bold uppercase tracking-wider text-primary">Today</span>}
+                    </div>
+                    {dateLabel && <div className="text-[10px] font-mono text-on-surface-variant">{dateLabel}</div>}
                   </td>
                   {DISPLAY_HOURS.map((hour) => {
                     const slot = daySlots.find((s) => s.hour === hour) || {
@@ -198,17 +219,18 @@ export function AvailabilityGrid({
                       state: 'UNAVAILABLE' as SlotState,
                     };
                     const isLocked = slot.state === 'BUSY' && Boolean(slot.taskId);
+                    const isInteractive = !readOnly && !isDayDisabled && !isLocked;
 
                     return (
                       <td
                         key={hour}
                         onClick={() => toggleSlot(key, hour)}
                         className={`p-1 border-l border-surface-outline transition-colors select-none ${
-                          readOnly || isLocked ? '' : 'cursor-pointer'
-                        }`}
-                        title={`${label} ${hour}:00 - ${slot.state}${
-                          slot.taskTitle ? ` (${slot.taskTitle})` : ''
-                        }`}
+                          isInteractive ? 'cursor-pointer' : ''
+                        } ${isDayDisabled ? 'cursor-not-allowed' : ''}`}
+                        title={`${label}${dateLabel ? ` ${dateLabel}` : ''} ${hour}:00 - ${
+                          isDayDisabled ? 'Outside selected month' : slot.state
+                        }${slot.taskTitle ? ` (${slot.taskTitle})` : ''}`}
                       >
                         <div
                           className={`h-7 rounded-xs border flex items-center justify-center text-[10px] tabular-nums transition-all ${getSlotStyle(

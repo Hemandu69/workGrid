@@ -13,8 +13,9 @@ import { Button } from '../../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
 import {
   getCurrentISTDateString,
+  getCurrentISTHour,
   formatToISTTime,
-  formatUtcWindowToIST,
+  formatSlotHourLabel,
 } from '../../../lib/time-utils';
 
 export default function PeopleAvailabilityPage() {
@@ -22,8 +23,8 @@ export default function PeopleAvailabilityPage() {
 
   // Time slot selector state (default to today in IST)
   const [selectedDate, setSelectedDate] = useState<string>(() => getCurrentISTDateString());
-  const [startHour, setStartHour] = useState<number>(() => new Date().getUTCHours());
-  const [endHour, setEndHour] = useState<number>(() => Math.min(24, new Date().getUTCHours() + 1));
+  const [startHour, setStartHour] = useState<number>(() => getCurrentISTHour());
+  const [endHour, setEndHour] = useState<number>(() => Math.min(24, getCurrentISTHour() + 1));
 
   // Live dynamic clock state
   const [currentClock, setCurrentClock] = useState<string>('');
@@ -109,9 +110,8 @@ export default function PeopleAvailabilityPage() {
   );
 
   const handleSetNow = () => {
-    const now = new Date();
-    setSelectedDate(now.toISOString().split('T')[0]);
-    const curHour = now.getUTCHours();
+    setSelectedDate(getCurrentISTDateString());
+    const curHour = getCurrentISTHour();
     setStartHour(curHour);
     setEndHour(Math.min(24, curHour + 1));
   };
@@ -142,28 +142,24 @@ export default function PeopleAvailabilityPage() {
     );
   }
 
-  const hourOptions = Array.from({ length: 24 }, (_, i) => {
-    const utcDate = new Date(`${selectedDate}T00:00:00.000Z`);
-    utcDate.setUTCHours(i, 0, 0, 0);
-    const istLabel = formatToISTTime(utcDate, true);
-    return {
-      value: i,
-      label: istLabel,
-    };
-  });
+  // Naive local-hour formatting — no Date/UTC conversion — since these hours
+  // are already the person's local wall-clock hours (matches the backend's
+  // formatSlotHourLabel fix; a UTC-mislabeling round-trip through Date here
+  // is exactly what previously produced ":30"-shifted option labels).
+  const hourOptions = Array.from({ length: 24 }, (_, i) => ({
+    value: i,
+    label: formatSlotHourLabel(i),
+  }));
 
   const endHourOptions = Array.from({ length: 24 }, (_, i) => {
     const hour = i + 1;
-    const utcDate = new Date(`${selectedDate}T00:00:00.000Z`);
-    utcDate.setUTCHours(hour, 0, 0, 0);
-    const istLabel = formatToISTTime(utcDate, true);
     return {
       value: hour,
-      label: istLabel,
+      label: formatSlotHourLabel(hour),
     };
   });
 
-  const activeWindowFormatted = formatUtcWindowToIST(selectedDate, startHour, endHour).activeWindowIST;
+  const activeWindowFormatted = `${formatSlotHourLabel(startHour)} – ${formatSlotHourLabel(endHour)}`;
 
   return (
     <AppShell

@@ -10,7 +10,7 @@ import { SubroomCard } from '../../components/rooms/SubroomCard';
 import { Card, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
-import { formatToISTTime, formatUtcWindowToIST, getCurrentISTDateString } from '../../lib/time-utils';
+import { formatToISTTime, formatSlotHourLabel, getCurrentISTHour } from '../../lib/time-utils';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 import { useTasks } from '../../lib/useTasks';
 import { useUsers } from '../../lib/useUsers';
@@ -25,11 +25,11 @@ export default function ServerDashboard() {
 
   useEffect(() => {
     const updateTime = () => {
-      const now = new Date();
-      setCurrentClock(formatToISTTime(now));
-      const curUtcHour = now.getUTCHours();
-      const dateStr = getCurrentISTDateString();
-      setActiveWindow(formatUtcWindowToIST(dateStr, curUtcHour, curUtcHour + 1).activeWindowIST);
+      setCurrentClock(formatToISTTime(new Date()));
+      // Naive local-hour formatting — no Date/UTC conversion — matching the
+      // backend's formatSlotHourLabel fix.
+      const curHour = getCurrentISTHour();
+      setActiveWindow(`${formatSlotHourLabel(curHour)} – ${formatSlotHourLabel(curHour + 1)}`);
     };
     updateTime();
     const interval = setInterval(updateTime, 30000);
