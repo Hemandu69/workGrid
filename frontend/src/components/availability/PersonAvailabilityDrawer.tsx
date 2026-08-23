@@ -235,17 +235,19 @@ export function PersonAvailabilityDrawer({
                             : data.person.room
                           : 'Unassigned'}
                       </span>
-                      {canManageAssignment && (
-                        <button
-                          type="button"
-                          onClick={() => setIsAssignModalOpen(true)}
-                          className="ml-1 px-1.5 py-0.2 rounded text-[10px] font-semibold text-secondary hover:text-primary hover:bg-surface-container transition-colors"
-                          title="Reassign room"
-                        >
-                          Reassign
-                        </button>
-                      )}
                     </div>
+                    {canManageAssignment && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsAssignModalOpen(true)}
+                        className="mt-2 !h-auto !py-1 !px-2 text-[11px]"
+                        title="Change this person's assigned room"
+                      >
+                        <span className="material-symbols-outlined text-[13px] mr-1">meeting_room</span>
+                        Reassign Room
+                      </Button>
+                    )}
                   </div>
                 </div>
 
