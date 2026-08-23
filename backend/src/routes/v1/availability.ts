@@ -173,9 +173,11 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /api/v1/availability/status
-  // Sets the authoritative operational availability for a real account or a
-  // simulated test person. Anyone may change their own; only SUPER_ADMIN/ADMIN
-  // may change someone else's, and SERVER only within their own room.
+  // Sets the authoritative operational availability (FREE/BUSY/PARTIALLY_AVAILABLE/
+  // UNAVAILABLE) for a person. Self-only — a person owns their own live
+  // presence; no role, including SUPER_ADMIN/ADMIN/SERVER, may set it on
+  // someone else's behalf. Management roles retain full read access via
+  // GET /availability/people(/:id) — this route only ever writes.
   fastify.post(
     '/availability/status',
     {
@@ -194,52 +196,13 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
 
       const { state } = parseResult.data;
       const targetPersonId = parseResult.data.personId || request.user.id;
-      const isSelf = targetPersonId === request.user.id;
-      const actorRole = request.user.role;
-      const isAdmin = actorRole === UserRole.SUPER_ADMIN || actorRole === UserRole.ADMIN;
 
-      // Backend authorization — never rely on the UI hiding a control.
-      if (!isSelf && !isAdmin) {
-        if (actorRole !== UserRole.SERVER) {
-          return reply.status(403).send({
-            statusCode: 403,
-            error: 'Forbidden',
-            message: 'You are only authorized to change your own availability.',
-          });
-        }
-
-        // A SERVER oversees exactly one room and may only act within it.
-        const serverUser =
-          typeof prisma.user?.findUnique === 'function'
-            ? await prisma.user.findUnique({
-                where: { id: request.user.id },
-                include: { room: true },
-              }).catch(() => null)
-            : null;
-
-        const serverRoomId = request.user.roomId || serverUser?.roomId;
-        const serverRoomLetter = serverUser?.room?.letter?.toUpperCase();
-
-        if (!serverRoomId && !serverRoomLetter) {
-          return reply.status(403).send({
-            statusCode: 403,
-            error: 'Forbidden',
-            message: 'You are assigned as SERVER but currently have no room assignment.',
-          });
-        }
-
-        const inScope = await prisma.user
-          .findUnique({ where: { id: targetPersonId } })
-          .then((u) => Boolean(u && u.roomId && u.roomId === serverRoomId))
-          .catch(() => false);
-
-        if (!inScope) {
-          return reply.status(403).send({
-            statusCode: 403,
-            error: 'Forbidden',
-            message: 'Servers can only change availability for people in their own room.',
-          });
-        }
+      if (targetPersonId !== request.user.id) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'You are only authorized to change your own availability.',
+        });
       }
 
       try {
@@ -252,6 +215,56 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number })?.statusCode || 400;
         const message = err instanceof Error ? err.message : 'Failed to update availability status';
+        return reply.status(statusCode).send({
+          statusCode,
+          error: statusCode === 404 ? 'Not Found' : statusCode === 409 ? 'Conflict' : 'Bad Request',
+          message,
+        });
+      }
+    }
+  );
+
+  // POST /api/v1/availability/meal/start
+  // Starts a temporary, reversible Lunch/Dinner period — self-only, always
+  // request.user.id, no personId accepted (matches the attendance
+  // check-in/out endpoints' already-self-only shape).
+  fastify.post(
+    '/availability/meal/start',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const result = await AvailabilityService.startMeal(request.user.id, {
+          id: request.user.id,
+          organizationId: request.user.organizationId,
+        });
+        return reply.send(result);
+      } catch (err: unknown) {
+        const statusCode = (err as { statusCode?: number })?.statusCode || 400;
+        const message = err instanceof Error ? err.message : 'Failed to start meal break';
+        return reply.status(statusCode).send({
+          statusCode,
+          error: statusCode === 404 ? 'Not Found' : statusCode === 409 ? 'Conflict' : 'Bad Request',
+          message,
+        });
+      }
+    }
+  );
+
+  // POST /api/v1/availability/meal/end
+  // Ends the meal period, restoring the prior status — self-only.
+  fastify.post(
+    '/availability/meal/end',
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      try {
+        const result = await AvailabilityService.endMeal(request.user.id, {
+          id: request.user.id,
+          organizationId: request.user.organizationId,
+        });
+        return reply.send(result);
+      } catch (err: unknown) {
+        const statusCode = (err as { statusCode?: number })?.statusCode || 400;
+        const message = err instanceof Error ? err.message : 'Failed to end meal break';
         return reply.status(statusCode).send({
           statusCode,
           error: statusCode === 404 ? 'Not Found' : statusCode === 409 ? 'Conflict' : 'Bad Request',
@@ -294,7 +307,8 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // PUT /api/v1/users/:id/availability
-  // Protected: Authenticated users can update their own schedule
+  // Self-only — recurring availability belongs to the person themselves.
+  // Admins retain read access via the GET route above; this route only writes.
   fastify.put(
     '/users/:id/availability',
     {
@@ -303,8 +317,7 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
     async (request, reply) => {
       const { id } = request.params as { id: string };
 
-      // Ensure user is updating their own schedule (or is Admin)
-      if (request.user.id !== id && request.user.role !== 'SUPER_ADMIN' && request.user.role !== 'ADMIN') {
+      if (request.user.id !== id) {
         return reply.status(403).send({
           statusCode: 403,
           error: 'Forbidden',

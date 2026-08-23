@@ -31,6 +31,7 @@ enum UserStatus {
   OFFLINE
   BUSY
   AWAY
+  MEAL
 }
 
 enum PresenceState {
@@ -100,7 +101,6 @@ enum DayOfWeek {
 enum SlotState {
   AVAILABLE
   UNAVAILABLE
-  PREFERRED
   BUSY
 }
 
@@ -153,6 +153,9 @@ model User {
   role                  UserRole?
   accountStatus         AccountStatus @default(PENDING)
   status                UserStatus    @default(OFFLINE)
+  // The status to resume when a MEAL (Lunch/Dinner) period ends — set on meal
+  // start, cleared on meal end or any explicit status change.
+  preMealStatus         UserStatus?
   title                 String?
   avatarUrl             String?
   capacityLimitHours    Int           @default(40)

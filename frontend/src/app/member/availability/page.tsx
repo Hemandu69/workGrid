@@ -53,8 +53,9 @@ export default function AvailabilityPage() {
     const slots: { day: DayOfWeek; hour: number; state: string; taskId?: string }[] = [];
     (Object.keys(updatedSchedule.days) as DayOfWeek[]).forEach((day) => {
       updatedSchedule.days[day].forEach((slot) => {
-        // BUSY slots are task-driven and never user-editable — never send them back.
-        if (slot.state === 'BUSY' || !DISPLAY_HOURS.includes(slot.hour)) return;
+        // Task-allocated Busy (has a taskId) is never user-editable — never send
+        // it back. A user-painted recurring Busy (no taskId) is sent normally.
+        if ((slot.state === 'BUSY' && slot.taskId) || !DISPLAY_HOURS.includes(slot.hour)) return;
         const entry: { day: DayOfWeek; hour: number; state: string; taskId?: string } = {
           day,
           hour: slot.hour,
@@ -121,7 +122,7 @@ export default function AvailabilityPage() {
             Capacity & Task Allocation Rules
           </div>
           <p className="text-on-surface-variant leading-relaxed">
-            Assigned tasks use up your available hours automatically, reserved ahead of their due time. Slots marked Busy can only be changed by an Admin.
+            Assigned tasks use up your available hours automatically, reserved ahead of their due time. You can also paint recurring Busy slots yourself — task-allocated Busy slots stay locked.
           </p>
         </div>
 

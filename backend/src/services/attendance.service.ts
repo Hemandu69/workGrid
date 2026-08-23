@@ -22,7 +22,7 @@ export interface AttendanceMeResponse {
   state: 'IN' | 'OUT';
   presenceState: PresenceState;
   /** Authoritative operational availability, presence-suppressed when OUT. */
-  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
   availabilityLabel: string;
   currentSession: {
     id: string;

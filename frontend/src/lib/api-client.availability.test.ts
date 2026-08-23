@@ -26,7 +26,7 @@ const RAW_BACKEND_RESPONSE = {
   remainingAvailableHours: 0,
   days: [
     { day: 'MONDAY', slots: [{ hour: 9, state: 'AVAILABLE' }] },
-    { day: 'TUESDAY', slots: [{ hour: 10, state: 'PREFERRED' }] },
+    { day: 'TUESDAY', slots: [{ hour: 10, state: 'BUSY' }] },
   ],
 };
 
@@ -42,7 +42,7 @@ describe('apiClient availability normalization', () => {
 
     expect(Array.isArray(result.days)).toBe(false);
     expect(result.days.MONDAY).toEqual([{ hour: 9, state: 'AVAILABLE' }]);
-    expect(result.days.TUESDAY).toEqual([{ hour: 10, state: 'PREFERRED' }]);
+    expect(result.days.TUESDAY).toEqual([{ hour: 10, state: 'BUSY' }]);
   });
 
   it('updateUserAvailability also normalizes its response the same way', async () => {

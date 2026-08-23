@@ -53,7 +53,7 @@ export interface PersonAvailabilityItem {
   currentDurationFormatted?: string;
   lastSeenAt?: string;
   lastSeenAtIST?: string;
-  status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+  status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
   statusLabel: string;
   reason: string;
   until?: string;
@@ -151,9 +151,7 @@ export class AvailabilityService {
 
     formattedDays.sort((a, b) => dayOrder[a.day] - dayOrder[b.day]);
 
-    const totalAvailableHours = slots.filter(
-      (s) => s.state === SlotState.AVAILABLE || s.state === SlotState.PREFERRED
-    ).length;
+    const totalAvailableHours = slots.filter((s) => s.state === SlotState.AVAILABLE).length;
 
     const allocatedHours = user.currentAllocatedHours;
     const remainingAvailableHours = Math.max(0, totalAvailableHours - allocatedHours);
@@ -263,6 +261,8 @@ export class AvailabilityService {
       where: { id: user.id },
       data: {
         status: userStatusFromAvailability(state),
+        // An explicit selection always wins over a stale "resume after meal" pointer.
+        preMealStatus: null,
         lastSeenAt: now,
       },
     });
@@ -291,6 +291,128 @@ export class AvailabilityService {
         roomId: user.roomId,
         subroomId: user.subroomId,
       },
+    });
+
+    return {
+      personId: updated.id,
+      name: updated.name,
+      availabilityState: state,
+      availabilityLabel: AVAILABILITY_LABELS[state],
+      presenceState: updated.presenceState,
+      currentLocation,
+    };
+  }
+
+  /**
+   * Starts a temporary, reversible Lunch/Dinner period. The person remains
+   * checked in throughout — this only ever touches `status`/`preMealStatus`,
+   * never `presenceState`/`arrivedAt`/`leftAt`, so attendance duration keeps
+   * counting uninterrupted. Self-only by construction (called with the
+   * authenticated user's own id — see the route).
+   */
+  static async startMeal(userId: string, actor: { id: string; organizationId: string }) {
+    const now = new Date();
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { room: true, subroom: true },
+    });
+
+    if (!user) {
+      const error = new Error(`Person ${userId} not found.`);
+      (error as any).statusCode = 404;
+      throw error;
+    }
+
+    if (!isPresent(user.presenceState)) {
+      const error = new Error(`${user.name} is currently checked OUT. Check in before starting a meal break.`);
+      (error as any).statusCode = 409;
+      throw error;
+    }
+
+    // Already in a meal — idempotent no-op, don't clobber the saved preMealStatus.
+    if (user.status === UserStatus.MEAL) {
+      return this.buildMealResult(user, user);
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        status: UserStatus.MEAL,
+        preMealStatus: user.status,
+        lastSeenAt: now,
+      },
+    });
+
+    this.publishMealChanged(user, updated, actor);
+    return this.buildMealResult(user, updated);
+  }
+
+  /**
+   * Ends the meal period, restoring the status that was active before it
+   * started. Never touches presence/attendance — the person stays checked in.
+   */
+  static async endMeal(userId: string, actor: { id: string; organizationId: string }) {
+    const now = new Date();
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { room: true, subroom: true },
+    });
+
+    if (!user) {
+      const error = new Error(`Person ${userId} not found.`);
+      (error as any).statusCode = 404;
+      throw error;
+    }
+
+    // Not in a meal — idempotent no-op.
+    if (user.status !== UserStatus.MEAL) {
+      return this.buildMealResult(user, user);
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        status: user.preMealStatus ?? UserStatus.ONLINE,
+        preMealStatus: null,
+        lastSeenAt: now,
+      },
+    });
+
+    this.publishMealChanged(user, updated, actor);
+    return this.buildMealResult(user, updated);
+  }
+
+  private static publishMealChanged(
+    user: { organizationId: string; id: string; roomId: string | null; subroomId: string | null },
+    updated: { id: string },
+    actor: { id: string; organizationId: string }
+  ) {
+    publishDomainEvent({
+      type: 'AVAILABILITY_CHANGED',
+      organizationId: user.organizationId,
+      entityId: user.id,
+      targetUserId: user.id,
+      actorId: actor.id,
+      payload: {
+        userId: updated.id,
+        personId: updated.id,
+        organizationId: user.organizationId,
+        roomId: user.roomId,
+        subroomId: user.subroomId,
+      },
+    });
+  }
+
+  private static buildMealResult(
+    user: { room?: { letter: string } | null; subroom?: { code: string } | null },
+    updated: { id: string; name: string; status: UserStatus; presenceState: PresenceState; currentLocationName: string | null }
+  ) {
+    const state = availabilityFromUserStatus(updated.status);
+    const currentLocation = resolveCurrentLocation({
+      presenceState: updated.presenceState,
+      currentLocationName: updated.currentLocationName,
+      subroomCode: user.subroom?.code,
+      roomLetter: user.room?.letter,
     });
 
     return {
@@ -406,7 +528,7 @@ export class AvailabilityService {
       for (let h = startHour; h < endHour; h++) {
         const slot = user.availabilitySlots.find((s) => s.hour === h);
         if (slot) {
-          if (slot.state === SlotState.AVAILABLE || slot.state === SlotState.PREFERRED) {
+          if (slot.state === SlotState.AVAILABLE) {
             availableHours++;
           } else if (slot.state === SlotState.BUSY) {
             busyHours++;
@@ -614,15 +736,15 @@ export class AvailabilityService {
       let windowStart = 0;
       let currentHourState: 'FREE' | 'BUSY' | 'UNAVAILABLE' = 'UNAVAILABLE';
 
+      // No hardcoded 9-5 default here — an hour with no saved AvailabilitySlot
+      // row is UNAVAILABLE, exactly matching getUserAvailability's own default,
+      // so the member's own grid and this admin-facing timeline can never disagree.
       const getHourState = (hour: number): 'FREE' | 'BUSY' | 'UNAVAILABLE' => {
         const slot = daySlots.find((s) => s.hour === hour);
         if (slot) {
-          if (slot.state === SlotState.AVAILABLE || slot.state === SlotState.PREFERRED) return 'FREE';
+          if (slot.state === SlotState.AVAILABLE) return 'FREE';
           if (slot.state === SlotState.BUSY) return 'BUSY';
           return 'UNAVAILABLE';
-        }
-        if (hour >= 9 && hour < 17 && curDayOfWeek !== DayOfWeek.SATURDAY && curDayOfWeek !== DayOfWeek.SUNDAY) {
-          return 'FREE';
         }
         return 'UNAVAILABLE';
       };
@@ -633,20 +755,21 @@ export class AvailabilityService {
       for (let h = 1; h <= 24; h++) {
         const nextState = h < 24 ? getHourState(h) : null;
         if (nextState !== currentHourState || h === 24) {
-          if (currentHourState !== 'UNAVAILABLE' || (windowStart >= 8 && h <= 18)) {
-            const startTimestamp = createUtcTimestamp(curDateStr, windowStart);
-            const endTimestamp = createUtcTimestamp(curDateStr, h);
+          // Every merged range is pushed — including genuine UNAVAILABLE
+          // ranges outside the old 8-18 window — so the timeline never
+          // silently drops part of the day.
+          const startTimestamp = createUtcTimestamp(curDateStr, windowStart);
+          const endTimestamp = createUtcTimestamp(curDateStr, h);
 
-            windows.push({
-              startHour: windowStart,
-              endHour: h,
-              startFormatted: formatToISTTime(startTimestamp, false),
-              endFormatted: formatToISTTime(endTimestamp, true),
-              state: currentHourState,
-              label: currentHourState === 'FREE' ? 'Free / Available' : currentHourState === 'BUSY' ? 'Busy' : 'Unavailable',
-              reason: currentHourState === 'BUSY' && user.assignedTasks[0] ? user.assignedTasks[0].title : undefined,
-            });
-          }
+          windows.push({
+            startHour: windowStart,
+            endHour: h,
+            startFormatted: formatToISTTime(startTimestamp, false),
+            endFormatted: formatToISTTime(endTimestamp, true),
+            state: currentHourState,
+            label: currentHourState === 'FREE' ? 'Free / Available' : currentHourState === 'BUSY' ? 'Busy' : 'Unavailable',
+            reason: currentHourState === 'BUSY' && user.assignedTasks[0] ? user.assignedTasks[0].title : undefined,
+          });
           currentHourState = nextState || 'UNAVAILABLE';
           windowStart = h;
         }
@@ -666,16 +789,9 @@ export class AvailabilityService {
         dayOfWeek: curDayOfWeek,
         isToday,
         status: dayStatus,
-        windows: windows.length > 0 ? windows : [
-          {
-            startHour: 9,
-            endHour: 17,
-            startFormatted: '02:30 PM',
-            endFormatted: '10:30 PM IST',
-            state: 'UNAVAILABLE',
-            label: 'Off-schedule',
-          },
-        ],
+        // The merge loop above always pushes at least one window (a fully
+        // unset day still yields one UNAVAILABLE range spanning 00:00-24:00).
+        windows,
       });
     }
 
