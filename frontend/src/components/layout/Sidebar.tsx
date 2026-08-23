@@ -69,12 +69,6 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['ADMIN', 'SUPER_ADMIN'],
   },
   {
-    label: 'Room Overview',
-    href: '/admin/rooms',
-    icon: 'meeting_room',
-    roles: ['ADMIN', 'SUPER_ADMIN'],
-  },
-  {
     label: 'Teams & Directory',
     href: '/admin/teams',
     icon: 'groups',
@@ -91,12 +85,6 @@ const NAV_ITEMS: NavItem[] = [
     href: '/admin/availability',
     icon: 'event_available',
     roles: ['ADMIN', 'SUPER_ADMIN', 'SERVER'],
-  },
-  {
-    label: 'Reports & Analytics',
-    href: '/admin/reports',
-    icon: 'analytics',
-    roles: ['ADMIN', 'SUPER_ADMIN'],
   },
   // Server Link (Room & Event Supervision)
   {

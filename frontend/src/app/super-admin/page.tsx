@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '../../components/layout/AppShell';
 import { StatMetricCard } from '../../components/monitoring/StatMetricCard';
-import { RoomOverviewGrid } from '../../components/rooms/RoomOverviewGrid';
+import { SectionOccupancySummary } from '../../components/monitoring/SectionOccupancySummary';
 import { AnnouncementCard } from '../../components/announcements/AnnouncementCard';
 import { CreateAnnouncementModal } from '../../components/announcements/CreateAnnouncementModal';
 import { TaskTable } from '../../components/tasks/TaskTable';
@@ -30,9 +30,11 @@ export default function SuperAdminDashboard() {
     totalMembers?: number;
     totalCapacity?: number;
     globalSaturationPercentage?: number;
+    activeTasks?: number;
     overdueRiskPercentage?: number;
   } | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [isRoomsLoading, setIsRoomsLoading] = useState(true);
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
@@ -53,6 +55,8 @@ export default function SuperAdminDashboard() {
       setHealth(healthData);
     } catch {
       // Clean fallback
+    } finally {
+      setIsRoomsLoading(false);
     }
   }, []);
 
@@ -134,7 +138,7 @@ export default function SuperAdminDashboard() {
         </div>
 
         {/* Global Key Health Metrics */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <StatMetricCard
             label="People in Organization"
             value={orgScale.toLocaleString()}
@@ -152,6 +156,14 @@ export default function SuperAdminDashboard() {
             indicatorColor="available"
           />
           <StatMetricCard
+            label="Active Tasks"
+            value={(stats?.activeTasks ?? tasks.length).toLocaleString()}
+            subtext="Current organization-wide workload"
+            trend="Live Count"
+            icon="assignment"
+            indicatorColor="primary"
+          />
+          <StatMetricCard
             label="Tasks Needing Attention"
             value={`${blockedTasks.length} ${blockedTasks.length === 1 ? 'Task' : 'Tasks'}`}
             subtext="Tasks currently blocked"
@@ -159,6 +171,14 @@ export default function SuperAdminDashboard() {
             trendDirection={blockedTasks.length > 0 ? "down" : "up"}
             icon="error"
             indicatorColor={blockedTasks.length > 0 ? "blocked" : "available"}
+          />
+          <StatMetricCard
+            label="Tasks at Risk of Being Late"
+            value={`${stats?.overdueRiskPercentage ?? 0}%`}
+            subtext="Based on task due dates"
+            trend="Updated Live"
+            icon="speed"
+            indicatorColor={stats?.overdueRiskPercentage && stats.overdueRiskPercentage > 10 ? 'blocked' : 'available'}
           />
           <StatMetricCard
             label="WorkGrid Status"
@@ -175,16 +195,14 @@ export default function SuperAdminDashboard() {
         <div className="grid grid-cols-12 gap-6">
           {/* Room Topology & Blockages Column (8 cols) */}
           <div className="col-span-12 xl:col-span-8 space-y-6">
-            {/* Rooms A-H Overview */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Room & Section Occupancy Overview</CardTitle>
-                <Link href="/admin/rooms" className="text-xs text-secondary hover:text-primary font-medium">
-                  Detailed Grid →
-                </Link>
-              </CardHeader>
-              <RoomOverviewGrid rooms={rooms} selectedRoomLetter="B" />
-            </Card>
+            {/* Room & Section Occupancy Summary */}
+            <SectionOccupancySummary
+              rooms={rooms}
+              loading={isRoomsLoading}
+              title="Room & Section Occupancy Overview"
+              detailHref="/admin/operations"
+              detailLabel="Detailed Grid →"
+            />
 
             {/* Blocked or High-Risk Tasks Table */}
             {blockedTasks.length > 0 && (
