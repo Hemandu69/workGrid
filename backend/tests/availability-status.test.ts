@@ -95,6 +95,7 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
   let memberToken: string;
   let adminToken: string;
   let serverToken: string;
+  let outsideToken: string;
   let capturedEvents: DomainEvent[] = [];
   let unsubscribe: () => void;
 
@@ -140,6 +141,14 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
       name: 'David Chen',
       role: UserRole.SERVER,
       roomId: 'room-b-id',
+      organizationId: 'org-1',
+    });
+
+    outsideToken = app.jwt.sign({
+      id: 'usr-outside',
+      email: 'liam.vance@workgrid.corp',
+      name: 'Liam Vance',
+      role: UserRole.MEMBER,
       organizationId: 'org-1',
     });
   });
@@ -241,8 +250,8 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
   it('7. refuses to mark a checked-OUT person BUSY, because presence dominates', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: 'usr-outside', state: 'BUSY' });
+      .set('Authorization', `Bearer ${outsideToken}`)
+      .send({ state: 'BUSY' });
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/checked OUT/i);
@@ -252,8 +261,8 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
   it('8. still allows explicitly marking a checked-OUT person UNAVAILABLE', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/availability/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ personId: 'usr-outside', state: 'UNAVAILABLE' });
+      .set('Authorization', `Bearer ${outsideToken}`)
+      .send({ state: 'UNAVAILABLE' });
 
     expect(res.status).toBe(200);
     expect(res.body.availabilityState).toBe('UNAVAILABLE');
@@ -280,33 +289,34 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(updateCalls.find((c) => c.id === 'usr-other-room')).toBeUndefined();
   });
 
-  it('11. allows an ADMIN to change somebody else’s availability', async () => {
+  it('11. forbids an ADMIN from changing somebody else’s availability — a person owns their own status', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/availability/status')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ personId: 'usr-sarah', state: 'BUSY' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.availabilityState).toBe('BUSY');
+    expect(res.status).toBe(403);
+    expect(updateCalls.find((c) => c.id === 'usr-sarah')).toBeUndefined();
   });
 
-  it('12. allows a SERVER to act within their own room', async () => {
+  it('12. forbids a SERVER from changing a room member’s availability — the former room-scoped bypass is gone', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/availability/status')
       .set('Authorization', `Bearer ${serverToken}`)
       .send({ personId: 'usr-sarah', state: 'BUSY' });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
+    expect(updateCalls.find((c) => c.id === 'usr-sarah')).toBeUndefined();
   });
 
-  it('13. forbids a SERVER from acting outside their own room', async () => {
+  it('13. forbids a SERVER from acting outside their own room too', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/availability/status')
       .set('Authorization', `Bearer ${serverToken}`)
       .send({ personId: 'usr-other-room', state: 'BUSY' });
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toMatch(/own room/i);
+    expect(res.body.message).toMatch(/only authorized to change your own/i);
   });
 
   it('14. rejects an unrecognised availability state', async () => {
@@ -318,13 +328,13 @@ describe('Availability status endpoint (/api/v1/availability/status)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('15. returns 404 for a person who does not exist', async () => {
+  it('15. rejects a non-self personId with 403 before ever looking the person up — never leaks whether the id exists', async () => {
     const res = await supertest(app.server)
       .post('/api/v1/availability/status')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ personId: 'usr-nobody', state: 'BUSY' });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(403);
   });
 
   // --- Rapid consecutive changes ------------------------------------------

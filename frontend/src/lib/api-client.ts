@@ -473,6 +473,36 @@ export const apiClient = {
     );
   },
 
+  /**
+   * Starts/ends a temporary, reversible Lunch/Dinner period — always self,
+   * never accepts a personId. The frontend decides whether to display "Lunch"
+   * or "Dinner"; the backend state is the same generic MEAL either way.
+   */
+  startMeal: async (
+    token?: string
+  ): Promise<{
+    personId: string;
+    name: string;
+    availabilityState: AvailabilityState;
+    availabilityLabel: string;
+    presenceState: string;
+    currentLocation: string;
+  }> => {
+    return request('/api/v1/availability/meal/start', { method: 'POST' }, token);
+  },
+  endMeal: async (
+    token?: string
+  ): Promise<{
+    personId: string;
+    name: string;
+    availabilityState: AvailabilityState;
+    availabilityLabel: string;
+    presenceState: string;
+    currentLocation: string;
+  }> => {
+    return request('/api/v1/availability/meal/end', { method: 'POST' }, token);
+  },
+
   getPersonDetail: async (personId: string, token?: string): Promise<PersonAvailabilityDetailResponse> => {
     return request<PersonAvailabilityDetailResponse>(`/api/v1/operations/person/${personId}`, {}, token);
   },
@@ -713,7 +743,7 @@ export interface PeopleAvailabilityResponse {
     currentDurationFormatted?: string;
     lastSeenAt?: string;
     lastSeenAtIST?: string;
-    status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+    status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
     statusLabel: string;
     reason: string;
     until?: string;
@@ -769,7 +799,7 @@ export interface PersonAvailabilityDetailResponse {
     availabilityState?: AvailabilityState;
   };
   currentStatus: {
-    state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+    state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
     label?: string;
     reason: string;
     room?: string;
@@ -814,7 +844,7 @@ export interface PersonAvailabilityDetailResponse {
   }>;
 }
 
-export type AvailabilityState = 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+export type AvailabilityState = 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
 
 export type SupervisionState =
   | 'PRESENT_IN_EVENT'

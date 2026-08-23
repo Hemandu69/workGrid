@@ -131,7 +131,9 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /api/v1/operations/presence
-  // Updates real user check-in / location state
+  // Updates real user check-in / location state. Self-only — temporary
+  // presence belongs to the person themselves; management roles retain
+  // read access elsewhere but never write another person's presence.
   fastify.post(
     '/presence',
     {
@@ -150,12 +152,7 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
 
       const targetUserId = parseResult.data.userId || request.user.id;
 
-      // Only Admin or user themselves can update presence
-      if (
-        targetUserId !== request.user.id &&
-        request.user.role !== UserRole.SUPER_ADMIN &&
-        request.user.role !== UserRole.ADMIN
-      ) {
+      if (targetUserId !== request.user.id) {
         return reply.status(403).send({
           statusCode: 403,
           error: 'Forbidden',

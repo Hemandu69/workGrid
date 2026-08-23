@@ -182,6 +182,14 @@ const { mockPrisma } = vi.hoisted(() => ({
             room: { id: 'room-b-id', letter: 'B' },
           });
         }
+        if (where.id === 'member-1-id') {
+          return Promise.resolve({
+            id: 'member-1-id',
+            name: 'Sarah Connor',
+            role: 'MEMBER',
+            presenceState: 'OUT',
+          });
+        }
         return Promise.resolve(null);
       }),
       findMany: vi.fn().mockResolvedValue([
@@ -377,6 +385,33 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
       event
     );
     expect(status4).toBe('NOT_REQUIRED');
+  });
+
+  it('POST /api/v1/operations/presence lets a user update their own presence', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/operations/presence')
+      .set('Authorization', `Bearer ${memberToken}`)
+      .send({ presenceState: 'IN' });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('POST /api/v1/operations/presence forbids an ADMIN from updating another user’s presence', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/operations/presence')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ userId: 'member-1-id', presenceState: 'IN' });
+
+    expect(res.status).toBe(403);
+  });
+
+  it('POST /api/v1/operations/presence forbids a SERVER from updating another user’s presence', async () => {
+    const res = await supertest(app.server)
+      .post('/api/v1/operations/presence')
+      .set('Authorization', `Bearer ${serverToken}`)
+      .send({ userId: 'member-1-id', presenceState: 'IN' });
+
+    expect(res.status).toBe(403);
   });
 
   it('GET /api/v1/operations/events/:id should return event detail with server coverage', async () => {
