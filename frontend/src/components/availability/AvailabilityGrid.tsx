@@ -36,14 +36,16 @@ export function AvailabilityGrid({
     if (readOnly) return;
 
     const currentSlot = schedule.days[day].find((s) => s.hour === hour);
-    if (!currentSlot || currentSlot.state === 'BUSY') return; // Cannot override active task assignments without Admin overload
+    // Task-allocated Busy (has a taskId) is never user-editable here; a
+    // recurring Busy the person painted themselves (no taskId) is.
+    if (!currentSlot || (currentSlot.state === 'BUSY' && currentSlot.taskId)) return;
 
     const nextState: SlotState = currentSlot.state === selectedToolState ? 'UNAVAILABLE' : selectedToolState;
 
     const updatedDays = {
       ...schedule.days,
       [day]: schedule.days[day].map((s) =>
-        s.hour === hour ? { ...s, state: nextState } : s
+        s.hour === hour ? { ...s, state: nextState, taskId: undefined, taskTitle: undefined } : s
       ),
     };
 
@@ -51,7 +53,7 @@ export function AvailabilityGrid({
     let availableCount = 0;
     Object.values(updatedDays).forEach((slots) => {
       slots.forEach((s) => {
-        if (s.state === 'AVAILABLE' || s.state === 'PREFERRED') {
+        if (s.state === 'AVAILABLE') {
           availableCount++;
         }
       });
@@ -66,14 +68,14 @@ export function AvailabilityGrid({
     setHasChanges(true);
   };
 
-  const getSlotStyle = (state: SlotState) => {
+  const getSlotStyle = (state: SlotState, isLocked: boolean) => {
     switch (state) {
       case 'AVAILABLE':
         return 'bg-emerald-100 hover:bg-emerald-200 border-emerald-300 text-emerald-800 font-medium';
-      case 'PREFERRED':
-        return 'bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-800 font-medium';
       case 'BUSY':
-        return 'bg-amber-200 border-amber-400 text-amber-900 font-semibold cursor-not-allowed';
+        return isLocked
+          ? 'bg-amber-200 border-amber-400 text-amber-900 font-semibold cursor-not-allowed'
+          : 'bg-amber-100 hover:bg-amber-200 border-amber-300 text-amber-900 font-medium';
       case 'UNAVAILABLE':
       default:
         return 'bg-surface-container-low hover:bg-surface-container border-surface-outline text-outline';
@@ -117,14 +119,14 @@ export function AvailabilityGrid({
             </button>
             <button
               type="button"
-              onClick={() => setSelectedToolState('PREFERRED')}
+              onClick={() => setSelectedToolState('BUSY')}
               className={`px-3 py-1 rounded text-xs font-medium border transition-all ${
-                selectedToolState === 'PREFERRED'
-                  ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
-                  : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                selectedToolState === 'BUSY'
+                  ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
               }`}
             >
-              Preferred
+              Busy
             </button>
             <button
               type="button"
@@ -193,15 +195,16 @@ export function AvailabilityGrid({
                   {DISPLAY_HOURS.map((hour) => {
                     const slot = daySlots.find((s) => s.hour === hour) || {
                       hour,
-                      state: 'UNAVAILABLE',
+                      state: 'UNAVAILABLE' as SlotState,
                     };
+                    const isLocked = slot.state === 'BUSY' && Boolean(slot.taskId);
 
                     return (
                       <td
                         key={hour}
                         onClick={() => toggleSlot(key, hour)}
                         className={`p-1 border-l border-surface-outline transition-colors select-none ${
-                          readOnly ? '' : 'cursor-pointer'
+                          readOnly || isLocked ? '' : 'cursor-pointer'
                         }`}
                         title={`${label} ${hour}:00 - ${slot.state}${
                           slot.taskTitle ? ` (${slot.taskTitle})` : ''
@@ -209,10 +212,11 @@ export function AvailabilityGrid({
                       >
                         <div
                           className={`h-7 rounded-xs border flex items-center justify-center text-[10px] tabular-nums transition-all ${getSlotStyle(
-                            slot.state
+                            slot.state,
+                            isLocked
                           )}`}
                         >
-                          {slot.state === 'BUSY' ? 'BUSY' : slot.state === 'PREFERRED' ? '★' : ''}
+                          {slot.state === 'BUSY' ? 'BUSY' : ''}
                         </div>
                       </td>
                     );
@@ -232,12 +236,8 @@ export function AvailabilityGrid({
           <span>Available Slot</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-xs bg-purple-200 border border-purple-400" />
-          <span>Preferred Slot</span>
-        </div>
-        <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-xs bg-amber-200 border border-amber-400" />
-          <span>Busy (Task Allocated)</span>
+          <span>Busy</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-xs bg-slate-200 border border-slate-300" />

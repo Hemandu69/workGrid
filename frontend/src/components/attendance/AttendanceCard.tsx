@@ -136,6 +136,34 @@ export function AttendanceCard() {
     }
   };
 
+  // Single generic Lunch/Dinner action — same underlying MEAL state either
+  // way. Never touches check-in/check-out; working duration keeps counting.
+  const handleStartMeal = async () => {
+    setIsActionPending(true);
+    setActionError(null);
+    try {
+      await apiClient.startMeal();
+      await fetchAttendance();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Failed to start meal break.');
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const handleEndMeal = async () => {
+    setIsActionPending(true);
+    setActionError(null);
+    try {
+      await apiClient.endMeal();
+      await fetchAttendance();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Failed to end meal break.');
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
   // Load History
   const handleOpenHistory = async () => {
     setIsHistoryModalOpen(true);
@@ -176,6 +204,10 @@ export function AttendanceCard() {
   }
 
   const isCheckedIn = data?.state === 'IN';
+  const isInMeal = data?.availabilityState === 'MEAL';
+  // Label only — the underlying backend state is the same generic MEAL
+  // either way; daytime shows "Lunch", evening (6 PM+) shows "Dinner".
+  const mealLabel = new Date().getHours() >= 18 ? 'Dinner' : 'Lunch';
 
   return (
     <>
@@ -277,6 +309,18 @@ export function AttendanceCard() {
                 onChanged={fetchAttendance}
               />
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!isCheckedIn || isActionPending}
+              onClick={isInMeal ? handleEndMeal : handleStartMeal}
+              className="text-xs px-3"
+              title={isCheckedIn ? undefined : 'Check in before starting a meal break.'}
+            >
+              <span className="material-symbols-outlined text-[16px] mr-1">restaurant</span>
+              {isInMeal ? `End ${mealLabel}` : mealLabel}
+            </Button>
 
             <Button
               variant="outline"

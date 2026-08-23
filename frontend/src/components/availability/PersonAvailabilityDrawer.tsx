@@ -8,7 +8,6 @@ import { Avatar } from '../ui/Avatar';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { RoomAssignmentModal } from './RoomAssignmentModal';
-import { AvailabilityStatusControl } from './AvailabilityStatusControl';
 
 interface PersonAvailabilityDrawerProps {
   userId: string | null;
@@ -24,9 +23,11 @@ export function PersonAvailabilityDrawer({
   const [data, setData] = useState<PersonAvailabilityDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isUpdatingPresence, setIsUpdatingPresence] = useState(false);
   const [liveDuration, setLiveDuration] = useState<string>('');
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  // null = default state (today expanded, others collapsed). Once the viewer
+  // clicks any day, that single day stays expanded until they click another.
+  const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const { role: viewerRole } = useAuth();
   const canManageAssignment = viewerRole === 'SUPER_ADMIN' || viewerRole === 'ADMIN';
 
@@ -132,29 +133,6 @@ export function PersonAvailabilityDrawer({
       return () => clearInterval(interval);
     }
   }, [data?.person]);
-
-  const handleTogglePresence = async (targetState: 'IN' | 'OUT') => {
-    if (!userId || !data) return;
-    try {
-      setIsUpdatingPresence(true);
-      await apiClient.updatePresence({
-        userId,
-        presenceState: targetState,
-        // Returning puts them back in their assigned subroom. With no
-        // assignment there is no location to claim — leave it to the backend
-        // rather than inventing one.
-        currentLocationName:
-          targetState === 'IN' ? data.person.subroom ?? null : 'Outside',
-      });
-
-      const refreshed = await apiClient.getPersonAvailabilityDetail(userId);
-      setData(refreshed);
-    } catch (err) {
-      console.error('Failed to toggle presence:', err);
-    } finally {
-      setIsUpdatingPresence(false);
-    }
-  };
 
   if (!userId) return null;
 
@@ -284,35 +262,16 @@ export function PersonAvailabilityDrawer({
                     Real-time Presence & Attendance
                   </span>
 
-                  {/* Presence State Controls (IN / OUT) */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={isUpdatingPresence}
-                      onClick={() => handleTogglePresence('IN')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all border ${
-                        data.person.attendanceState === 'IN'
-                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                          : 'bg-surface-bright text-on-surface-variant border-surface-outline hover:bg-surface-container'
-                      }`}
-                      title="Set attendance to IN"
-                    >
-                      [ IN ]
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isUpdatingPresence}
-                      onClick={() => handleTogglePresence('OUT')}
-                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition-all border ${
-                        data.person.attendanceState === 'OUT'
-                          ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                          : 'bg-surface-bright text-on-surface-variant border-surface-outline hover:bg-surface-container'
-                      }`}
-                      title="Set attendance to OUT"
-                    >
-                      [ OUT ]
-                    </button>
-                  </div>
+                  {/* Read-only — attendance belongs to the person themselves. */}
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                      data.person.attendanceState === 'IN'
+                        ? 'bg-emerald-600 text-white border-emerald-700'
+                        : 'bg-rose-600 text-white border-rose-700'
+                    }`}
+                  >
+                    [ {data.person.attendanceState} ]
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs font-mono">
@@ -346,28 +305,20 @@ export function PersonAvailabilityDrawer({
                 </div>
               </div>
 
-              {/* Current Status Box */}
+              {/* Current Status Box — read-only. Live presence belongs to the
+                  person themselves; this view only observes it. */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
-                    Live Operations Status
-                  </span>
-                  {canManageAssignment && (
-                    <AvailabilityStatusControl
-                      current={data.currentStatus.state}
-                      personId={userId}
-                      disabled={data.person.attendanceState !== 'IN'}
-                      disabledHint="This person is checked OUT — availability is suppressed until they return."
-                      onChanged={() => refreshDrawer(true)}
-                    />
-                  )}
-                </div>
+                <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider block">
+                  Live Operations Status
+                </span>
                 <div
                   className={`p-3 rounded border text-xs flex items-center justify-between ${
                     data.currentStatus.state === 'FREE'
                       ? 'bg-status-available-container/30 border-status-available/30 text-emerald-900'
                       : data.currentStatus.state === 'BUSY'
                       ? 'bg-status-busy-container/30 border-status-busy/30 text-amber-900'
+                      : data.currentStatus.state === 'MEAL'
+                      ? 'bg-blue-50 border-blue-200 text-blue-900'
                       : 'bg-surface-container-low border-surface-outline text-on-surface-variant'
                   }`}
                 >
@@ -378,6 +329,8 @@ export function PersonAvailabilityDrawer({
                           ? 'bg-status-available'
                           : data.currentStatus.state === 'BUSY'
                           ? 'bg-status-busy'
+                          : data.currentStatus.state === 'MEAL'
+                          ? 'bg-blue-500'
                           : 'bg-slate-400'
                       }`}
                     />
@@ -425,7 +378,9 @@ export function PersonAvailabilityDrawer({
                   </div>
 
                   <div className="space-y-2">
-                    {data.weeklyTimeline.map((day) => (
+                    {data.weeklyTimeline.map((day) => {
+                      const isExpanded = expandedDate ? expandedDate === day.date : day.isToday;
+                      return (
                       <div
                         key={day.date}
                         className={`p-2.5 rounded border text-xs transition-colors ${
@@ -434,8 +389,19 @@ export function PersonAvailabilityDrawer({
                             : 'bg-surface-container-low/40 border-surface-outline/60'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedDate(isExpanded ? 'NONE' : day.date)}
+                          className="flex items-center justify-between w-full mb-1.5 text-left"
+                        >
                           <div className="flex items-center gap-1.5">
+                            <span
+                              className={`material-symbols-outlined text-[16px] text-on-surface-variant transition-transform ${
+                                isExpanded ? 'rotate-90' : ''
+                              }`}
+                            >
+                              chevron_right
+                            </span>
                             <span className="font-bold text-primary text-xs">{day.dayName}</span>
                             {day.isToday && (
                               <span className="px-1.5 py-0.2 bg-primary text-on-primary text-[9px] font-mono font-semibold rounded uppercase">
@@ -456,9 +422,10 @@ export function PersonAvailabilityDrawer({
                           >
                             {day.status}
                           </span>
-                        </div>
+                        </button>
 
-                        {/* Schedule Windows */}
+                        {/* Schedule Windows — merged ranges, shown when expanded */}
+                        {isExpanded && (
                         <div className="flex flex-wrap gap-1.5 pt-1">
                           {day.windows.map((win, idx) => (
                             <div
@@ -487,8 +454,10 @@ export function PersonAvailabilityDrawer({
                             </div>
                           ))}
                         </div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -256,6 +256,43 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(res.body.weeklyTimeline.length).toBe(7);
   });
 
+  it('GET /api/v1/availability/people/:id reads the same persisted slots the member\'s own grid would show — no fabricated 9-17 default, no dropped Unavailable ranges', async () => {
+    const res = await supertest(app.server)
+      .get('/api/v1/availability/people/member-1-id?startDate=2026-08-24')
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    const monday = res.body.weeklyTimeline.find((d: { dayOfWeek: string }) => d.dayOfWeek === 'MONDAY');
+    expect(monday).toBeDefined();
+
+    // The mocked member-1-id row only sets hours 10 (AVAILABLE), 11 (AVAILABLE),
+    // 12 (BUSY) on Monday — every other hour has no saved row.
+    const windows = monday.windows as Array<{ startHour: number; endHour: number; state: string }>;
+    // Hours before 10 must show as UNAVAILABLE (not a fabricated 9-17 FREE
+    // default), and that range must actually be present, not silently dropped.
+    const beforeAvailable = windows.find((w) => w.startHour === 0);
+    expect(beforeAvailable).toBeDefined();
+    expect(beforeAvailable!.state).toBe('UNAVAILABLE');
+    expect(beforeAvailable!.endHour).toBe(10);
+
+    // 10-11 merges into one FREE window (consecutive identical AVAILABLE hours).
+    const freeWindow = windows.find((w) => w.state === 'FREE' && w.startHour === 10);
+    expect(freeWindow).toBeDefined();
+    expect(freeWindow!.endHour).toBe(12);
+
+    const busyWindow = windows.find((w) => w.state === 'BUSY');
+    expect(busyWindow).toBeDefined();
+    expect(busyWindow!.startHour).toBe(12);
+    expect(busyWindow!.endHour).toBe(13);
+
+    // Everything after hour 13 is UNAVAILABLE and must still be represented,
+    // not dropped by the old 8-18 suppression window.
+    const afterBusy = windows.find((w) => w.startHour === 13);
+    expect(afterBusy).toBeDefined();
+    expect(afterBusy!.state).toBe('UNAVAILABLE');
+    expect(afterBusy!.endHour).toBe(24);
+  });
+
   it('GET /api/v1/availability/people/:id should allow SERVER to access person in their own room', async () => {
     const res = await supertest(app.server)
       .get('/api/v1/availability/people/member-1-id')

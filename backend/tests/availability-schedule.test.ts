@@ -164,6 +164,36 @@ describe('Weekly availability schedule endpoints (/api/v1/users/:id/availability
     expect(res.status).toBe(403);
   });
 
+  it('rejects an ADMIN saving another user\'s schedule — recurring availability is self-owned', async () => {
+    const res = await supertest(app.server)
+      .put('/api/v1/users/usr-liam/availability')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ slots: [{ day: 'MONDAY', hour: 9, state: 'AVAILABLE' }] });
+    expect(res.status).toBe(403);
+  });
+
+  it('lets a MEMBER paint a recurring Busy slot with no taskId', async () => {
+    const res = await supertest(app.server)
+      .put('/api/v1/users/usr-sarah/availability')
+      .set('Authorization', `Bearer ${sarahToken}`)
+      .send({ slots: [{ day: 'TUESDAY', hour: 14, state: 'BUSY' }] });
+
+    expect(res.status).toBe(200);
+    expect(mockPrisma.availabilitySlot.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [{ userId: 'usr-sarah', day: 'TUESDAY', hour: 14, state: 'BUSY', taskId: undefined }],
+      })
+    );
+  });
+
+  it('rejects a legacy PREFERRED state — the value no longer exists', async () => {
+    const res = await supertest(app.server)
+      .put('/api/v1/users/usr-sarah/availability')
+      .set('Authorization', `Bearer ${sarahToken}`)
+      .send({ slots: [{ day: 'MONDAY', hour: 9, state: 'PREFERRED' }] });
+    expect(res.status).toBe(400);
+  });
+
   it('rejects an update body with a null taskId (must be omitted, not null)', async () => {
     const res = await supertest(app.server)
       .put('/api/v1/users/usr-sarah/availability')

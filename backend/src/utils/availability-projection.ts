@@ -1,27 +1,31 @@
 import { PresenceState, UserStatus } from '@prisma/client';
 
 /**
- * The four operational availability states projected by every WorkGrid surface
- * (Operations Grid, People Availability, drawers, dashboards, KPIs).
+ * The operational availability states projected by every WorkGrid surface
+ * (Operations Grid, People Availability, drawers, dashboards, KPIs). MEAL is a
+ * temporary, reversible, self-only state (Lunch/Dinner — the frontend decides
+ * which label to show) — the person remains checked in throughout.
  */
-export type AvailabilityState = 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
+export type AvailabilityState = 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
 
 export const AVAILABILITY_STATES: AvailabilityState[] = [
   'FREE',
   'BUSY',
   'PARTIALLY_AVAILABLE',
   'UNAVAILABLE',
+  'MEAL',
 ];
 
 /**
  * `User.status` is the authoritative STORED operational availability.
- * The existing `UserStatus` enum already covers the four states exactly, so no
+ * The existing `UserStatus` enum already covers these states exactly, so no
  * schema change is required to represent them:
  *
  *   FREE                ↔ ONLINE
  *   BUSY                ↔ BUSY
  *   PARTIALLY_AVAILABLE ↔ AWAY
  *   UNAVAILABLE         ↔ OFFLINE
+ *   MEAL                ↔ MEAL
  */
 export function availabilityFromUserStatus(status: UserStatus | string | null | undefined): AvailabilityState {
   switch (status) {
@@ -34,6 +38,9 @@ export function availabilityFromUserStatus(status: UserStatus | string | null | 
     case UserStatus.AWAY:
     case 'AWAY':
       return 'PARTIALLY_AVAILABLE';
+    case UserStatus.MEAL:
+    case 'MEAL':
+      return 'MEAL';
     default:
       return 'UNAVAILABLE';
   }
@@ -47,6 +54,8 @@ export function userStatusFromAvailability(state: AvailabilityState): UserStatus
       return UserStatus.BUSY;
     case 'PARTIALLY_AVAILABLE':
       return UserStatus.AWAY;
+    case 'MEAL':
+      return UserStatus.MEAL;
     default:
       return UserStatus.OFFLINE;
   }
@@ -61,6 +70,7 @@ export const AVAILABILITY_LABELS: Record<AvailabilityState, string> = {
   BUSY: 'Busy',
   PARTIALLY_AVAILABLE: 'Partially Available',
   UNAVAILABLE: 'Unavailable',
+  MEAL: 'Meal',
 };
 
 export interface AvailabilityProjection {
@@ -107,7 +117,9 @@ export function deriveAvailability(input: AvailabilityProjectionInput): Availabi
   }
 
   let reason: string;
-  if (storedState === 'BUSY') {
+  if (storedState === 'MEAL') {
+    reason = 'Checked in — Lunch/Dinner';
+  } else if (storedState === 'BUSY') {
     reason = activeTaskLabel ? `Active Task: ${activeTaskLabel}` : 'Marked busy';
   } else if (storedState === 'PARTIALLY_AVAILABLE') {
     reason = activeTaskLabel ? `Partially free alongside ${activeTaskLabel}` : 'Partially available';

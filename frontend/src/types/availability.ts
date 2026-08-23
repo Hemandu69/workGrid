@@ -10,8 +10,7 @@ export type DayOfWeek =
 export type SlotState =
   | 'AVAILABLE'
   | 'UNAVAILABLE'
-  | 'PREFERRED'
-  | 'BUSY'; // Task allocated
+  | 'BUSY'; // task-allocated (has taskId) or user-painted recurring Busy
 
 export interface HourlySlot {
   hour: number; // 0 - 23 (e.g. 9 for 09:00-10:00)
