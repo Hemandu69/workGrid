@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../components/ui/Table';
 import { ManagePersonModal } from '../../components/hr/ManagePersonModal';
 import { ProvisionPersonModal } from '../../components/hr/ProvisionPersonModal';
+import { PeopleManagementTabs } from '../../components/hr/PeopleManagementTabs';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 
 export default function HRDashboardPage() {
@@ -199,12 +200,14 @@ export default function HRDashboardPage() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: 'HR & People Operations', href: '/hr' },
-        { label: 'Personnel & Role Governance' },
+        { label: 'People Management', href: '/hr' },
+        { label: 'People Directory' },
       ]}
       onQuickAction={() => setIsProvisionModalOpen(true)}
     >
       <div className="space-y-6">
+        <PeopleManagementTabs />
+
         {/* Global Attendance IN / OUT Tracker */}
         <AttendanceCard />
 

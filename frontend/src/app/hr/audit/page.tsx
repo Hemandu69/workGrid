@@ -8,6 +8,7 @@ import { useHREvents, HREvent } from '../../../lib/useHREvents';
 import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
+import { PeopleManagementTabs } from '../../../components/hr/PeopleManagementTabs';
 
 export default function HRAuditPage() {
   const [search, setSearch] = useState('');
@@ -70,11 +71,13 @@ export default function HRAuditPage() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: 'HR & People Operations', href: '/hr' },
-        { label: 'Role Governance Audit Trail' },
+        { label: 'People Management', href: '/hr' },
+        { label: 'Role Audit' },
       ]}
     >
       <div className="space-y-6">
+        <PeopleManagementTabs />
+
         {/* Header */}
         <div className="border-b border-surface-outline pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
