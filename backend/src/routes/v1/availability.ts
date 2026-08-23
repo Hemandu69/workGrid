@@ -1,10 +1,12 @@
 import { FastifyPluginAsync } from 'fastify';
 import { AvailabilityService } from '../../services/availability.service.js';
-import { updateWeeklyScheduleSchema, setAvailabilityStatusSchema } from '../../schemas/availability.schema.js';
+import { updateWeeklyScheduleSchema, setAvailabilityStatusSchema, updateWeekAvailabilitySchema } from '../../schemas/availability.schema.js';
 import { AvailabilityState } from '../../utils/availability-projection.js';
 import { requireRole } from '../../plugins/auth.js';
 import { UserRole } from '@prisma/client';
 import { prisma } from '../../db/client.js';
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/availability/people
@@ -340,6 +342,98 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
         return reply.send(updated);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Failed to update schedule';
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message,
+        });
+      }
+    }
+  );
+
+  // GET /api/v1/users/:id/availability/calendar?weekStart=YYYY-MM-DD&month=&year=
+  // Protected: Authenticated users can view their own effective calendar week;
+  // SUPER_ADMIN/ADMIN can view anyone's — same guard as the recurring GET above.
+  fastify.get(
+    '/users/:id/availability/calendar',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const query = request.query as { weekStart?: string; month?: string; year?: string };
+
+      if (request.user.id !== id && request.user.role !== 'SUPER_ADMIN' && request.user.role !== 'ADMIN') {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'You are only authorized to view your own availability schedule',
+        });
+      }
+
+      if (!query.weekStart || !DATE_RE.test(query.weekStart)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'weekStart is required and must be in YYYY-MM-DD format',
+        });
+      }
+
+      try {
+        const schedule = await AvailabilityService.getEffectiveWeekAvailability(
+          id,
+          query.weekStart,
+          query.month ? parseInt(query.month, 10) : undefined,
+          query.year ? parseInt(query.year, 10) : undefined
+        );
+        return reply.send(schedule);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to fetch calendar availability';
+        return reply.status(404).send({
+          statusCode: 404,
+          error: 'Not Found',
+          message,
+        });
+      }
+    }
+  );
+
+  // PUT /api/v1/users/:id/availability/calendar
+  // Self-only — date-specific overrides belong to the person themselves,
+  // same rule as the recurring PUT above.
+  fastify.put(
+    '/users/:id/availability/calendar',
+    {
+      preHandler: [fastify.authenticate],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+
+      if (request.user.id !== id) {
+        return reply.status(403).send({
+          statusCode: 403,
+          error: 'Forbidden',
+          message: 'You are only authorized to update your own availability schedule',
+        });
+      }
+
+      const parseResult = updateWeekAvailabilitySchema.safeParse(request.body);
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation failed',
+          details: parseResult.error.format(),
+        });
+      }
+
+      try {
+        const updated = await AvailabilityService.updateWeekAvailability(id, parseResult.data, {
+          id: request.user.id,
+        });
+        return reply.send(updated);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to update calendar availability';
         return reply.status(400).send({
           statusCode: 400,
           error: 'Bad Request',

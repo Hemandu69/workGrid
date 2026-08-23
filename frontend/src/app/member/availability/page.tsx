@@ -1,76 +1,159 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppShell } from '../../../components/layout/AppShell';
 import { AvailabilityGrid } from '../../../components/availability/AvailabilityGrid';
 import { useAuth } from '../../../lib/auth-context';
 import { apiClient } from '../../../lib/api-client';
-import { WeeklyAvailabilitySchedule, DayOfWeek } from '../../../types/availability';
+import { WeeklyAvailabilitySchedule, WeekAvailabilityResponse, DayOfWeek } from '../../../types/availability';
 import { useDomainEvent } from '../../../lib/realtime-context';
+import { getCurrentISTDateString } from '../../../lib/time-utils';
+import {
+  getWeeksInMonth,
+  getMondayOfWeekContaining,
+  isDateInMonth,
+  formatMonthYearLabel,
+  formatWeekLabel,
+  formatShortDate,
+  shiftMonth,
+} from '../../../lib/calendar-utils';
 
 const DISPLAY_HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // matches AvailabilityGrid
 
+function buildGridSchedule(data: WeekAvailabilityResponse): WeeklyAvailabilitySchedule {
+  const days = {} as Record<DayOfWeek, WeeklyAvailabilitySchedule['days'][DayOfWeek]>;
+  data.days.forEach((d) => {
+    days[d.dayOfWeek] = d.slots;
+  });
+  return {
+    userId: data.userId,
+    timezone: data.timezone,
+    days,
+    totalCapacityHours: data.totalCapacityHours,
+    allocatedHours: data.allocatedHours,
+    remainingAvailableHours: data.remainingAvailableHours,
+  };
+}
+
 export default function AvailabilityPage() {
   const { user } = useAuth();
-  const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
+
+  const todayStr = getCurrentISTDateString();
+  const [selectedYear, setSelectedYear] = useState<number>(() => Number(todayStr.slice(0, 4)));
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => Number(todayStr.slice(5, 7)));
+  const [selectedWeekStart, setSelectedWeekStart] = useState<string>(() => getMondayOfWeekContaining(todayStr));
+
+  const [weekData, setWeekData] = useState<WeekAvailabilityResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [savedNotification, setSavedNotification] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Monotonic fetch counter so an out-of-order response (e.g. a realtime
-  // refetch racing a save's own response) can never overwrite fresher data.
+  // refetch racing a save's own response, or switching weeks quickly) can
+  // never overwrite fresher data.
   const fetchSeq = useRef(0);
 
-  const fetchSchedule = useCallback(async () => {
+  const weeks = useMemo(() => getWeeksInMonth(selectedYear, selectedMonth), [selectedYear, selectedMonth]);
+
+  const fetchWeek = useCallback(async () => {
     if (!user?.id) return;
     const seq = ++fetchSeq.current;
     try {
       setIsLoading(true);
-      const data = await apiClient.getUserAvailability(user.id);
+      const data = await apiClient.getWeekAvailability(user.id, {
+        weekStart: selectedWeekStart,
+        month: selectedMonth,
+        year: selectedYear,
+      });
       if (data && seq === fetchSeq.current) {
-        setSchedule(data);
+        setWeekData(data);
       }
     } catch {
       // Clean fallback
     } finally {
       if (seq === fetchSeq.current) setIsLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, selectedWeekStart, selectedMonth, selectedYear]);
 
   useEffect(() => {
-    fetchSchedule();
-  }, [fetchSchedule]);
+    fetchWeek();
+  }, [fetchWeek]);
 
   useDomainEvent('AVAILABILITY_CHANGED', (event) => {
     if (!event.targetUserId || event.targetUserId === user?.id) {
-      fetchSchedule();
+      fetchWeek();
     }
   });
 
+  const handlePrevMonth = () => {
+    const { year, month } = shiftMonth(selectedYear, selectedMonth, -1);
+    setSelectedYear(year);
+    setSelectedMonth(month);
+    setSelectedWeekStart(getWeeksInMonth(year, month)[0].weekStart);
+  };
+
+  const handleNextMonth = () => {
+    const { year, month } = shiftMonth(selectedYear, selectedMonth, 1);
+    setSelectedYear(year);
+    setSelectedMonth(month);
+    setSelectedWeekStart(getWeeksInMonth(year, month)[0].weekStart);
+  };
+
+  const dateLabels = useMemo(() => {
+    if (!weekData) return undefined;
+    const labels = {} as Record<DayOfWeek, string>;
+    weekData.days.forEach((d) => {
+      labels[d.dayOfWeek] = formatShortDate(d.date);
+    });
+    return labels;
+  }, [weekData]);
+
+  const disabledDays = useMemo(() => {
+    if (!weekData) return undefined;
+    const disabled = {} as Record<DayOfWeek, boolean>;
+    weekData.days.forEach((d) => {
+      disabled[d.dayOfWeek] = !isDateInMonth(d.date, selectedYear, selectedMonth);
+    });
+    return disabled;
+  }, [weekData, selectedYear, selectedMonth]);
+
+  const todayDayOfWeek = useMemo(() => {
+    if (!weekData) return null;
+    const entry = weekData.days.find((d) => d.date === todayStr);
+    return entry ? entry.dayOfWeek : null;
+  }, [weekData, todayStr]);
+
   const handleSave = async (updatedSchedule: WeeklyAvailabilitySchedule) => {
-    if (!user?.id) return;
+    if (!user?.id || !weekData) return;
     setSaveError(null);
 
-    const slots: { day: DayOfWeek; hour: number; state: string; taskId?: string }[] = [];
-    (Object.keys(updatedSchedule.days) as DayOfWeek[]).forEach((day) => {
-      updatedSchedule.days[day].forEach((slot) => {
-        // Task-allocated Busy (has a taskId) is never user-editable — never send
-        // it back. A user-painted recurring Busy (no taskId) is sent normally.
-        if ((slot.state === 'BUSY' && slot.taskId) || !DISPLAY_HOURS.includes(slot.hour)) return;
-        const entry: { day: DayOfWeek; hour: number; state: string; taskId?: string } = {
-          day,
-          hour: slot.hour,
-          state: slot.state,
-        };
-        if (slot.taskId) entry.taskId = slot.taskId;
-        slots.push(entry);
+    const days = weekData.days
+      // Out-of-month dates are never editable, and never submitted — belt
+      // and suspenders alongside AvailabilityGrid's own disabledDays guard.
+      .filter((d) => isDateInMonth(d.date, selectedYear, selectedMonth))
+      .map((d) => {
+        const slots: { hour: number; state: string; taskId?: string }[] = [];
+        (updatedSchedule.days[d.dayOfWeek] || []).forEach((slot) => {
+          // Task-allocated Busy (has a taskId) is never user-editable —
+          // never send it back. A user-painted recurring/date Busy (no
+          // taskId) is sent normally.
+          if ((slot.state === 'BUSY' && slot.taskId) || !DISPLAY_HOURS.includes(slot.hour)) return;
+          const entry: { hour: number; state: string; taskId?: string } = { hour: slot.hour, state: slot.state };
+          if (slot.taskId) entry.taskId = slot.taskId;
+          slots.push(entry);
+        });
+        return { date: d.date, slots };
       });
-    });
 
     const seq = ++fetchSeq.current;
     try {
-      const updated = await apiClient.updateUserAvailability(user.id, { slots });
+      const updated = await apiClient.updateWeekAvailability(user.id, {
+        weekStart: selectedWeekStart,
+        month: selectedMonth,
+        year: selectedYear,
+        days,
+      });
       if (seq === fetchSeq.current) {
-        setSchedule(updated);
+        setWeekData(updated);
       }
       setSavedNotification(true);
       setTimeout(() => setSavedNotification(false), 3000);
@@ -92,11 +175,9 @@ export default function AvailabilityPage() {
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-surface-outline pb-4">
           <div>
-            <h1 className="text-xl font-bold text-primary tracking-tight">
-              Weekly Recurring Availability Matrix
-            </h1>
+            <h1 className="text-xl font-bold text-primary tracking-tight">Weekly Availability</h1>
             <p className="text-xs text-on-surface-variant mt-1">
-              Maintain your 7-day recurring schedule in hourly slots. Availability is stored in your IANA timezone and evaluated in UTC.
+              Edit your real-date schedule for the selected week. Availability is stored in your IANA timezone.
             </p>
           </div>
 
@@ -115,6 +196,49 @@ export default function AvailabilityPage() {
           )}
         </div>
 
+        {/* Month Selector */}
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant mr-1">Month</span>
+          <button
+            type="button"
+            onClick={handlePrevMonth}
+            aria-label="Previous month"
+            className="w-7 h-7 flex items-center justify-center rounded border border-surface-outline bg-surface-bright hover:bg-surface-container-low text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+          </button>
+          <span className="px-3 py-1 text-sm font-semibold text-primary font-mono min-w-[10rem] text-center">
+            {formatMonthYearLabel(selectedYear, selectedMonth)}
+          </span>
+          <button
+            type="button"
+            onClick={handleNextMonth}
+            aria-label="Next month"
+            className="w-7 h-7 flex items-center justify-center rounded border border-surface-outline bg-surface-bright hover:bg-surface-container-low text-on-surface"
+          >
+            <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+        </div>
+
+        {/* Week Selector */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant mr-1">Week</span>
+          {weeks.map((w) => (
+            <button
+              key={w.weekStart}
+              type="button"
+              onClick={() => setSelectedWeekStart(w.weekStart)}
+              className={`px-3 py-1 rounded text-xs font-medium border transition-all ${
+                w.weekStart === selectedWeekStart
+                  ? 'bg-primary text-white border-primary shadow-xs'
+                  : 'bg-surface-bright text-on-surface border-surface-outline hover:bg-surface-container-low'
+              }`}
+            >
+              {formatWeekLabel(w.weekStart, w.weekEnd)}
+            </button>
+          ))}
+        </div>
+
         {/* Operational Availability Rules Notice */}
         <div className="p-3.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface space-y-1">
           <div className="font-semibold text-primary flex items-center gap-1.5">
@@ -122,15 +246,24 @@ export default function AvailabilityPage() {
             Capacity & Task Allocation Rules
           </div>
           <p className="text-on-surface-variant leading-relaxed">
-            Assigned tasks use up your available hours automatically, reserved ahead of their due time. You can also paint recurring Busy slots yourself — task-allocated Busy slots stay locked.
+            Assigned tasks use up your available hours automatically, reserved ahead of their due time. You can also
+            paint recurring Busy slots yourself — task-allocated Busy slots stay locked. Days shown in grey belong to
+            a different month and can&apos;t be edited from here.
           </p>
         </div>
 
         {/* 7-Day Matrix */}
         {isLoading ? (
           <p className="text-xs text-on-surface-variant text-center py-12">Loading availability matrix...</p>
-        ) : schedule ? (
-          <AvailabilityGrid initialSchedule={schedule} onSave={handleSave} />
+        ) : weekData ? (
+          <AvailabilityGrid
+            key={selectedWeekStart}
+            initialSchedule={buildGridSchedule(weekData)}
+            onSave={handleSave}
+            dateLabels={dateLabels}
+            disabledDays={disabledDays}
+            todayDayOfWeek={todayDayOfWeek}
+          />
         ) : (
           <p className="text-xs text-on-surface-variant text-center py-12">No schedule records available.</p>
         )}

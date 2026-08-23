@@ -66,3 +66,57 @@ describe('AvailabilityGrid — save flow', () => {
     expect(screen.getByRole('button', { name: /Save Schedule/i })).toBeInTheDocument();
   });
 });
+
+describe('AvailabilityGrid — calendar-aware props (dateLabels, disabledDays, todayDayOfWeek)', () => {
+  it('renders the real date under the day name when dateLabels is provided', () => {
+    render(
+      <AvailabilityGrid
+        initialSchedule={buildSchedule()}
+        dateLabels={{ MONDAY: 'Sep 1', TUESDAY: 'Sep 2' }}
+      />
+    );
+
+    expect(screen.getByText('Sep 1')).toBeInTheDocument();
+    expect(screen.getByText('Sep 2')).toBeInTheDocument();
+  });
+
+  it('makes a disabled day non-interactive — clicking it never changes state or fires onSave-eligible changes', () => {
+    const onSave = vi.fn();
+    render(
+      <AvailabilityGrid
+        initialSchedule={buildSchedule()}
+        onSave={onSave}
+        dateLabels={{ MONDAY: 'Aug 31' }}
+        disabledDays={{ MONDAY: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Monday Aug 31 9:00 - Outside selected month'));
+
+    // No Save button ever appears — the click was a no-op.
+    expect(screen.queryByRole('button', { name: /Save Schedule/i })).not.toBeInTheDocument();
+  });
+
+  it('an in-month day next to a disabled day remains fully editable', () => {
+    render(
+      <AvailabilityGrid
+        initialSchedule={buildSchedule()}
+        dateLabels={{ MONDAY: 'Aug 31', TUESDAY: 'Sep 1' }}
+        disabledDays={{ MONDAY: true, TUESDAY: false }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Tuesday Sep 1 9:00 - UNAVAILABLE'));
+    expect(screen.getByRole('button', { name: /Save Schedule/i })).toBeInTheDocument();
+  });
+
+  it('highlights the todayDayOfWeek row', () => {
+    render(<AvailabilityGrid initialSchedule={buildSchedule()} todayDayOfWeek="WEDNESDAY" />);
+    expect(screen.getByText('Today')).toBeInTheDocument();
+  });
+
+  it('does not render a "Today" marker when todayDayOfWeek is null', () => {
+    render(<AvailabilityGrid initialSchedule={buildSchedule()} todayDayOfWeek={null} />);
+    expect(screen.queryByText('Today')).not.toBeInTheDocument();
+  });
+});
