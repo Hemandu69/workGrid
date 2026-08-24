@@ -376,7 +376,7 @@ export class TaskService {
           taskType: TaskType.INDIVIDUAL,
           status: TaskStatus.ASSIGNED,
           progress: 0,
-          estimatedHours: input.estimatedHours,
+          estimatedHours: input.estimatedHours ?? 8.0,
           allocatedHours: 0,
           dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
           assigneeId: assignee.id,
@@ -384,11 +384,6 @@ export class TaskService {
           campaignId: input.campaignId,
           tags: input.tags,
         },
-      });
-
-      await tx.user.update({
-        where: { id: assignee.id },
-        data: { currentAllocatedHours: { increment: Math.round(input.estimatedHours) } },
       });
 
       if (typeof (tx as any).auditEvent?.create === 'function') {
@@ -490,8 +485,8 @@ export class TaskService {
       ? await prisma.taskCampaign.findUnique({ where: { id: input.campaignId }, select: { id: true, title: true } })
       : null;
 
-    const task = await prisma.$transaction(async (tx) => {
-      const created = await tx.task.create({
+    const created = await prisma.$transaction(async (tx) => {
+      const row = await tx.task.create({
         data: {
           organizationId: user.organizationId,
           taskIdDisplay,
@@ -502,7 +497,7 @@ export class TaskService {
           teamSection,
           status: TaskStatus.DRAFT,
           progress: 0,
-          estimatedHours: input.estimatedHours,
+          estimatedHours: input.estimatedHours ?? 8.0,
           allocatedHours: 0,
           dueDate: input.dueDate ? new Date(input.dueDate) : undefined,
           assigneeId: null,
@@ -519,32 +514,31 @@ export class TaskService {
             userId: user.id,
             action: 'TASK_CREATED',
             entityType: 'Task',
-            entityId: created.id,
-            details: { title: created.title, taskType: 'TEAM', teamSection },
+            entityId: row.id,
+            details: { title: row.title, taskType: 'TEAM', teamSection },
           },
         });
       }
 
-      return created;
+      return row;
     });
 
-    const fullTask = await this.formatTaskDetail({
-      ...task,
-      assignee: null,
-      creator: { name: user.name },
-      campaign,
-      childTasks: [],
-    });
+    const fullTask = await this.formatTaskDetail(created);
 
     publishDomainEvent({
       type: 'TASK_CREATED',
       organizationId: user.organizationId,
-      entityId: task.id,
+      entityId: created.id,
       actorId: user.id,
-      payload: { ...fullTask, creatorId: user.id },
+      payload: {
+        taskId: created.id,
+        taskIdDisplay: created.taskIdDisplay,
+        assigneeId: null,
+        creatorId: user.id,
+        task: fullTask,
+      },
     });
 
-    // No assignee yet — nothing to sync availability for.
     return fullTask;
   }
 
@@ -556,7 +550,11 @@ export class TaskService {
     const scope = this.toScope(task);
     const authorized = input.status === TaskStatus.CANCELLED ? canCancelTask(actor, scope) : canManageTask(actor, scope);
     if (!authorized) {
-      throw new TaskForbiddenError('You are not authorized to change this task’s status.');
+      throw new TaskForbiddenError('You are not authorized to update this task status.');
+    }
+
+    if (task.status === TaskStatus.DRAFT && !task.assigneeId) {
+      throw new TaskConflictError('Cannot change status of an unassigned team task.');
     }
 
     if (!isValidStatusTransition(task.status, input.status)) {
@@ -578,7 +576,6 @@ export class TaskService {
         data: {
           status: input.status,
           progress: nextProgress,
-          allocatedHours: input.allocatedHours !== undefined ? input.allocatedHours : task.allocatedHours,
           completedAt: input.status === TaskStatus.COMPLETED ? now : input.status !== task.status ? null : task.completedAt,
         },
       });
@@ -805,17 +802,6 @@ export class TaskService {
         },
       });
 
-      if (previousAssigneeId) {
-        await tx.user.update({
-          where: { id: previousAssigneeId },
-          data: { currentAllocatedHours: { decrement: Math.round(task.estimatedHours) } },
-        }).catch(() => null);
-      }
-      await tx.user.update({
-        where: { id: newAssignee.id },
-        data: { currentAllocatedHours: { increment: Math.round(task.estimatedHours) } },
-      });
-
       if (typeof (tx as any).auditEvent?.create === 'function') {
         await (tx as any).auditEvent.create({
           data: {
@@ -933,7 +919,6 @@ export class TaskService {
 
       for (const { assignment, candidate } of resolved) {
         const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-        const estimatedHours = assignment.estimatedHours ?? task.estimatedHours;
 
         const child = await tx.task.create({
           data: {
@@ -946,7 +931,7 @@ export class TaskService {
             parentTaskId: task.id,
             status: TaskStatus.ASSIGNED,
             progress: 0,
-            estimatedHours,
+            estimatedHours: assignment.estimatedHours ?? task.estimatedHours ?? 8.0,
             allocatedHours: 0,
             dueDate: task.dueDate,
             assigneeId: candidate.id,
@@ -954,11 +939,6 @@ export class TaskService {
             campaignId: task.campaignId,
             tags: task.tags,
           },
-        });
-
-        await tx.user.update({
-          where: { id: candidate.id },
-          data: { currentAllocatedHours: { increment: Math.round(estimatedHours) } },
         });
 
         if (typeof (tx as any).auditEvent?.create === 'function') {

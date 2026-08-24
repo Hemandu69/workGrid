@@ -50,7 +50,7 @@ export default function ServerDashboard() {
 
   const totalMembers = room?.totalMembers ?? roomMembers.length;
   const totalCap = room?.totalCapacity ?? 32;
-  const totalHours = roomMembers.reduce((acc, m) => acc + (m.currentAllocatedHours || 0), 0);
+  const completedTasksCount = tasks.filter((t) => t.status === 'COMPLETED').length;
   const blockedTasksCount = tasks.filter((t) => t.status === 'BLOCKED').length;
 
   return (
@@ -108,11 +108,11 @@ export default function ServerDashboard() {
             indicatorColor="busy"
           />
           <StatMetricCard
-            label="Team Workload"
-            value={`${totalHours}h`}
-            subtext="Total weekly hours allocated"
-            trend="Allocated Capacity"
-            icon="schedule"
+            label="Completed Tasks"
+            value={completedTasksCount}
+            subtext="Deliverables completed"
+            trend="Completed"
+            icon="task_alt"
             indicatorColor="available"
           />
           <StatMetricCard
@@ -140,49 +140,23 @@ export default function ServerDashboard() {
                 {roomMembers.length === 0 ? (
                   <p className="text-xs text-on-surface-variant py-2">No members registered in this section.</p>
                 ) : (
-                  roomMembers.map((member) => {
-                    const currentHours = member.currentAllocatedHours ?? 0;
-                    const capHours = member.capacityLimitHours ?? 40;
-                    const workloadPercentage = Math.round(
-                      (currentHours / (capHours || 1)) * 100
-                    );
-
-                    return (
-                      <div
-                        key={member.id}
-                        className="p-3 bg-surface-container-low border border-surface-outline rounded text-xs space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Avatar src={member.avatarUrl} name={member.name} size="sm" status={member.status} />
-                            <div>
-                              <p className="font-semibold text-primary">{member.name}</p>
-                              <p className="text-[10px] text-on-surface-variant font-mono">
-                                Subroom {member.subroom || '—'} • {member.title || 'Engineer'}
-                              </p>
-                            </div>
-                          </div>
-                          <span className="font-mono font-semibold text-primary">
-                            {currentHours} / {capHours}h
-                          </span>
-                        </div>
-
-                        {/* Workload bar */}
-                        <div className="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              workloadPercentage > 90
-                                ? 'bg-status-blocked'
-                                : workloadPercentage > 75
-                                ? 'bg-status-busy'
-                                : 'bg-status-available'
-                            }`}
-                            style={{ width: `${workloadPercentage}%` }}
-                          />
+                  roomMembers.map((member) => (
+                    <div
+                      key={member.id}
+                      className="p-3 bg-surface-container-low border border-surface-outline rounded text-xs flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Avatar src={member.avatarUrl} name={member.name} size="sm" status={member.status} />
+                        <div>
+                          <p className="font-semibold text-primary">{member.name}</p>
+                          <p className="text-[10px] text-on-surface-variant font-mono">
+                            Subroom {member.subroom || '—'} • {member.title || 'Engineer'}
+                          </p>
                         </div>
                       </div>
-                    );
-                  })
+                      <Badge status={member.status || 'AVAILABLE'} />
+                    </div>
+                  ))
                 )}
               </div>
             </Card>

@@ -44,7 +44,6 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
-  const [estimatedHours, setEstimatedHours] = useState('8');
   const [assigneeId, setAssigneeId] = useState('');
   const [teamSection, setTeamSection] = useState('');
   const [dueDate, setDueDate] = useState(() => new Date(Date.now() + 86400000 * 4).toISOString().split('T')[0]);
@@ -141,7 +140,6 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
           title,
           description,
           priority,
-          estimatedHours: Number(estimatedHours) || 8,
           dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
           campaignId: campaignId || undefined,
           ...(taskType === 'TEAM'
@@ -250,35 +248,24 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
           />
         </div>
 
-        {/* Assignee (individual) or Team/Section (team) & Estimated Hours Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="sm:col-span-2">
-            {taskType === 'TEAM' ? (
-              <Select
-                label="Team / Section"
-                value={teamSection}
-                onChange={(e) => setTeamSection(e.target.value)}
-                options={sectionOptions}
-                disabled={role === 'TEAM_LEAD'}
-              />
-            ) : (
-              <Select
-                label="Assigned Member"
-                value={assigneeId || availableAssignees[0]?.id || ''}
-                onChange={(e) => setAssigneeId(e.target.value)}
-                options={assigneeOptions}
-              />
-            )}
-          </div>
-
-          <Input
-            label="Est. Hours"
-            type="number"
-            min="1"
-            max="40"
-            value={estimatedHours}
-            onChange={(e) => setEstimatedHours(e.target.value)}
-          />
+        {/* Assignee (individual) or Team/Section (team) */}
+        <div>
+          {taskType === 'TEAM' ? (
+            <Select
+              label="Team / Section"
+              value={teamSection}
+              onChange={(e) => setTeamSection(e.target.value)}
+              options={sectionOptions}
+              disabled={role === 'TEAM_LEAD'}
+            />
+          ) : (
+            <Select
+              label="Assigned Member"
+              value={assigneeId || availableAssignees[0]?.id || ''}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              options={assigneeOptions}
+            />
+          )}
         </div>
 
         {taskType === 'TEAM' && (

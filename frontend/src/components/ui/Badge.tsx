@@ -6,7 +6,7 @@ import { AccountStatus } from '../../types/auth';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: 'default' | 'outline' | 'status' | 'priority' | 'role' | 'accountStatus';
-  status?: TaskStatus | 'AVAILABLE' | 'BUSY' | 'BLOCKED' | 'COMPLETED' | 'UNAVAILABLE' | 'PREFERRED';
+  status?: TaskStatus | 'AVAILABLE' | 'BUSY' | 'BLOCKED' | 'COMPLETED' | 'UNAVAILABLE' | 'PREFERRED' | 'ONLINE' | 'OFFLINE' | 'AWAY';
   accountStatus?: AccountStatus;
   priority?: TaskPriority;
   role?: string;
@@ -79,10 +79,21 @@ export function Badge({
     let label = status || 'Unknown';
 
     switch (statusKey) {
+      case 'ONLINE':
       case 'AVAILABLE':
         dotColor = 'bg-status-available';
         badgeStyle = 'bg-emerald-50 text-emerald-800 border-emerald-200';
-        label = 'Available';
+        label = statusKey === 'ONLINE' ? 'Online' : 'Available';
+        break;
+      case 'AWAY':
+        dotColor = 'bg-amber-400';
+        badgeStyle = 'bg-amber-50 text-amber-800 border-amber-200';
+        label = 'Away';
+        break;
+      case 'OFFLINE':
+        dotColor = 'bg-slate-400';
+        badgeStyle = 'bg-slate-100 text-slate-500 border-slate-200';
+        label = 'Offline';
         break;
       case 'IN_PROGRESS':
       case 'BUSY':

@@ -389,9 +389,7 @@ export function PersonAvailabilityDrawer({
 
                         <div className="flex items-center justify-between text-[10px] font-mono text-outline pt-1 border-t border-surface-outline/40">
                           <span>Due: {task.dueDateFormatted || 'Flexible'}</span>
-                          <span>
-                            Allocated: {task.allocatedHours}h / {task.estimatedHours}h
-                          </span>
+                          <span className="capitalize">{task.status.toLowerCase().replace('_', ' ')}</span>
                         </div>
                       </div>
                     ))}

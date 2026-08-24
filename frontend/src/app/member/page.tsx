@@ -49,9 +49,8 @@ export default function MemberDashboard() {
     }
   };
 
-  const allocatedHours = user?.currentAllocatedHours ?? 0;
-  const capacityHours = user?.capacityLimitHours ?? 40;
-  const remainingHours = Math.max(0, capacityHours - allocatedHours);
+  const inProgressCount = tasks.filter((t) => t.status === 'IN_PROGRESS').length;
+  const completedCount = tasks.filter((t) => t.status === 'COMPLETED').length;
 
   return (
     <AppShell
@@ -163,9 +162,7 @@ export default function MemberDashboard() {
                             <p className="text-[10px] text-on-surface-variant font-mono">{m.title || 'Engineer'}</p>
                           </div>
                         </div>
-                        <span className="text-[10px] font-mono text-primary font-semibold">
-                          {m.currentAllocatedHours ?? 0}h busy
-                        </span>
+                        <Badge status={m.status || 'AVAILABLE'} />
                       </div>
                     ))
                   )}
@@ -173,10 +170,10 @@ export default function MemberDashboard() {
               </div>
             </Card>
 
-            {/* Task Capacity Summary Widget */}
+            {/* Task Overview Summary Widget */}
             <Card>
               <CardHeader className="pb-2 mb-3">
-                <CardTitle>Task Capacity</CardTitle>
+                <CardTitle>Tasks & Events Overview</CardTitle>
                 <Link href="/member/events" className="text-xs text-secondary hover:text-primary font-medium">
                   My Events →
                 </Link>
@@ -184,30 +181,20 @@ export default function MemberDashboard() {
 
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between items-center tabular-nums">
-                  <span className="text-on-surface-variant">Allocated Workload:</span>
-                  <span className="font-bold text-primary font-mono">{allocatedHours} Hours</span>
+                  <span className="text-on-surface-variant">Total Tasks Assigned:</span>
+                  <span className="font-bold text-primary font-mono">{tasks.length}</span>
                 </div>
                 <div className="flex justify-between items-center tabular-nums">
-                  <span className="text-on-surface-variant">Capacity Limit:</span>
-                  <span className="font-semibold text-emerald-700 font-mono">{capacityHours} Hours</span>
+                  <span className="text-on-surface-variant">In Progress:</span>
+                  <span className="font-semibold text-amber-700 font-mono">{inProgressCount}</span>
                 </div>
                 <div className="flex justify-between items-center tabular-nums">
-                  <span className="text-on-surface-variant">Remaining Capacity:</span>
-                  <span className="font-bold text-primary font-mono">{remainingHours} Hours</span>
-                </div>
-
-                {/* Progress Mini Bar */}
-                <div className="w-full h-2 bg-surface-container rounded-full overflow-hidden mt-2">
-                  <div
-                    className="h-full bg-primary rounded-full"
-                    style={{
-                      width: `${capacityHours > 0 ? Math.min(100, (allocatedHours / capacityHours) * 100) : 0}%`,
-                    }}
-                  />
+                  <span className="text-on-surface-variant">Completed Tasks:</span>
+                  <span className="font-bold text-emerald-700 font-mono">{completedCount}</span>
                 </div>
 
                 <p className="text-[11px] text-on-surface-variant mt-2 leading-tight">
-                  Reflects your current assigned task hours against your capacity limit. Set your live availability from the Attendance card above.
+                  Operational deliverables for active events and campaigns. Manage event responses from My Events.
                 </p>
               </div>
             </Card>

@@ -10,10 +10,7 @@ interface TaskCardProps {
 }
 
 export function TaskCard({ task, onOpenDetails, onUpdateStatus }: TaskCardProps) {
-  const progressPercentage = Math.min(
-    Math.round((task.allocatedHours / (task.estimatedHours || 1)) * 100),
-    100
-  );
+  const progressPercentage = Math.min(Math.max(task.progress ?? 0, 0), 100);
 
   return (
     <div className="bg-surface-bright border border-surface-outline rounded p-5 relative overflow-hidden transition-all hover:border-slate-400/80 shadow-xs">
@@ -60,12 +57,12 @@ export function TaskCard({ task, onOpenDetails, onUpdateStatus }: TaskCardProps)
         {task.description}
       </p>
 
-      {/* Progress & Effort */}
+      {/* Task Progress */}
       <div className="mt-4 pt-3 border-t border-surface-outline space-y-2">
         <div className="flex justify-between text-xs text-on-surface-variant tabular-nums">
-          <span>Effort Allocation</span>
-          <span className="font-semibold text-primary">
-            {task.allocatedHours} / {task.estimatedHours}h ({progressPercentage}%)
+          <span>Task Progress</span>
+          <span className="font-semibold text-primary font-mono">
+            {progressPercentage}%
           </span>
         </div>
 

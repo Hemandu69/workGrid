@@ -158,7 +158,7 @@ export default function SuperAdminDashboard() {
           <StatMetricCard
             label="Active Tasks"
             value={(stats?.activeTasks ?? tasks.length).toLocaleString()}
-            subtext="Current organization-wide workload"
+            subtext="Current active tasks"
             trend="Live Count"
             icon="assignment"
             indicatorColor="primary"

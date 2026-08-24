@@ -5,7 +5,7 @@ const baseTaskFields = {
   title: z.string().min(3).max(200),
   description: z.string().optional(),
   priority: z.nativeEnum(TaskPriority).default(TaskPriority.MEDIUM),
-  estimatedHours: z.number().min(0.5).max(100).default(8.0),
+  estimatedHours: z.number().optional(), // Non-functional / legacy compatibility
   dueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
   campaignId: z.string().uuid().optional(),
   tags: z.array(z.string()).default([]),
@@ -31,7 +31,7 @@ export const createTaskSchema = z
 
 export const updateTaskStatusSchema = z.object({
   status: z.nativeEnum(TaskStatus),
-  allocatedHours: z.number().min(0).optional(),
+  allocatedHours: z.number().optional(), // Non-functional / legacy compatibility
   reason: z.string().max(500).optional(),
 });
 
@@ -51,7 +51,7 @@ export const splitTeamTaskSchema = z.object({
         assigneeId: z.string().uuid().or(z.string().min(5)),
         title: z.string().min(3).max(200),
         description: z.string().optional(),
-        estimatedHours: z.number().min(0.5).max(100).optional(),
+        estimatedHours: z.number().optional(), // Non-functional / legacy compatibility
       })
     )
     .min(2, 'A split must divide the work across at least 2 members'),

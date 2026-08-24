@@ -32,9 +32,7 @@ export default function TeamLeadPage() {
   const filtered = user.room ? usersData.filter((u) => u.room === user.room) : usersData;
   const teamMembers = filtered.length > 0 ? filtered : usersData;
 
-  const totalAllocated = teamMembers.reduce((acc, m) => acc + (m.currentAllocatedHours || 0), 0);
-  const totalLimit = teamMembers.reduce((acc, m) => acc + (m.capacityLimitHours || 40), 0);
-  const utilization = totalLimit > 0 ? Math.round((totalAllocated / totalLimit) * 100) : 0;
+  const activeTasksCount = tasks.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED').length;
   const completedTasks = tasks.filter((t) => t.status === 'COMPLETED').length;
   const unassignedTeamTasks = tasks.filter((t) => t.taskType === 'TEAM' && !t.assigneeId);
   const unavailableMembers = teamMembers.filter((m) => m.presenceState && m.presenceState !== 'IN');
@@ -60,7 +58,7 @@ export default function TeamLeadPage() {
               <Badge role="Team Lead" variant="role" />
             </div>
             <p className="text-xs text-on-surface-variant mt-1">
-              Dedicated squad operational workspace for workload tracking, sprint deliverables, and capacity management.
+              Dedicated squad operational workspace for event operations, task dispatching, and squad coordination.
             </p>
           </div>
 
@@ -98,11 +96,11 @@ export default function TeamLeadPage() {
 
           <div className="p-4 rounded border border-surface-outline bg-surface-bright shadow-xs">
             <div className="flex items-center justify-between text-on-surface-variant mb-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">Capacity Utilization</span>
-              <span className="material-symbols-outlined text-[18px] text-emerald-600">battery_charging_full</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800">Active Tasks</span>
+              <span className="material-symbols-outlined text-[18px] text-amber-600">pending_actions</span>
             </div>
-            <p className="text-2xl font-bold text-emerald-700 font-mono tabular-nums">{utilization}%</p>
-            <p className="text-[10px] text-emerald-800 mt-1">{totalAllocated}h of {totalLimit}h cap</p>
+            <p className="text-2xl font-bold text-amber-700 font-mono tabular-nums">{activeTasksCount}</p>
+            <p className="text-[10px] text-amber-800 mt-1">In progress & assigned</p>
           </div>
 
           <div className="p-4 rounded border border-surface-outline bg-surface-bright shadow-xs">
@@ -148,7 +146,7 @@ export default function TeamLeadPage() {
         {/* Squad Members Directory */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold text-primary">Squad Members & Weekly Allocation</h2>
+            <h2 className="text-sm font-bold text-primary">Squad Members Roster</h2>
           </div>
 
           <Table>
@@ -157,15 +155,14 @@ export default function TeamLeadPage() {
                 <TableHead>Engineer</TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>Room / Subroom</TableHead>
-                <TableHead>Allocated Hours</TableHead>
-                <TableHead>Weekly Limit</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <tbody>
               {teamMembers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-xs text-on-surface-variant">
+                  <TableCell colSpan={5} className="text-center py-6 text-xs text-on-surface-variant">
                     No squad members found.
                   </TableCell>
                 </TableRow>
@@ -195,12 +192,8 @@ export default function TeamLeadPage() {
                       {member.subroom ? `${member.subroom} (${member.room || 'Unassigned'})` : (member.room || 'Unassigned')}
                     </TableCell>
 
-                    <TableCell className="font-mono text-xs text-on-surface font-semibold">
-                      {member.currentAllocatedHours ?? 0} hrs
-                    </TableCell>
-
-                    <TableCell className="font-mono text-xs text-on-surface-variant">
-                      {member.capacityLimitHours ?? 40} hrs
+                    <TableCell>
+                      <Badge status={member.status || 'AVAILABLE'} />
                     </TableCell>
 
                     <TableCell className="text-right">

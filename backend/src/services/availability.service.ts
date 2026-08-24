@@ -318,8 +318,6 @@ export class AvailabilityService {
       description: t.description,
       status: t.status,
       priority: t.priority,
-      estimatedHours: t.estimatedHours,
-      allocatedHours: t.allocatedHours,
       dueDate: t.dueDate ? t.dueDate.toISOString() : undefined,
       dueDateFormatted: t.dueDate ? formatToISTDateTime(t.dueDate) : 'Flexible',
       room: user.room ? `Section ${user.room.letter}` : '—',

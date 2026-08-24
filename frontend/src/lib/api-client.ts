@@ -216,7 +216,6 @@ export const apiClient = {
   updateTaskStatus: async (
     taskId: string,
     status: string,
-    allocatedHours?: number,
     token?: string,
     reason?: string
   ): Promise<Task> => {
@@ -224,7 +223,7 @@ export const apiClient = {
       `/api/v1/tasks/${taskId}/status`,
       {
         method: 'PATCH',
-        body: JSON.stringify({ status, allocatedHours, reason }),
+        body: JSON.stringify({ status, reason }),
       },
       token
     );
@@ -755,8 +754,8 @@ export interface PersonAvailabilityDetailResponse {
     description?: string;
     status: string;
     priority: TaskPriority;
-    estimatedHours: number;
-    allocatedHours: number;
+    estimatedHours?: number;
+    allocatedHours?: number;
     dueDate?: string;
     dueDateFormatted: string;
     room: string;

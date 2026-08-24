@@ -379,13 +379,6 @@ export function TaskDetailDrawer({ taskId, onClose }: TaskDetailDrawerProps) {
               </div>
 
               <div>
-                <span className="text-on-surface-variant block mb-1">Effort Allocation</span>
-                <p className="font-mono text-primary font-semibold">
-                  {task.allocatedHours} / {task.estimatedHours} Hours
-                </p>
-              </div>
-
-              <div>
                 <span className="text-on-surface-variant block mb-1">Due Date</span>
                 <p className="font-mono text-primary font-semibold">
                   {formatToISTDateTime(task.dueDate)}

@@ -85,7 +85,7 @@ export function SubroomCard({ subroom, onManageCapacity, isUserSubroom }: Subroo
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-primary truncate text-[11px]">{member.name}</p>
                         <p className="text-[9px] text-on-surface-variant truncate font-mono">
-                          {member.currentAllocatedHours}h busy
+                          {member.title || member.role || 'Member'}
                         </p>
                       </div>
                     </>

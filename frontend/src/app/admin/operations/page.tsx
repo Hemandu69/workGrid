@@ -358,7 +358,7 @@ export default function AdminOperationsPage() {
               <StatMetricCard
                 label="Busy Now"
                 value={gridData?.availabilitySummary.busyCount ?? '—'}
-                subtext="On active workload"
+                subtext="On active task"
                 trend={
                   gridData
                     ? `${gridData.availabilitySummary.partialCount} partially available`

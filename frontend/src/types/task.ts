@@ -49,8 +49,8 @@ export interface Task {
   assigneeRoomId?: string;
   creatorId: string;
   creatorName: string;
-  estimatedHours: number;
-  allocatedHours: number;
+  estimatedHours?: number; // Legacy / non-functional
+  allocatedHours?: number; // Legacy / non-functional
   dueDate: string;
   createdAt: string;
   completedAt?: string;
