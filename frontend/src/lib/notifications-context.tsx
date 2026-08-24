@@ -11,9 +11,13 @@ interface NotificationsContextType {
   notifications: AppNotification[];
   unreadCount: number;
   events: OrgEvent[];
-  markAllRead: () => void;
-  markRead: (id: string) => void;
+  markAllRead: () => Promise<void>;
+  markRead: (id: string) => Promise<void>;
   refreshEvents: () => void;
+  /** True while the bulk mark-all mutation is in flight, for disabling the control. */
+  isMarkingAll: boolean;
+  /** True while that specific notification's mark-read mutation is in flight. */
+  isMarkingRead: (id: string) => boolean;
 }
 
 const NotificationsContext = createContext<NotificationsContextType | null>(null);
@@ -28,6 +32,26 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [events, setEvents] = useState<OrgEvent[]>([]);
   const seenIds = useRef<Set<string>>(new Set());
+
+  // Server-persisted read state, kept separate from the notification objects
+  // themselves so that a notification arriving later is evaluated against the
+  // same rules without needing to be patched retroactively.
+  const [readKeys, setReadKeys] = useState<Set<string>>(new Set());
+  const [readAllAt, setReadAllAt] = useState<string | null>(null);
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const [pendingReadIds, setPendingReadIds] = useState<Set<string>>(new Set());
+
+  const loadReadState = useCallback(() => {
+    apiClient
+      .getNotificationReadState()
+      .then((state) => {
+        setReadKeys(new Set(state.readKeys));
+        setReadAllAt(state.readAllAt);
+      })
+      .catch(() => {
+        // Leave whatever state we already hold — never fabricate "read" locally.
+      });
+  }, []);
 
   const refreshEvents = useCallback(() => {
     apiClient
@@ -53,8 +77,12 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
       setNotifications([]);
       setEvents([]);
       seenIds.current.clear();
+      setReadKeys(new Set());
+      setReadAllAt(null);
       return;
     }
+
+    loadReadState();
 
     apiClient
       .getAnnouncements({ limit: 50 })
@@ -180,19 +208,98 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     return () => clearInterval(interval);
   }, [isAuthenticated, refreshEvents]);
 
-  const markAllRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+  // Re-reads persisted read state when the tab regains focus, so a second tab
+  // doesn't sit on a stale unread count after the first tab marked things read.
+  // There is no realtime event for read state (it is per-user, not a domain
+  // change), so this is the cheapest correct reconciliation point.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadReadState();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [isAuthenticated, loadReadState]);
 
-  const markRead = useCallback((id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-  }, []);
+  /**
+   * A notification is read when it has an explicit server-side receipt, or
+   * when it predates the user's "mark all as read" watermark. Derived rather
+   * than stored on the notification so a notification that arrives after a
+   * mark-all is correctly still unread.
+   */
+  const isReadKey = useCallback(
+    (id: string, createdAt: string) => {
+      if (readKeys.has(id)) return true;
+      if (!readAllAt) return false;
+      return new Date(createdAt).getTime() <= new Date(readAllAt).getTime();
+    },
+    [readKeys, readAllAt]
+  );
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const decorated = notifications.map((n) => ({ ...n, read: isReadKey(n.id, n.createdAt) }));
+
+  const markRead = useCallback(
+    async (id: string) => {
+      const target = notifications.find((n) => n.id === id);
+      if (!target || isReadKey(id, target.createdAt)) return;
+
+      // Optimistic — reverted below if the server rejects it, so the UI can
+      // never end up claiming a notification is read when it was not persisted.
+      setReadKeys((prev) => new Set(prev).add(id));
+      setPendingReadIds((prev) => new Set(prev).add(id));
+
+      try {
+        await apiClient.markNotificationRead(id);
+      } catch {
+        setReadKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } finally {
+        setPendingReadIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [notifications, isReadKey]
+  );
+
+  const markAllRead = useCallback(async () => {
+    if (isMarkingAll) return; // a second rapid click is a no-op, not a second request
+
+    const previousReadAllAt = readAllAt;
+    setIsMarkingAll(true);
+    setReadAllAt(new Date().toISOString()); // optimistic
+
+    try {
+      const result = await apiClient.markAllNotificationsRead();
+      setReadAllAt(result.readAllAt); // adopt the authoritative server timestamp
+    } catch {
+      setReadAllAt(previousReadAllAt); // roll back — nothing was persisted
+    } finally {
+      setIsMarkingAll(false);
+    }
+  }, [isMarkingAll, readAllAt]);
+
+  const isMarkingRead = useCallback((id: string) => pendingReadIds.has(id), [pendingReadIds]);
+
+  const unreadCount = decorated.filter((n) => !n.read).length;
 
   return (
     <NotificationsContext.Provider
-      value={{ notifications, unreadCount, events, markAllRead, markRead, refreshEvents }}
+      value={{
+        notifications: decorated,
+        unreadCount,
+        events,
+        markAllRead,
+        markRead,
+        refreshEvents,
+        isMarkingAll,
+        isMarkingRead,
+      }}
     >
       {children}
     </NotificationsContext.Provider>

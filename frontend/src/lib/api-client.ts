@@ -5,6 +5,7 @@ import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
 import { WeeklyAvailabilitySchedule, DayOfWeek, HourlySlot, WeekAvailabilityResponse } from '../types/availability';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
+import { NotificationReadState } from '../types/notification';
 import { PaginatedResult, CursorResult } from '../types/pagination';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -684,6 +685,26 @@ export const apiClient = {
     if (cursor) searchParams.append('cursor', cursor);
     const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
     return request<CursorResult<import('../types/auth').RoleAuditLog>>(`/api/v1/hr/audit-logs${query}`, {}, token);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Notification Read State (persistent, per authenticated user)
+  // ---------------------------------------------------------------------------
+  getNotificationReadState: async (token?: string): Promise<NotificationReadState> => {
+    return request<NotificationReadState>('/api/v1/notifications/read-state', {}, token);
+  },
+  markNotificationRead: async (
+    notificationKey: string,
+    token?: string
+  ): Promise<{ notificationKey: string; readAt: string }> => {
+    return request<{ notificationKey: string; readAt: string }>(
+      `/api/v1/notifications/${encodeURIComponent(notificationKey)}/read`,
+      { method: 'POST' },
+      token
+    );
+  },
+  markAllNotificationsRead: async (token?: string): Promise<{ readAllAt: string }> => {
+    return request<{ readAllAt: string }>('/api/v1/notifications/read-all', { method: 'POST' }, token);
   },
 
   // ---------------------------------------------------------------------------

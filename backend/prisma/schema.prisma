@@ -174,8 +174,15 @@ model User {
 
   lastLoginAt DateTime?
   version     Int       @default(1)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+
+  // Set by "Mark all as read". Every notification-feed item created at or
+  // before this instant reads as read, which makes the bulk action a single
+  // -row update instead of a per-notification write, and keeps a notification
+  // that arrives *later* correctly unread without any extra bookkeeping.
+  notificationsReadAllAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   room         Room?        @relation("RoomMembers", fields: [roomId], references: [id], onDelete: SetNull)
@@ -198,6 +205,7 @@ model User {
   roleAuditLogsChanged RoleAuditLog[]              @relation("ActorAudit")
   passwordResetTokens  PasswordResetToken[]
   attendanceRecords    AttendanceRecord[]
+  notificationReads    NotificationRead[]
 
   @@index([organizationId, role])
   @@index([organizationId, accountStatus])
@@ -496,6 +504,38 @@ model AvailabilityOverride {
   @@unique([userId, date, hour])
   @@index([userId, date])
   @@map("availability_overrides")
+}
+
+// -----------------------------------------------------------------------------
+// Notification Read Receipts
+//
+// WorkGrid's notification feed is a projection over announcements and realtime
+// domain events rather than a stored entity, so the only thing that needs
+// persisting is which feed items a given person has already read. One row per
+// (user, notification) pair the user has explicitly marked read; the bulk
+// "mark all as read" action is handled by User.notificationsReadAllAt instead,
+// so it never has to write one row per notification.
+//
+// A receipt row *is* the ownership record: it can only ever be created for the
+// authenticated user's own id, so one user's read state can never touch
+// another's.
+// -----------------------------------------------------------------------------
+model NotificationRead {
+  id String @id @default(uuid())
+  userId String
+  // The feed-item id the client renders, e.g. "ann-<announcementId>" — stable
+  // across reloads for announcement-derived items.
+  notificationKey String
+  readAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Makes marking an already-read notification read again a no-op upsert
+  // rather than a duplicate row.
+  @@unique([userId, notificationKey])
+  @@index([userId, readAt])
+  @@map("notification_reads")
 }
 
 // -----------------------------------------------------------------------------

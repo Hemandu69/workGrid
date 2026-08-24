@@ -10,8 +10,10 @@ import { EventCard } from '../../components/events/EventCard';
 import Link from 'next/link';
 
 export default function NotificationsPage() {
-  const { notifications, events, markAllRead, refreshEvents } = useNotifications();
+  const { notifications, events, markAllRead, markRead, refreshEvents, isMarkingAll, isMarkingRead } =
+    useNotifications();
   const [tab, setTab] = useState<'ALL' | 'UNREAD'>('ALL');
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   const filtered = notifications.filter((n) => tab === 'ALL' || !n.read);
 
@@ -51,7 +53,13 @@ export default function NotificationsPage() {
             </p>
           </div>
 
-          <Button variant="outline" size="sm" onClick={markAllRead}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={markAllRead}
+            isLoading={isMarkingAll}
+            disabled={isMarkingAll || unreadCount === 0}
+          >
             Mark All as Read
           </Button>
         </div>
@@ -78,7 +86,7 @@ export default function NotificationsPage() {
           >
             <span>Unread Only</span>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-status-blocked text-white">
-              {notifications.filter((n) => !n.read).length}
+              {unreadCount}
             </span>
           </button>
         </div>
@@ -145,13 +153,31 @@ export default function NotificationsPage() {
                   </div>
                 </div>
 
-                {notif.link && (
-                  <Link href={notif.link}>
-                    <Button variant="outline" size="sm">
-                      View
+                <div className="flex items-center gap-2 shrink-0">
+                  {notif.link && (
+                    <Link href={notif.link}>
+                      <Button variant="outline" size="sm">
+                        View
+                      </Button>
+                    </Link>
+                  )}
+
+                  {notif.read ? (
+                    <span className="text-[11px] font-medium text-on-surface-variant px-1">Read</span>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => markRead(notif.id)}
+                      isLoading={isMarkingRead(notif.id)}
+                      disabled={isMarkingRead(notif.id)}
+                      aria-label={`Mark notification "${notif.title}" as read`}
+                      title="Mark this notification as read"
+                    >
+                      Mark as read
                     </Button>
-                  </Link>
-                )}
+                  )}
+                </div>
               </div>
             ))
           )}
