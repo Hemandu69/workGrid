@@ -21,12 +21,6 @@ const { mockPrisma } = vi.hoisted(() => ({
           roomId: 'room-b-id',
           room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
           subroom: { code: 'B3' },
-          availabilitySlots: [
-            { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
-            { day: 'THURSDAY', hour: 11, state: 'AVAILABLE' },
-            { day: 'THURSDAY', hour: 12, state: 'BUSY' },
-          ],
-          availabilityOverrides: [],
           assignedTasks: [
             {
               id: 'task-1-id',
@@ -53,11 +47,6 @@ const { mockPrisma } = vi.hoisted(() => ({
           roomId: 'room-b-id',
           room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
           subroom: { code: 'B3' },
-          availabilitySlots: [
-            { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
-            { day: 'THURSDAY', hour: 11, state: 'AVAILABLE' },
-          ],
-          availabilityOverrides: [],
           assignedTasks: [],
         },
       ]),
@@ -86,16 +75,6 @@ const { mockPrisma } = vi.hoisted(() => ({
             roomId: 'room-b-id',
             room: { id: 'room-b-id', letter: 'B', name: 'Sector B — Infrastructure & Security' },
             subroom: { code: 'B3' },
-            availabilitySlots: [
-              { day: 'MONDAY', hour: 10, state: 'AVAILABLE' },
-              { day: 'MONDAY', hour: 11, state: 'AVAILABLE' },
-              { day: 'MONDAY', hour: 12, state: 'BUSY' },
-              { day: 'TUESDAY', hour: 9, state: 'AVAILABLE' },
-              { day: 'WEDNESDAY', hour: 14, state: 'AVAILABLE' },
-              { day: 'THURSDAY', hour: 10, state: 'AVAILABLE' },
-              { day: 'FRIDAY', hour: 10, state: 'AVAILABLE' },
-            ],
-            availabilityOverrides: [],
             assignedTasks: [
               {
                 id: 'task-1-id',
@@ -132,7 +111,7 @@ vi.mock('../src/db/client.js', () => ({
   checkDatabaseHealth: vi.fn().mockResolvedValue({ status: 'healthy', latencyMs: 1 }),
 }));
 
-describe('People Availability Endpoints (/api/v1/availability/people)', () => {
+describe('People Availability Endpoints (/api/v1/availability/people) — live status only', () => {
   let app: FastifyInstance;
   let adminToken: string;
   let superAdminToken: string;
@@ -181,13 +160,13 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     await app.close();
   });
 
-  it('GET /api/v1/availability/people should allow ADMIN with 200 and summary statistics', async () => {
+  it('GET /api/v1/availability/people should allow ADMIN with 200 and summary statistics, with no scheduled/hourly window in the response', async () => {
     const res = await supertest(app.server)
-      .get('/api/v1/availability/people?date=2026-08-20&startHour=10&endHour=11')
+      .get('/api/v1/availability/people')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('timeSlot');
+    expect(res.body).not.toHaveProperty('timeSlot');
     expect(res.body).toHaveProperty('summary');
     expect(res.body.summary).toHaveProperty('totalPeople');
     expect(res.body.summary).toHaveProperty('freeCount');
@@ -198,6 +177,8 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(firstPerson).toHaveProperty('attendanceState');
     expect(firstPerson).toHaveProperty('presenceState');
     expect(firstPerson).toHaveProperty('currentLocation');
+    expect(firstPerson).not.toHaveProperty('freeWindow');
+    expect(firstPerson).not.toHaveProperty('until');
   });
 
   it('GET /api/v1/availability/people should allow SUPER_ADMIN with 200', async () => {
@@ -241,7 +222,7 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/v1/availability/people/:id should return detailed weekly timeline and next free for ADMIN', async () => {
+  it('GET /api/v1/availability/people/:id should return live status and commitments for ADMIN, with no schedule/timeline fields', async () => {
     const res = await supertest(app.server)
       .get('/api/v1/availability/people/member-1-id')
       .set('Authorization', `Bearer ${adminToken}`);
@@ -252,48 +233,9 @@ describe('People Availability Endpoints (/api/v1/availability/people)', () => {
     expect(res.body.person).toHaveProperty('presenceState');
     expect(res.body.person).toHaveProperty('currentLocation');
     expect(res.body).toHaveProperty('currentStatus');
-    expect(res.body).toHaveProperty('nextFree');
-    expect(res.body).toHaveProperty('weeklyTimeline');
     expect(res.body).toHaveProperty('upcomingCommitments');
-    expect(Array.isArray(res.body.weeklyTimeline)).toBe(true);
-    expect(res.body.weeklyTimeline.length).toBe(7);
-  });
-
-  it('GET /api/v1/availability/people/:id reads the same persisted slots the member\'s own grid would show — no fabricated 9-17 default, no dropped Unavailable ranges', async () => {
-    const res = await supertest(app.server)
-      .get('/api/v1/availability/people/member-1-id?startDate=2026-08-24')
-      .set('Authorization', `Bearer ${adminToken}`);
-
-    expect(res.status).toBe(200);
-    const monday = res.body.weeklyTimeline.find((d: { dayOfWeek: string }) => d.dayOfWeek === 'MONDAY');
-    expect(monday).toBeDefined();
-
-    // The mocked member-1-id row only sets hours 10 (AVAILABLE), 11 (AVAILABLE),
-    // 12 (BUSY) on Monday — every other hour has no saved row.
-    const windows = monday.windows as Array<{ startHour: number; endHour: number; state: string }>;
-    // Hours before 10 must show as UNAVAILABLE (not a fabricated 9-17 FREE
-    // default), and that range must actually be present, not silently dropped.
-    const beforeAvailable = windows.find((w) => w.startHour === 0);
-    expect(beforeAvailable).toBeDefined();
-    expect(beforeAvailable!.state).toBe('UNAVAILABLE');
-    expect(beforeAvailable!.endHour).toBe(10);
-
-    // 10-11 merges into one FREE window (consecutive identical AVAILABLE hours).
-    const freeWindow = windows.find((w) => w.state === 'FREE' && w.startHour === 10);
-    expect(freeWindow).toBeDefined();
-    expect(freeWindow!.endHour).toBe(12);
-
-    const busyWindow = windows.find((w) => w.state === 'BUSY');
-    expect(busyWindow).toBeDefined();
-    expect(busyWindow!.startHour).toBe(12);
-    expect(busyWindow!.endHour).toBe(13);
-
-    // Everything after hour 13 is UNAVAILABLE and must still be represented,
-    // not dropped by the old 8-18 suppression window.
-    const afterBusy = windows.find((w) => w.startHour === 13);
-    expect(afterBusy).toBeDefined();
-    expect(afterBusy!.state).toBe('UNAVAILABLE');
-    expect(afterBusy!.endHour).toBe(24);
+    expect(res.body).not.toHaveProperty('nextFree');
+    expect(res.body).not.toHaveProperty('weeklyTimeline');
   });
 
   it('GET /api/v1/availability/people/:id should allow SERVER to access person in their own room', async () => {

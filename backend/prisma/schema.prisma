@@ -86,22 +86,6 @@ enum AudienceScope {
   ROOM_SPECIFIC
 }
 
-enum DayOfWeek {
-  MONDAY
-  TUESDAY
-  WEDNESDAY
-  THURSDAY
-  FRIDAY
-  SATURDAY
-  SUNDAY
-}
-
-enum SlotState {
-  AVAILABLE
-  UNAVAILABLE
-  BUSY
-}
-
 // Organization Events (scheduled events with attendance polling) — distinct
 // from the room/company supervisory `Event` model above.
 enum OrgEventStatus {
@@ -189,8 +173,6 @@ model User {
   createdCampaigns     TaskCampaign[]              @relation("CampaignCreator")
   taskComments         TaskComment[]               @relation("CommentAuthor")
   announcements        Announcement[]              @relation("AnnouncementAuthor")
-  availabilitySlots    AvailabilitySlot[]
-  availabilityOverrides AvailabilityOverride[]
   eventsRequired       EventRequiredServer[]
   eventParticipations  EventParticipant[]
   createdOrgEvents     OrganizationEvent[]         @relation("OrgEventCreator")
@@ -459,46 +441,6 @@ model OrganizationEventResponse {
   @@unique([eventId, userId])
   @@index([eventId, response])
   @@map("organization_event_responses")
-}
-
-// -----------------------------------------------------------------------------
-// Availability (7-Day Weekly Matrix)
-// -----------------------------------------------------------------------------
-model AvailabilitySlot {
-  id        String    @id @default(uuid())
-  userId    String
-  day       DayOfWeek
-  hour      Int // 0 to 23
-  state     SlotState @default(AVAILABLE)
-  taskId    String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, day, hour])
-  @@index([userId, day])
-  @@map("availability_slots")
-}
-
-// Date-specific overrides — take precedence over the recurring AvailabilitySlot
-// pattern for one exact calendar date, without altering the recurring baseline
-// or any other date that shares the same weekday.
-model AvailabilityOverride {
-  id        String    @id @default(uuid())
-  userId    String
-  date      String // YYYY-MM-DD, naive local calendar date — same convention as AvailabilitySlot.hour
-  hour      Int // 0 to 23
-  state     SlotState @default(AVAILABLE)
-  taskId    String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, date, hour])
-  @@index([userId, date])
-  @@map("availability_overrides")
 }
 
 // -----------------------------------------------------------------------------

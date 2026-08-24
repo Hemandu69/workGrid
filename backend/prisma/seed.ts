@@ -1,4 +1,4 @@
-﻿import { PrismaClient, UserRole, AccountStatus, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, DayOfWeek, SlotState, PresenceState, EventScope, EventStatus } from '@prisma/client';
+﻿import { PrismaClient, UserRole, AccountStatus, UserStatus, TaskStatus, TaskPriority, AnnouncementStatus, AudienceScope, PresenceState, EventScope, EventStatus, EventResponseChoice } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import process from 'node:process';
 
@@ -16,7 +16,8 @@ async function main() {
   await prisma.passwordResetToken.deleteMany();
   await prisma.roleAuditLog.deleteMany();
   await prisma.auditEvent.deleteMany();
-  await prisma.availabilitySlot.deleteMany();
+  await prisma.organizationEventResponse.deleteMany();
+  await prisma.organizationEvent.deleteMany();
   await prisma.taskComment.deleteMany();
   await prisma.task.deleteMany();
   await prisma.taskCampaign.deleteMany();
@@ -425,51 +426,55 @@ async function main() {
 
   console.log(`✓ Created live events with multi-location and server requirements`);
 
-  // 9. Create 7-Day Weekly Availability Slots for member1
-  const days = [
-    DayOfWeek.MONDAY,
-    DayOfWeek.TUESDAY,
-    DayOfWeek.WEDNESDAY,
-    DayOfWeek.THURSDAY,
-    DayOfWeek.FRIDAY,
-    DayOfWeek.SATURDAY,
-    DayOfWeek.SUNDAY,
-  ];
+  // 9. Create demo Organization Events with attendance responses. This is
+  // the actual availability model now — a person's attendance belongs to a
+  // specific event, never to a generic day. Two events deliberately share
+  // the same calendar date to demonstrate that their attendance is fully
+  // independent: Sarah Connor is ATTENDING the conference but only MAYBE for
+  // the mixer immediately afterward, on the very same day.
+  const conferenceStart = new Date(now.getTime() + 3 * 24 * 3600000);
+  conferenceStart.setUTCHours(4, 30, 0, 0); // 10:00 AM IST
+  const conferenceEnd = new Date(conferenceStart);
+  conferenceEnd.setUTCHours(12, 30, 0, 0); // 6:00 PM IST
 
-  const slotsToCreate: any[] = [];
-  for (const [dayIndex, day] of days.entries()) {
-    const isWeekend = day === DayOfWeek.SATURDAY || day === DayOfWeek.SUNDAY;
-    for (let hour = 0; hour < 24; hour++) {
-      let state: SlotState = SlotState.UNAVAILABLE;
-      let taskId: string | undefined = undefined;
+  const mixerStart = new Date(conferenceStart);
+  mixerStart.setUTCHours(13, 30, 0, 0); // 7:00 PM IST, same day
+  const mixerEnd = new Date(conferenceStart);
+  mixerEnd.setUTCHours(15, 30, 0, 0); // 9:00 PM IST
 
-      if (!isWeekend) {
-        if (hour >= 9 && hour < 17) {
-          if (dayIndex === 0 && hour >= 10 && hour < 14) {
-            state = SlotState.BUSY;
-            taskId = task1.id;
-          } else if (hour === 9 || hour === 16) {
-            state = SlotState.AVAILABLE;
-          } else {
-            state = SlotState.AVAILABLE;
-          }
-        }
-      }
-
-      slotsToCreate.push({
-        userId: member1.id,
-        day,
-        hour,
-        state,
-        taskId,
-      });
-    }
-  }
-
-  await prisma.availabilitySlot.createMany({
-    data: slotsToCreate,
+  const techConference = await prisma.organizationEvent.create({
+    data: {
+      organizationId: org.id,
+      title: 'Cloud Infrastructure Summit',
+      description: 'Annual company-wide technical conference covering platform scalability and reliability.',
+      scheduledAt: conferenceStart,
+      scheduledEndAt: conferenceEnd,
+      createdById: superAdmin.id,
+    },
   });
-  console.log(`✓ Generated 7-day 24h recurring availability schedule for Sarah Connor`);
+
+  const networkingMixer = await prisma.organizationEvent.create({
+    data: {
+      organizationId: org.id,
+      title: 'Post-Summit Networking Mixer',
+      description: 'Informal social mixer for attendees immediately following the summit.',
+      scheduledAt: mixerStart,
+      scheduledEndAt: mixerEnd,
+      createdById: admin.id,
+    },
+  });
+
+  await prisma.organizationEventResponse.createMany({
+    data: [
+      { eventId: techConference.id, userId: member1.id, response: EventResponseChoice.ATTENDING },
+      { eventId: techConference.id, userId: member2.id, response: EventResponseChoice.ATTENDING },
+      { eventId: techConference.id, userId: server1.id, response: EventResponseChoice.NOT_ATTENDING },
+      { eventId: networkingMixer.id, userId: member1.id, response: EventResponseChoice.MAYBE },
+      { eventId: networkingMixer.id, userId: member2.id, response: EventResponseChoice.ATTENDING },
+    ],
+  });
+
+  console.log(`✓ Created 2 organization events (same day, independent attendance) with 5 responses`);
 
   console.log('✅ WorkGrid seed finished successfully (6 authentic users)!');
 }

@@ -77,8 +77,6 @@ function currentUser(withRelations = true) {
   const base: Record<string, unknown> = {
     ...BASE_USER,
     ...live,
-    availabilitySlots: [],
-    availabilityOverrides: [],
     assignedTasks:
       activeTaskCount > 0
         ? [
@@ -102,7 +100,7 @@ function currentUser(withRelations = true) {
   return base;
 }
 
-describe('Availability lifecycle — attendance, tasks and schedule', () => {
+describe('Availability lifecycle — attendance and task-driven live status', () => {
   beforeEach(() => {
     live = {
       presenceState: 'IN',
@@ -327,36 +325,6 @@ describe('Availability lifecycle — attendance, tasks and schedule', () => {
 
     expect(detail.currentStatus.state).toBe('BUSY');
     expect(detail.currentStatus.reason).toContain('TSK-8421');
-  });
-
-  it('15. derives "until" from the person’s own schedule window, not a fixed offset', async () => {
-    const detail = await AvailabilityService.getPersonDetailedAvailability('usr-sarah');
-    const today = detail.weeklyTimeline.find((d) => d.isToday);
-
-    if (detail.currentStatus.until) {
-      const matchingWindow = today?.windows.find(
-        (w) => w.endFormatted === detail.currentStatus.until
-      );
-      expect(matchingWindow).toBeDefined();
-    } else {
-      // Outside every scheduled window there is nothing to count down to.
-      expect(detail.currentStatus.until).toBeUndefined();
-    }
-  });
-
-  it('16. derives the next free window from the same weekly timeline', async () => {
-    const detail = await AvailabilityService.getPersonDetailedAvailability('usr-sarah');
-
-    expect(detail.nextFree).toBeDefined();
-    if (detail.nextFree.nextFreeTime) {
-      const allWindows = detail.weeklyTimeline.flatMap((d) => d.windows);
-      const matches = allWindows.some(
-        (w) =>
-          w.startFormatted === detail.nextFree.nextFreeTime ||
-          w.endFormatted === detail.nextFree.nextFreeTime
-      );
-      expect(matches).toBe(true);
-    }
   });
 
 });
