@@ -375,12 +375,13 @@ export const apiClient = {
 
   // Operations Grid & Server Tracking
   getOperationalGrid: async (
-    params: { room?: string; search?: string } = {},
+    params: { room?: string; search?: string; eventId?: string } = {},
     token?: string
   ): Promise<OperationalGridResponse> => {
     const searchParams = new URLSearchParams();
     if (params.room && params.room !== 'ALL') searchParams.append('room', params.room);
     if (params.search) searchParams.append('search', params.search);
+    if (params.eventId) searchParams.append('eventId', params.eventId);
 
     const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
     return request<OperationalGridResponse>(`/api/v1/operations/grid${query}`, {}, token);
@@ -791,6 +792,7 @@ export interface GridMemberItem {
   lastSeenIST: string;
   activeTaskId?: string;
   activeTaskTitle?: string;
+  eventResponse?: 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'NO_RESPONSE';
 }
 
 export interface GridServerItem {
@@ -807,6 +809,7 @@ export interface GridServerItem {
   supervisoryPosition?: 1 | 3 | 5;
   arrivedAtIST?: string;
   lastSeenIST: string;
+  eventResponse?: 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'NO_RESPONSE';
 }
 
 export interface GridSubroomCell {
@@ -841,6 +844,7 @@ export interface GridRoomColumn {
     currentLocation: string;
     preferredPosition?: 1 | 3 | 5;
     assignedPosition?: 1 | 3 | 5;
+    eventResponse?: 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'NO_RESPONSE';
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;
@@ -848,8 +852,34 @@ export interface GridRoomColumn {
   subrooms: GridSubroomCell[];
 }
 
+export interface SelectedEventContext {
+  id: string;
+  title: string;
+  description?: string;
+  dateIST: string;
+  timeIST: string;
+  endTimeIST: string;
+  status: string;
+  totalEligible: number;
+  attendingCount: number;
+  maybeCount: number;
+  notAttendingCount: number;
+  noResponseCount: number;
+}
+
+export interface AvailableEventSummary {
+  id: string;
+  title: string;
+  dateIST: string;
+  timeIST: string;
+  endTimeIST: string;
+  status: string;
+}
+
 export interface OperationalGridResponse {
   currentTimeIST: string;
+  selectedEvent: SelectedEventContext | null;
+  availableEvents: AvailableEventSummary[];
   activeCompanyEvent?: {
     id: string;
     title: string;

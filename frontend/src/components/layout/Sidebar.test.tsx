@@ -85,7 +85,7 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
     mockPathname = '/super-admin';
   });
 
-  it('shows exactly the consolidated 8-item navigation for SUPER_ADMIN', () => {
+  it('shows exactly the consolidated 7-item navigation for SUPER_ADMIN (no Event Attendance)', () => {
     render(<Sidebar />);
 
     for (const label of [
@@ -95,11 +95,28 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
       'Task Management',
       'Operations Grid',
       'People Availability',
-      'Event Attendance',
       'Notifications',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+    // Organizers must not see Event Attendance
+    expect(screen.queryByText('Event Attendance')).not.toBeInTheDocument();
+  });
+
+  it('ADMIN does not see Event Attendance in navigation', () => {
+    mockRole = 'ADMIN';
+    mockPathname = '/admin';
+    render(<Sidebar />);
+
+    expect(screen.queryByText('Event Attendance')).not.toBeInTheDocument();
+  });
+
+  it('MEMBER sees Event Attendance in navigation', () => {
+    mockRole = 'MEMBER';
+    mockPathname = '/member';
+    render(<Sidebar />);
+
+    expect(screen.getByRole('link', { name: /event attendance/i })).toBeInTheDocument();
   });
 
   it('no longer shows Room Overview, Reports & Analytics, or Teams & Directory', () => {

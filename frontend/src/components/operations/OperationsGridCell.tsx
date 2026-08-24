@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 import { GridSubroomCell } from '../../lib/api-client';
@@ -131,6 +131,24 @@ export function OperationsGridCell({
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {member.eventResponse && member.eventResponse !== 'NO_RESPONSE' && (
+                      <span
+                        className={`px-1 py-0.2 rounded text-[8px] font-bold font-mono uppercase tracking-wider ${
+                          member.eventResponse === 'ATTENDING'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : member.eventResponse === 'MAYBE'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                        title={`Event Response: ${member.eventResponse}`}
+                      >
+                        {member.eventResponse === 'ATTENDING'
+                          ? 'Attending'
+                          : member.eventResponse === 'MAYBE'
+                          ? 'Maybe'
+                          : 'Declined'}
+                      </span>
+                    )}
                     {member.activeTaskId && (
                       <span className="font-mono text-[9px] text-on-surface-variant bg-surface-container px-1 rounded truncate max-w-[45px]">
                         {member.activeTaskId}

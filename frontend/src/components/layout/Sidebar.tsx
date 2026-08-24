@@ -115,7 +115,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Event Attendance',
     href: '/member/events',
     icon: 'how_to_reg',
-    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'ADMIN', 'SUPER_ADMIN'],
+    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD'],
   },
   {
     label: 'Notifications',
