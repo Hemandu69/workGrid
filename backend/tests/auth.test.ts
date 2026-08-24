@@ -362,7 +362,7 @@ describe('WorkGrid Real Authentication & Session Endpoints (/api/v1/auth)', () =
     });
 
     it('Active user subsequently SUSPENDED in DB should immediately be rejected on existing session (403)', async () => {
-      // Simulate HR suspending the active user in the database
+      // Simulate a Super Admin suspending the active user in the database
       const userIndex = mockTestUsers.findIndex((u) => u.id === 'usr-active-01');
       mockTestUsers[userIndex].accountStatus = AccountStatus.SUSPENDED;
 

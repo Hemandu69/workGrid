@@ -54,7 +54,7 @@ export interface PersonAvailabilityItem {
   currentDurationFormatted?: string;
   lastSeenAt?: string;
   lastSeenAtIST?: string;
-  status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
+  status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
   statusLabel: string;
   reason: string;
   until?: string;
@@ -435,8 +435,6 @@ export class AvailabilityService {
       where: { id: user.id },
       data: {
         status: userStatusFromAvailability(state),
-        // An explicit selection always wins over a stale "resume after meal" pointer.
-        preMealStatus: null,
         lastSeenAt: now,
       },
     });
@@ -465,128 +463,6 @@ export class AvailabilityService {
         roomId: user.roomId,
         subroomId: user.subroomId,
       },
-    });
-
-    return {
-      personId: updated.id,
-      name: updated.name,
-      availabilityState: state,
-      availabilityLabel: AVAILABILITY_LABELS[state],
-      presenceState: updated.presenceState,
-      currentLocation,
-    };
-  }
-
-  /**
-   * Starts a temporary, reversible Lunch/Dinner period. The person remains
-   * checked in throughout — this only ever touches `status`/`preMealStatus`,
-   * never `presenceState`/`arrivedAt`/`leftAt`, so attendance duration keeps
-   * counting uninterrupted. Self-only by construction (called with the
-   * authenticated user's own id — see the route).
-   */
-  static async startMeal(userId: string, actor: { id: string; organizationId: string }) {
-    const now = new Date();
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { room: true, subroom: true },
-    });
-
-    if (!user) {
-      const error = new Error(`Person ${userId} not found.`);
-      (error as any).statusCode = 404;
-      throw error;
-    }
-
-    if (!isPresent(user.presenceState)) {
-      const error = new Error(`${user.name} is currently checked OUT. Check in before starting a meal break.`);
-      (error as any).statusCode = 409;
-      throw error;
-    }
-
-    // Already in a meal — idempotent no-op, don't clobber the saved preMealStatus.
-    if (user.status === UserStatus.MEAL) {
-      return this.buildMealResult(user, user);
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: UserStatus.MEAL,
-        preMealStatus: user.status,
-        lastSeenAt: now,
-      },
-    });
-
-    this.publishMealChanged(user, updated, actor);
-    return this.buildMealResult(user, updated);
-  }
-
-  /**
-   * Ends the meal period, restoring the status that was active before it
-   * started. Never touches presence/attendance — the person stays checked in.
-   */
-  static async endMeal(userId: string, actor: { id: string; organizationId: string }) {
-    const now = new Date();
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { room: true, subroom: true },
-    });
-
-    if (!user) {
-      const error = new Error(`Person ${userId} not found.`);
-      (error as any).statusCode = 404;
-      throw error;
-    }
-
-    // Not in a meal — idempotent no-op.
-    if (user.status !== UserStatus.MEAL) {
-      return this.buildMealResult(user, user);
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        status: user.preMealStatus ?? UserStatus.ONLINE,
-        preMealStatus: null,
-        lastSeenAt: now,
-      },
-    });
-
-    this.publishMealChanged(user, updated, actor);
-    return this.buildMealResult(user, updated);
-  }
-
-  private static publishMealChanged(
-    user: { organizationId: string; id: string; roomId: string | null; subroomId: string | null },
-    updated: { id: string },
-    actor: { id: string; organizationId: string }
-  ) {
-    publishDomainEvent({
-      type: 'AVAILABILITY_CHANGED',
-      organizationId: user.organizationId,
-      entityId: user.id,
-      targetUserId: user.id,
-      actorId: actor.id,
-      payload: {
-        userId: updated.id,
-        personId: updated.id,
-        organizationId: user.organizationId,
-        roomId: user.roomId,
-        subroomId: user.subroomId,
-      },
-    });
-  }
-
-  private static buildMealResult(
-    user: { room?: { letter: string } | null; subroom?: { code: string } | null },
-    updated: { id: string; name: string; status: UserStatus; presenceState: PresenceState; currentLocationName: string | null }
-  ) {
-    const state = availabilityFromUserStatus(updated.status);
-    const currentLocation = resolveCurrentLocation({
-      presenceState: updated.presenceState,
-      currentLocationName: updated.currentLocationName,
-      subroomCode: user.subroom?.code,
-      roomLetter: user.room?.letter,
     });
 
     return {

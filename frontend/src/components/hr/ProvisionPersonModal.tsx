@@ -39,15 +39,10 @@ export function ProvisionPersonModal({
       return;
     }
 
-    if (callerRole === 'HR' && (selectedRole === 'SUPER_ADMIN' || selectedRole === 'ADMIN' || selectedRole === 'HR')) {
-      setError('HR cannot provision accounts with privileged administrative roles.');
-      return;
-    }
-
     onProvision({
       name: name.trim(),
       email: email.trim(),
-      title: title.trim() || 'Employee',
+      title: title.trim() || 'Personnel',
       role: selectedRole,
       capacityLimitHours: capacityHours,
     });
@@ -66,11 +61,6 @@ export function ProvisionPersonModal({
     { role: 'MEMBER', label: 'Member (Default Contributor)', allowed: true },
     { role: 'TEAM_LEAD', label: 'Team Lead', allowed: true },
     { role: 'SERVER', label: 'Server (Section Supervisor)', allowed: true },
-    {
-      role: 'HR',
-      label: 'HR (People Management)',
-      allowed: callerRole === 'SUPER_ADMIN',
-    },
     {
       role: 'ADMIN',
       label: 'Admin (Operational Admin)',

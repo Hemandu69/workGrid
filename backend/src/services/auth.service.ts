@@ -58,7 +58,7 @@ export class AuthService {
 
     // Account Status Governance Checks: SUSPENDED and DEACTIVATED are blocked from logging in
     if (user.accountStatus === AccountStatus.SUSPENDED) {
-      const error = new Error('Account is suspended. Please contact IT or HR.');
+      const error = new Error('Account is suspended. Please contact IT or your Super Admin.');
       (error as any).statusCode = 403;
       throw error;
     }

@@ -25,7 +25,6 @@ export function AnnouncementCard({ announcement, canManage, onEdit, onDelete, on
   const scopeLabels: Record<string, string> = {
     GLOBAL: 'Global All Sections',
     ADMINS_ONLY: 'Administrators Only',
-    HR_ONLY: 'HR Management',
     ROOM_SPECIFIC: `Section ${announcement.targetRoom || 'Specific'}`,
   };
 

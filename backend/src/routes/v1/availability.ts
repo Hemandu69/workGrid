@@ -226,56 +226,6 @@ export const availabilityRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // POST /api/v1/availability/meal/start
-  // Starts a temporary, reversible Lunch/Dinner period — self-only, always
-  // request.user.id, no personId accepted (matches the attendance
-  // check-in/out endpoints' already-self-only shape).
-  fastify.post(
-    '/availability/meal/start',
-    { preHandler: [fastify.authenticate] },
-    async (request, reply) => {
-      try {
-        const result = await AvailabilityService.startMeal(request.user.id, {
-          id: request.user.id,
-          organizationId: request.user.organizationId,
-        });
-        return reply.send(result);
-      } catch (err: unknown) {
-        const statusCode = (err as { statusCode?: number })?.statusCode || 400;
-        const message = err instanceof Error ? err.message : 'Failed to start meal break';
-        return reply.status(statusCode).send({
-          statusCode,
-          error: statusCode === 404 ? 'Not Found' : statusCode === 409 ? 'Conflict' : 'Bad Request',
-          message,
-        });
-      }
-    }
-  );
-
-  // POST /api/v1/availability/meal/end
-  // Ends the meal period, restoring the prior status — self-only.
-  fastify.post(
-    '/availability/meal/end',
-    { preHandler: [fastify.authenticate] },
-    async (request, reply) => {
-      try {
-        const result = await AvailabilityService.endMeal(request.user.id, {
-          id: request.user.id,
-          organizationId: request.user.organizationId,
-        });
-        return reply.send(result);
-      } catch (err: unknown) {
-        const statusCode = (err as { statusCode?: number })?.statusCode || 400;
-        const message = err instanceof Error ? err.message : 'Failed to end meal break';
-        return reply.status(statusCode).send({
-          statusCode,
-          error: statusCode === 404 ? 'Not Found' : statusCode === 409 ? 'Conflict' : 'Bad Request',
-          message,
-        });
-      }
-    }
-  );
-
   // GET /api/v1/users/:id/availability
   // Protected: Authenticated users can view their own schedule; SUPER_ADMIN/ADMIN can view anyone's.
   fastify.get(

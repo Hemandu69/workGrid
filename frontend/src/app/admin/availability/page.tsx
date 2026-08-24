@@ -519,8 +519,6 @@ export default function PeopleAvailabilityPage() {
                             ? 'BUSY'
                             : person.status === 'PARTIALLY_AVAILABLE'
                             ? 'PREFERRED'
-                            : person.status === 'MEAL'
-                            ? 'MEAL'
                             : 'UNAVAILABLE'
                         }
                       >

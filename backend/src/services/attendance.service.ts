@@ -22,7 +22,7 @@ export interface AttendanceMeResponse {
   state: 'IN' | 'OUT';
   presenceState: PresenceState;
   /** Authoritative operational availability, presence-suppressed when OUT. */
-  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
+  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
   availabilityLabel: string;
   currentSession: {
     id: string;
@@ -683,7 +683,7 @@ export class AttendanceService {
   }
 
   /**
-   * Administrative & HR Attendance Overview across the Organization
+   * Administrative Attendance Overview across the Organization
    */
   static async getAttendanceOverview(
     organizationId: string,

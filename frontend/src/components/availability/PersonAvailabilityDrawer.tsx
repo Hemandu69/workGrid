@@ -319,8 +319,6 @@ export function PersonAvailabilityDrawer({
                       ? 'bg-status-available-container/30 border-status-available/30 text-emerald-900'
                       : data.currentStatus.state === 'BUSY'
                       ? 'bg-status-busy-container/30 border-status-busy/30 text-amber-900'
-                      : data.currentStatus.state === 'MEAL'
-                      ? 'bg-blue-50 border-blue-200 text-blue-900'
                       : 'bg-surface-container-low border-surface-outline text-on-surface-variant'
                   }`}
                 >
@@ -331,8 +329,6 @@ export function PersonAvailabilityDrawer({
                           ? 'bg-status-available'
                           : data.currentStatus.state === 'BUSY'
                           ? 'bg-status-busy'
-                          : data.currentStatus.state === 'MEAL'
-                          ? 'bg-blue-500'
                           : 'bg-slate-400'
                       }`}
                     />

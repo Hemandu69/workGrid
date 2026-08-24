@@ -67,7 +67,7 @@ export default function RegisterPage() {
               Create WorkGrid Account
             </h1>
             <p className="text-xs text-on-surface-variant text-center mt-1">
-              Employee Self-Registration & Onboarding Portal
+              Personnel Self-Registration & Onboarding Portal
             </p>
           </div>
 

@@ -108,12 +108,12 @@ export const attendanceRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ---------------------------------------------------------------------------
   // 5. GET /api/v1/attendance/overview
-  // Organization-wide live attendance status (Super Admin, Admin, HR).
+  // Organization-wide live attendance status (Super Admin, Admin).
   // ---------------------------------------------------------------------------
   fastify.get(
     '/overview',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.ADMIN])],
     },
     async (request, reply) => {
       try {

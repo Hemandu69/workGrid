@@ -29,7 +29,6 @@ function resetMockUsers() {
   mockUsers = [
     { id: 'super-admin-1', email: 'elena@org.corp', name: 'Elena Vance', role: UserRole.SUPER_ADMIN, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: null, subroomId: null, presenceState: 'IN' },
     { id: 'admin-1', email: 'marcus@org.corp', name: 'Marcus Sterling', role: UserRole.ADMIN, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: null, subroomId: null, presenceState: 'IN' },
-    { id: 'hr-1', email: 'sarah.j@org.corp', name: 'Sarah Jenkins', role: UserRole.HR, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: null, subroomId: null, presenceState: 'IN' },
     { id: 'server-1', email: 'david@org.corp', name: 'David Chen', role: UserRole.SERVER, accountStatus: AccountStatus.ACTIVE, organizationId: ORG, roomId: 'room-b-id', subroomId: null, presenceState: 'IN', currentLocationRoomId: 'room-b-id' },
     // Two more real servers alongside David so Section B's 1/3/5 supervisory
     // compaction can be exercised with only real, authenticated accounts.
@@ -350,7 +349,6 @@ describe('Dynamic Room/Subroom Assignment — real users, simulated personnel & 
     describe('authorization', () => {
       const forbidden: Array<[string, string]> = [
         ['MEMBER', 'member-3'],
-        ['HR', 'hr-1'],
         ['SERVER', 'server-1'],
         ['TEAM_LEAD', 'teamlead-1'],
       ];

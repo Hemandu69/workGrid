@@ -39,13 +39,15 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['SUPER_ADMIN'],
   },
 
-  // HR Dedicated Link (People Management — People Directory + Role Audit
-  // live together as tabs on this one feature area, see PeopleManagementTabs)
+  // Event Personnel Management (People Directory + Role Audit live together
+  // as tabs on this one feature area, see PeopleManagementTabs) — SUPER_ADMIN
+  // only, since Super Admin already holds every people-governance capability
+  // this area requires.
   {
     label: 'People Management',
-    href: '/hr',
+    href: '/admin/people',
     icon: 'badge',
-    roles: ['HR', 'SUPER_ADMIN'],
+    roles: ['SUPER_ADMIN'],
     matchPrefix: true,
   },
 
@@ -66,12 +68,6 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Task Management',
     href: '/admin/tasks',
     icon: 'task_alt',
-    roles: ['ADMIN', 'SUPER_ADMIN'],
-  },
-  {
-    label: 'Teams & Directory',
-    href: '/admin/teams',
-    icon: 'groups',
     roles: ['ADMIN', 'SUPER_ADMIN'],
   },
   {
@@ -125,7 +121,7 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Notifications',
     href: '/notifications',
     icon: 'notifications',
-    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'HR', 'ADMIN', 'SUPER_ADMIN'],
+    roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'ADMIN', 'SUPER_ADMIN'],
   },
 ];
 
@@ -178,7 +174,6 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
   const roleLabel: Record<UserRole, string> = {
     SUPER_ADMIN: 'Super Admin',
     ADMIN: 'Admin',
-    HR: 'HR',
     TEAM_LEAD: 'Team Lead',
     SERVER: 'Server',
     MEMBER: 'Member',
@@ -208,7 +203,7 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
             <div>
               <h1 className="font-bold text-sm text-primary tracking-tight leading-tight">WorkGrid</h1>
               <p className="text-[10px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                Office Task Tracker
+                Event Operations & Tracking
               </p>
             </div>
           </div>
@@ -236,14 +231,10 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
               className="w-full bg-primary text-on-primary py-2 px-3 rounded text-xs font-medium hover:bg-primary-container transition-colors flex items-center justify-center gap-2 shadow-xs"
             >
               <span className="material-symbols-outlined text-[16px]">
-                {role === 'MEMBER' ? 'edit_calendar' : role === 'HR' ? 'person_add' : 'add'}
+                {role === 'MEMBER' ? 'edit_calendar' : 'add'}
               </span>
               <span>
-                {role === 'MEMBER'
-                  ? 'Edit Availability'
-                  : role === 'HR'
-                  ? 'Onboard Person'
-                  : 'Create Task'}
+                {role === 'MEMBER' ? 'Edit Availability' : 'Create Task'}
               </span>
             </button>
           </div>

@@ -5,7 +5,7 @@ import process from 'node:process';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Starting WorkGrid database seed (7 Core Authenticated Accounts)...');
+  console.log('🌱 Starting WorkGrid database seed (6 Core Authenticated Accounts)...');
 
   // 1. Clean existing records in reverse dependency order
   await prisma.eventParticipant.deleteMany();
@@ -126,28 +126,7 @@ async function main() {
     },
   });
 
-  // 3) HR (Sarah Jenkins)
-  const hrUser = await prisma.user.create({
-    data: {
-      organizationId: org.id,
-      email: 'sarah.jenkins@workgrid.corp',
-      passwordHash: defaultPasswordHash,
-      name: 'Sarah Jenkins',
-      role: UserRole.HR,
-      accountStatus: AccountStatus.ACTIVE,
-      status: UserStatus.ONLINE,
-      presenceState: PresenceState.IN,
-      currentLocationName: 'A1',
-      arrivedAt: arrivalTime,
-      lastSeenAt: now,
-      title: 'Head of People & Talent Operations',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-      capacityLimitHours: 40,
-      currentAllocatedHours: 8,
-    },
-  });
-
-  // 4) Server (David Chen) — Section B Supervisor (Position 1)
+  // 3) Server (David Chen) — Section B Supervisor (Position 1)
   const server1 = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -176,7 +155,7 @@ async function main() {
     data: { leadServerId: server1.id },
   });
 
-  // 5) Member 1 (Sarah Connor) — Subroom B3
+  // 4) Member 1 (Sarah Connor) — Subroom B3
   const member1 = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -199,7 +178,7 @@ async function main() {
     },
   });
 
-  // 6) Team Lead (Alex Rivera) — Subroom B3
+  // 5) Team Lead (Alex Rivera) — Subroom B3
   const member2 = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -222,7 +201,7 @@ async function main() {
     },
   });
 
-  // 7) Pending Onboarding User (John Doe)
+  // 6) Pending Onboarding User (John Doe)
   const pendingUser = await prisma.user.create({
     data: {
       organizationId: org.id,
@@ -240,7 +219,7 @@ async function main() {
   });
 
   // Attendance Records for Active Users
-  for (const u of [superAdmin, admin, hrUser, server1, member1, member2]) {
+  for (const u of [superAdmin, admin, server1, member1, member2]) {
     await prisma.attendanceRecord.create({
       data: {
         userId: u.id,
@@ -254,15 +233,15 @@ async function main() {
   await prisma.roleAuditLog.create({
     data: {
       organizationId: org.id,
-      targetUserId: hrUser.id,
+      targetUserId: member2.id,
       changedById: superAdmin.id,
       previousRole: UserRole.MEMBER,
-      newRole: UserRole.HR,
-      reason: 'Provisioned as Head of People & Talent Operations',
+      newRole: UserRole.TEAM_LEAD,
+      reason: 'Provisioned as Infrastructure Specialist & Team Lead',
     },
   });
 
-  console.log(`✓ Created 7 official authenticated accounts (Super Admin, Admin, HR, Server, Member, Team Lead, Pending)`);
+  console.log(`✓ Created 6 official authenticated accounts (Super Admin, Admin, Server, Member, Team Lead, Pending)`);
 
   // 5. Create Task Campaigns
   const campaign1 = await prisma.taskCampaign.create({
@@ -470,7 +449,7 @@ async function main() {
             state = SlotState.BUSY;
             taskId = task1.id;
           } else if (hour === 9 || hour === 16) {
-            state = SlotState.PREFERRED;
+            state = SlotState.AVAILABLE;
           } else {
             state = SlotState.AVAILABLE;
           }
@@ -492,7 +471,7 @@ async function main() {
   });
   console.log(`✓ Generated 7-day 24h recurring availability schedule for Sarah Connor`);
 
-  console.log('✅ WorkGrid seed finished successfully (7 authentic users)!');
+  console.log('✅ WorkGrid seed finished successfully (6 authentic users)!');
 }
 
 main()

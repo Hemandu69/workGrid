@@ -14,6 +14,20 @@ const nextConfig: NextConfig = {
         destination: '/admin/operations',
         permanent: false,
       },
+      // People Management moved out from under the retired HR role's own
+      // route path now that HR no longer exists as a role — the area itself
+      // (People Directory + Role Audit) is unchanged, just SUPER_ADMIN-only
+      // and reachable at /admin/people.
+      {
+        source: '/hr',
+        destination: '/admin/people',
+        permanent: false,
+      },
+      {
+        source: '/hr/audit',
+        destination: '/admin/people/audit',
+        permanent: false,
+      },
     ];
   },
   images: {

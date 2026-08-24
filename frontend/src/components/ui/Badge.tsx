@@ -6,7 +6,7 @@ import { AccountStatus } from '../../types/auth';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: 'default' | 'outline' | 'status' | 'priority' | 'role' | 'accountStatus';
-  status?: TaskStatus | 'AVAILABLE' | 'BUSY' | 'BLOCKED' | 'COMPLETED' | 'UNAVAILABLE' | 'PREFERRED' | 'MEAL';
+  status?: TaskStatus | 'AVAILABLE' | 'BUSY' | 'BLOCKED' | 'COMPLETED' | 'UNAVAILABLE' | 'PREFERRED';
   accountStatus?: AccountStatus;
   priority?: TaskPriority;
   role?: string;
@@ -130,11 +130,6 @@ export function Badge({
         badgeStyle = 'bg-slate-100 text-slate-500 border-slate-200';
         label = 'Unavailable';
         break;
-      case 'MEAL':
-        dotColor = 'bg-blue-500';
-        badgeStyle = 'bg-blue-50 text-blue-800 border-blue-200';
-        label = 'Meal';
-        break;
     }
 
     return (
@@ -199,8 +194,6 @@ export function Badge({
       roleStyle = 'bg-purple-50 text-purple-800 border-purple-200 font-semibold';
     } else if (rawRole.includes('ADMIN')) {
       roleStyle = 'bg-indigo-50 text-indigo-800 border-indigo-200 font-semibold';
-    } else if (rawRole.includes('HR')) {
-      roleStyle = 'bg-teal-50 text-teal-800 border-teal-200 font-semibold';
     } else if (rawRole.includes('TEAM_LEAD') || rawRole.includes('LEAD')) {
       roleStyle = 'bg-cyan-50 text-cyan-800 border-cyan-200 font-semibold';
     } else if (rawRole.includes('SERVER')) {

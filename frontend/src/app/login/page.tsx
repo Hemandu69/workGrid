@@ -113,7 +113,7 @@ export default function LoginPage() {
               WorkGrid
             </h1>
             <p className="text-xs text-on-surface-variant text-center mt-1">
-              Hierarchical Organizational & Task Operating System
+              Event Operations & Tracking System
             </p>
           </div>
 
@@ -127,7 +127,7 @@ export default function LoginPage() {
                     <span>Account Pending Onboarding</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    This account is in <span className="font-mono font-bold">PENDING</span> status. Please wait for HR or Super Admin onboarding review.
+                    This account is in <span className="font-mono font-bold">PENDING</span> status. Please wait for Super Admin onboarding review.
                   </p>
                 </div>
               )}
@@ -139,7 +139,7 @@ export default function LoginPage() {
                     <span>Account Suspended</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    This account has been <span className="font-mono font-bold">SUSPENDED</span>. Please contact IT Security or HR.
+                    This account has been <span className="font-mono font-bold">SUSPENDED</span>. Please contact IT Security or your Super Admin.
                   </p>
                 </div>
               )}
@@ -269,18 +269,6 @@ export default function LoginPage() {
                   <span className="text-[9px] text-primary-fixed-dim">Auto-fill</span>
                 </div>
                 <span className="text-[9px] text-on-surface-variant">Marcus Sterling</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handlePrefillAccount('sarah.jenkins@workgrid.corp')}
-                className="p-2 rounded bg-surface-container border border-surface-outline hover:bg-surface-container-high text-primary font-medium text-left transition-colors cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold block text-[11px]">HR People</span>
-                  <span className="text-[9px] text-primary-fixed-dim">Auto-fill</span>
-                </div>
-                <span className="text-[9px] text-on-surface-variant">Sarah Jenkins</span>
               </button>
 
               <button

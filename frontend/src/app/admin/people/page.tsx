@@ -1,20 +1,20 @@
 'use client';
 
 import React, { useState } from 'react';
-import { AppShell } from '../../components/layout/AppShell';
-import { User, UserRole, AccountStatus, RoleAuditLog } from '../../types/auth';
-import { apiClient } from '../../lib/api-client';
-import { useHREvents, HREvent } from '../../lib/useHREvents';
-import { Avatar } from '../../components/ui/Avatar';
-import { Badge } from '../../components/ui/Badge';
-import { Button } from '../../components/ui/Button';
-import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../components/ui/Table';
-import { ManagePersonModal } from '../../components/hr/ManagePersonModal';
-import { ProvisionPersonModal } from '../../components/hr/ProvisionPersonModal';
-import { PeopleManagementTabs } from '../../components/hr/PeopleManagementTabs';
-import { AttendanceCard } from '../../components/attendance/AttendanceCard';
+import { AppShell } from '../../../components/layout/AppShell';
+import { User, UserRole, AccountStatus, RoleAuditLog } from '../../../types/auth';
+import { apiClient } from '../../../lib/api-client';
+import { useHREvents, HREvent } from '../../../lib/useHREvents';
+import { Avatar } from '../../../components/ui/Avatar';
+import { Badge } from '../../../components/ui/Badge';
+import { Button } from '../../../components/ui/Button';
+import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
+import { ManagePersonModal } from '../../../components/hr/ManagePersonModal';
+import { ProvisionPersonModal } from '../../../components/hr/ProvisionPersonModal';
+import { PeopleManagementTabs } from '../../../components/hr/PeopleManagementTabs';
+import { AttendanceCard } from '../../../components/attendance/AttendanceCard';
 
-export default function HRDashboardPage() {
+export default function PeopleManagementPage() {
   const [people, setPeople] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<RoleAuditLog[]>([]);
   const [stats, setStats] = useState<{
@@ -34,7 +34,7 @@ export default function HRDashboardPage() {
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
 
-  const fetchHRData = React.useCallback(async () => {
+  const fetchPeopleData = React.useCallback(async () => {
     try {
       setIsLoading(true);
       const [statsData, directoryData, logsData] = await Promise.all([
@@ -61,8 +61,8 @@ export default function HRDashboardPage() {
   }, [roleFilter, statusFilter, search]);
 
   React.useEffect(() => {
-    fetchHRData();
-  }, [fetchHRData]);
+    fetchPeopleData();
+  }, [fetchPeopleData]);
 
   // Real-Time Server-Sent Event handler (Incremental state updates without reload)
   const handleRealtimeEvent = React.useCallback((event: HREvent) => {
@@ -79,7 +79,7 @@ export default function HRDashboardPage() {
         };
         return updated;
       } else {
-        // Prepend new pending employee without duplicates
+        // Prepend new pending personnel record without duplicates
         return [eventUser, ...prevPeople];
       }
     });
@@ -103,7 +103,7 @@ export default function HRDashboardPage() {
 
   useHREvents({
     onEvent: handleRealtimeEvent,
-    onReconnect: fetchHRData,
+    onReconnect: fetchPeopleData,
     enabled: true,
   });
 
@@ -133,7 +133,7 @@ export default function HRDashboardPage() {
   const handleSaveRole = async (userId: string, newRole: UserRole, reason: string) => {
     try {
       await apiClient.updateUserRole(userId, newRole, reason);
-      await fetchHRData();
+      await fetchPeopleData();
     } catch (err) {
       console.error('Failed to update role via backend:', err);
       // Fallback local update
@@ -153,7 +153,7 @@ export default function HRDashboardPage() {
   const handleSaveStatus = async (userId: string, newStatus: AccountStatus, reason?: string) => {
     try {
       await apiClient.updateUserStatus(userId, newStatus, reason);
-      await fetchHRData();
+      await fetchPeopleData();
     } catch (err) {
       console.error('Failed to update status via backend:', err);
       setPeople((prev) =>
@@ -177,7 +177,7 @@ export default function HRDashboardPage() {
         initialRole: data.role,
         capacityLimitHours: data.capacityLimitHours,
       });
-      await fetchHRData();
+      await fetchPeopleData();
     } catch (err) {
       console.error('Failed to provision user via backend:', err);
       const newUser: User = {
@@ -200,8 +200,9 @@ export default function HRDashboardPage() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: 'People Management', href: '/hr' },
-        { label: 'People Directory' },
+        { label: 'Admin Operations', href: '/admin' },
+        { label: 'People Management', href: '/admin/people' },
+        { label: 'Personnel Directory' },
       ]}
       onQuickAction={() => setIsProvisionModalOpen(true)}
     >
@@ -216,9 +217,9 @@ export default function HRDashboardPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-primary tracking-tight">
-                People Management & Role Governance
+                Event Personnel Management & Role Governance
               </h1>
-              <Badge role="HR Operations" variant="role" />
+              <Badge role="People Management" variant="role" />
             </div>
             <p className="text-xs text-on-surface-variant mt-1">
               The official personnel directory for onboarding, account status, and role assignments.
@@ -233,7 +234,7 @@ export default function HRDashboardPage() {
               className="flex items-center gap-1.5"
             >
               <span className="material-symbols-outlined text-[16px]">person_add</span>
-              <span>Onboard Employee</span>
+              <span>Onboard Personnel</span>
             </Button>
           </div>
         </div>
@@ -303,7 +304,6 @@ export default function HRDashboardPage() {
               <option value="UNASSIGNED">Unassigned / Pending</option>
               <option value="SUPER_ADMIN">Super Admin</option>
               <option value="ADMIN">Admin</option>
-              <option value="HR">HR</option>
               <option value="TEAM_LEAD">Team Lead</option>
               <option value="SERVER">Server</option>
               <option value="MEMBER">Member</option>
@@ -332,7 +332,7 @@ export default function HRDashboardPage() {
         <Table>
           <TableHeader>
             <TableRow isHeader>
-              <TableHead>Employee Profile</TableHead>
+              <TableHead>Personnel Profile</TableHead>
               <TableHead>Job Title</TableHead>
               <TableHead>WorkGrid Role</TableHead>
               <TableHead>Account Status</TableHead>
@@ -361,7 +361,7 @@ export default function HRDashboardPage() {
                   </TableCell>
 
                   <TableCell className="text-xs text-on-surface font-medium">
-                    {user.title || 'WorkGrid Employee'}
+                    {user.title || 'WorkGrid Personnel'}
                   </TableCell>
 
                   <TableCell>
@@ -406,7 +406,7 @@ export default function HRDashboardPage() {
           auditLogs={auditLogs}
         />
 
-        {/* Modal: Onboard / Provision Employee */}
+        {/* Modal: Onboard / Provision Personnel */}
         <ProvisionPersonModal
           isOpen={isProvisionModalOpen}
           onClose={() => setIsProvisionModalOpen(false)}

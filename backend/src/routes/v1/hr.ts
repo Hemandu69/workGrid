@@ -12,18 +12,18 @@ import { hrEventBus } from '../../events/hr-events.js';
 
 export const hrRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/hr/dashboard
-  // Protected: SUPER_ADMIN and HR only
+  // Protected: SUPER_ADMIN only
   fastify.get(
     '/dashboard',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN])],
     },
     async (request, reply) => {
       try {
         const stats = await HRService.getHRDashboardStats(request.user.organizationId);
         return reply.send(stats);
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch HR dashboard stats';
+        const message = err instanceof Error ? err.message : 'Failed to fetch People Management dashboard stats';
         const statusCode = (err as any)?.statusCode || 500;
         return reply.status(statusCode).send({
           statusCode,
@@ -35,11 +35,11 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // GET /api/v1/hr/people
-  // Protected: SUPER_ADMIN and HR only
+  // Protected: SUPER_ADMIN only
   fastify.get(
     '/people',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN])],
     },
     async (request, reply) => {
       const query = request.query as {
@@ -97,11 +97,12 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /api/v1/hr/users
-  // Provision employee account
+  // Provision personnel account
+  // Protected: SUPER_ADMIN only
   fastify.post(
     '/users',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN])],
     },
     async (request, reply) => {
       const parseResult = provisionUserSchema.safeParse(request.body);
@@ -134,11 +135,12 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
   );
 
   // PATCH /api/v1/hr/users/:id/role
-  // Assign or alter employee role (with transactional audit log)
+  // Assign or alter a person's role (with transactional audit log)
+  // Protected: SUPER_ADMIN only
   fastify.patch(
     '/users/:id/role',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN])],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -176,10 +178,11 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
 
   // PATCH /api/v1/hr/users/:id/status
   // Activate, suspend, or deactivate user account
+  // Protected: SUPER_ADMIN only
   fastify.patch(
     '/users/:id/status',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN])],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -217,10 +220,11 @@ export const hrRoutes: FastifyPluginAsync = async (fastify) => {
 
   // GET /api/v1/hr/audit-logs
   // View Role Audit History
+  // Protected: SUPER_ADMIN only
   fastify.get(
     '/audit-logs',
     {
-      preHandler: [requireRole([UserRole.SUPER_ADMIN, UserRole.HR])],
+      preHandler: [requireRole([UserRole.SUPER_ADMIN])],
     },
     async (request, reply) => {
       const query = request.query as { targetUserId?: string };

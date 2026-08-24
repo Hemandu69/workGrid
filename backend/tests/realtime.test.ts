@@ -18,10 +18,10 @@ const testUsers: any[] = [
     version: 1,
   },
   {
-    id: 'rt-hr-id',
-    email: 'sarah.hr@workgrid.corp',
-    name: 'Sarah HR',
-    role: UserRole.HR,
+    id: 'rt-admin-id',
+    email: 'marcus.rt@workgrid.corp',
+    name: 'Marcus Admin',
+    role: UserRole.ADMIN,
     accountStatus: AccountStatus.ACTIVE,
     organizationId: 'org-rt-1',
     passwordHash: 'hash',
@@ -79,6 +79,16 @@ const testUsers: any[] = [
     passwordHash: 'hash',
     version: 1,
   },
+  {
+    id: 'rt-unrelated-member-id',
+    email: 'unrelated.rt@workgrid.corp',
+    name: 'Unrelated Member',
+    role: UserRole.MEMBER,
+    accountStatus: AccountStatus.ACTIVE,
+    organizationId: 'org-rt-1',
+    passwordHash: 'hash',
+    version: 1,
+  },
 ];
 
 vi.mock('../src/db/client.js', () => ({
@@ -112,12 +122,13 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
   let app: FastifyInstance;
   let serverPort: number;
   let superAdminToken: string;
-  let hrToken: string;
+  let adminToken: string;
   let memberToken: string;
   let suspendedToken: string;
   let org2MemberToken: string;
   let serverRoomAToken: string;
   let serverRoomBToken: string;
+  let unrelatedMemberToken: string;
 
   beforeAll(async () => {
     app = await buildApp();
@@ -126,12 +137,13 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
     serverPort = typeof addr === 'object' && addr ? addr.port : 4000;
 
     superAdminToken = app.jwt.sign(testUsers[0]);
-    hrToken = app.jwt.sign(testUsers[1]);
+    adminToken = app.jwt.sign(testUsers[1]);
     memberToken = app.jwt.sign(testUsers[2]);
     suspendedToken = app.jwt.sign(testUsers[3]);
     org2MemberToken = app.jwt.sign(testUsers[4]);
     serverRoomAToken = app.jwt.sign(testUsers[5]);
     serverRoomBToken = app.jwt.sign(testUsers[6]);
+    unrelatedMemberToken = app.jwt.sign(testUsers[7]);
   });
 
   afterAll(async () => {
@@ -212,7 +224,7 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
         path: '/socket.io',
         transports: ['websocket'],
         extraHeaders: {
-          authorization: `Bearer ${hrToken}`,
+          authorization: `Bearer ${adminToken}`,
         },
         autoConnect: false,
       });
@@ -227,9 +239,9 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
       const connectedData: any = await connectPromise;
       socket.disconnect();
 
-      expect(connectedData.userId).toBe('rt-hr-id');
+      expect(connectedData.userId).toBe('rt-admin-id');
       expect(connectedData.organizationId).toBe('org-rt-1');
-      expect(connectedData.role).toBe(UserRole.HR);
+      expect(connectedData.role).toBe(UserRole.ADMIN);
     });
   });
 
@@ -278,11 +290,11 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
   });
 
   describe('3. Role-Based Room Routing & Governance Events', () => {
-    it('HR events should be delivered to HR / Super Admin, but NOT to unauthorized Member sockets', async () => {
-      const hrSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
+    it('ROLE_AUDIT_CREATED (people-governance) events should be delivered to Admin sockets, but NOT to unauthorized Member sockets — HR is not a role, there is no :hr room to route to any more', async () => {
+      const adminSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
         path: '/socket.io',
         transports: ['websocket'],
-        extraHeaders: { authorization: `Bearer ${hrToken}` },
+        extraHeaders: { authorization: `Bearer ${adminToken}` },
       });
 
       const memberSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
@@ -292,30 +304,30 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
       });
 
       await Promise.all([
-        new Promise((res) => hrSocket.on('CONNECTED', res)),
+        new Promise((res) => adminSocket.on('CONNECTED', res)),
         new Promise((res) => memberSocket.on('CONNECTED', res)),
       ]);
 
-      const hrEvents: any[] = [];
+      const adminEvents: any[] = [];
       const memberEvents: any[] = [];
 
-      hrSocket.on('ROLE_AUDIT_CREATED', (e) => hrEvents.push(e));
+      adminSocket.on('ROLE_AUDIT_CREATED', (e) => adminEvents.push(e));
       memberSocket.on('ROLE_AUDIT_CREATED', (e) => memberEvents.push(e));
 
       publishDomainEvent({
         type: 'ROLE_AUDIT_CREATED',
         organizationId: 'org-rt-1',
         entityId: 'aud-999',
-        payload: { changedBy: 'Sarah HR', newRole: 'TEAM_LEAD' },
+        payload: { changedBy: 'Marcus Admin', newRole: 'TEAM_LEAD' },
       });
 
       await new Promise((r) => setTimeout(r, 100));
 
-      hrSocket.disconnect();
+      adminSocket.disconnect();
       memberSocket.disconnect();
 
-      expect(hrEvents.length).toBe(1);
-      expect(hrEvents[0].payload.newRole).toBe('TEAM_LEAD');
+      expect(adminEvents.length).toBe(1);
+      expect(adminEvents[0].payload.newRole).toBe('TEAM_LEAD');
       expect(memberEvents.length).toBe(0);
     });
 
@@ -425,7 +437,7 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
       const unrelatedSocket = ClientSocket(`http://127.0.0.1:${serverPort}`, {
         path: '/socket.io',
         transports: ['websocket'],
-        extraHeaders: { authorization: `Bearer ${hrToken}` },
+        extraHeaders: { authorization: `Bearer ${unrelatedMemberToken}` },
       });
 
       await Promise.all([
@@ -462,7 +474,7 @@ describe('WorkGrid Global Realtime Architecture — Socket.IO', () => {
       expect(assigneeCaptured.length).toBe(1);
       expect(assigneeCaptured[0].payload.newStatus).toBe(TaskStatus.COMPLETED);
       expect(adminCaptured.length).toBe(1);
-      // HR is neither the assignee, creator, admin, nor operations-scoped.
+      // This member is neither the assignee, creator, admin, nor operations-scoped.
       expect(unrelatedCaptured.length).toBe(0);
     });
 

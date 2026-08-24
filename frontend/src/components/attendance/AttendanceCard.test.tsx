@@ -21,8 +21,6 @@ vi.mock('../../lib/api-client', () => ({
     getAttendanceMe: vi.fn(),
     checkInAttendance: vi.fn(),
     checkOutAttendance: vi.fn(),
-    startMeal: vi.fn(),
-    endMeal: vi.fn(),
     setAvailabilityStatus: vi.fn(),
     getAttendanceHistory: vi.fn(),
   },
@@ -43,7 +41,7 @@ function buildAttendance(overrides: Partial<AttendanceMeResponse> = {}): Attenda
   };
 }
 
-describe('AttendanceCard — meal (Lunch/Dinner) button', () => {
+describe('AttendanceCard — check-in / check-out', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -52,57 +50,47 @@ describe('AttendanceCard — meal (Lunch/Dinner) button', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows "Lunch" before 6 PM and calls startMeal on click', async () => {
-    vi.spyOn(Date.prototype, 'getHours').mockReturnValue(12);
+  it('shows CHECK OUT and calls checkOutAttendance when currently checked in', async () => {
     mockedApi.getAttendanceMe.mockResolvedValue(buildAttendance());
-    mockedApi.startMeal.mockResolvedValue({} as never);
+    mockedApi.checkOutAttendance.mockResolvedValue({} as never);
 
     render(<AttendanceCard />);
-    await waitFor(() => expect(screen.getByText('Lunch')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('CHECK OUT')).toBeInTheDocument());
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Lunch'));
+      fireEvent.click(screen.getByText('CHECK OUT'));
     });
 
-    expect(mockedApi.startMeal).toHaveBeenCalledTimes(1);
+    expect(mockedApi.checkOutAttendance).toHaveBeenCalledTimes(1);
     expect(mockedApi.checkInAttendance).not.toHaveBeenCalled();
-    expect(mockedApi.checkOutAttendance).not.toHaveBeenCalled();
   });
 
-  it('shows "Dinner" at/after 6 PM', async () => {
-    vi.spyOn(Date.prototype, 'getHours').mockReturnValue(19);
-    mockedApi.getAttendanceMe.mockResolvedValue(buildAttendance());
-
-    render(<AttendanceCard />);
-    await waitFor(() => expect(screen.getByText('Dinner')).toBeInTheDocument());
-    expect(screen.queryByText('Lunch')).not.toBeInTheDocument();
-  });
-
-  it('shows "End Lunch" while already in a meal, and calls endMeal on click', async () => {
-    vi.spyOn(Date.prototype, 'getHours').mockReturnValue(13);
-    mockedApi.getAttendanceMe.mockResolvedValue(buildAttendance({ availabilityState: 'MEAL', availabilityLabel: 'Meal' }));
-    mockedApi.endMeal.mockResolvedValue({} as never);
-
-    render(<AttendanceCard />);
-    await waitFor(() => expect(screen.getByText('End Lunch')).toBeInTheDocument());
-
-    await act(async () => {
-      fireEvent.click(screen.getByText('End Lunch'));
-    });
-
-    expect(mockedApi.endMeal).toHaveBeenCalledTimes(1);
-    expect(mockedApi.checkInAttendance).not.toHaveBeenCalled();
-    expect(mockedApi.checkOutAttendance).not.toHaveBeenCalled();
-  });
-
-  it('disables the meal button while checked out', async () => {
-    vi.spyOn(Date.prototype, 'getHours').mockReturnValue(12);
+  it('shows CHECK IN and calls checkInAttendance when currently checked out', async () => {
     mockedApi.getAttendanceMe.mockResolvedValue(
       buildAttendance({ state: 'OUT', presenceState: 'OUT', availabilityState: 'UNAVAILABLE', currentSession: null })
     );
+    mockedApi.checkInAttendance.mockResolvedValue({} as never);
 
     render(<AttendanceCard />);
-    await waitFor(() => expect(screen.getByText('Lunch')).toBeInTheDocument());
-    expect(screen.getByText('Lunch').closest('button')).toBeDisabled();
+    await waitFor(() => expect(screen.getByText('CHECK IN')).toBeInTheDocument());
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('CHECK IN'));
+    });
+
+    expect(mockedApi.checkInAttendance).toHaveBeenCalledTimes(1);
+    expect(mockedApi.checkOutAttendance).not.toHaveBeenCalled();
+  });
+
+  it('renders no meal/Lunch/Dinner control at all — the feature has been removed', async () => {
+    mockedApi.getAttendanceMe.mockResolvedValue(buildAttendance());
+
+    render(<AttendanceCard />);
+    await waitFor(() => expect(screen.getByText('CHECK OUT')).toBeInTheDocument());
+
+    expect(screen.queryByText('Lunch')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dinner')).not.toBeInTheDocument();
+    expect(screen.queryByText(/End Lunch/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/End Dinner/)).not.toBeInTheDocument();
   });
 });

@@ -51,13 +51,6 @@ export const ROLE_CAPABILITIES: Record<UserRole, Capability[]> = {
     'TASK_MANAGEMENT',
     'ANNOUNCEMENTS_MANAGE',
   ],
-  [UserRole.HR]: [
-    'MANAGE_PEOPLE',
-    'PROVISION_USERS',
-    'ASSIGN_ROLES',
-    'MANAGE_ACCOUNT_STATUS',
-    'VIEW_ROLE_AUDIT',
-  ],
   [UserRole.TEAM_LEAD]: [
     'TASK_MANAGEMENT',
   ],

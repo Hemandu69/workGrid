@@ -376,7 +376,7 @@ describe('WorkGrid Global Attendance & Presence System (/api/v1/attendance)', ()
   });
 
   // ---------------------------------------------------------------------------
-  // 5. Admin & HR Attendance Overview API
+  // 5. Admin Attendance Overview API
   // ---------------------------------------------------------------------------
   describe('GET /attendance/overview (Privileged Oversight)', () => {
     it('should allow ADMIN to retrieve organization-wide attendance overview (200)', async () => {

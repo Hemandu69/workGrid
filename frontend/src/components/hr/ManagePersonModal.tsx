@@ -56,7 +56,7 @@ export function ManagePersonModal({
     {
       role: 'MEMBER',
       label: 'Member',
-      desc: 'Standard employee task execution & availability',
+      desc: 'Standard personnel task execution & availability',
       allowed: true,
     },
     {
@@ -70,13 +70,6 @@ export function ManagePersonModal({
       label: 'Server',
       desc: 'Room/Section supervisor (Room scoped)',
       allowed: true,
-    },
-    {
-      role: 'HR',
-      label: 'HR',
-      desc: 'People management & role governance',
-      allowed: currentCallerRole === 'SUPER_ADMIN',
-      restrictionReason: 'Requires Super Admin authority',
     },
     {
       role: 'ADMIN',
@@ -290,7 +283,7 @@ export function ManagePersonModal({
                   {
                     status: 'PENDING' as const,
                     label: 'PENDING',
-                    desc: 'Awaiting onboarding completion and HR review.',
+                    desc: 'Awaiting onboarding completion and administrative review.',
                   },
                   {
                     status: 'SUSPENDED' as const,
@@ -339,7 +332,7 @@ export function ManagePersonModal({
                 type="text"
                 value={statusReason}
                 onChange={(e) => setStatusReason(e.target.value)}
-                placeholder="e.g. Completed initial HR background review"
+                placeholder="e.g. Completed initial onboarding background review"
                 className="w-full px-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
               />
             </div>

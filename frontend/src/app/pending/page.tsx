@@ -21,7 +21,7 @@ export default function PendingApprovalPage() {
         const target = getRoleLandingPath(updatedUser.role, updatedUser.accountStatus);
         setTimeout(() => router.push(target), 800);
       } else {
-        setMessage('Your account is still in PENDING status awaiting HR/Management approval.');
+        setMessage('Your account is still in PENDING status awaiting Super Admin approval.');
       }
     } catch {
       setMessage('Failed to check status. Please try again.');
@@ -50,7 +50,7 @@ export default function PendingApprovalPage() {
             WorkGrid Workspace
           </h1>
           <p className="text-xs text-on-surface-variant mt-0.5">
-            Hierarchical Organizational Operating System
+            Event Operations & Tracking System
           </p>
         </div>
 
@@ -66,7 +66,7 @@ export default function PendingApprovalPage() {
                 Account Awaiting Approval
               </h2>
               <p className="text-[11px] leading-relaxed text-amber-800">
-                Your WorkGrid account has been successfully created. An HR administrator or Super Admin will review your profile, assign your organizational role, and activate your access.
+                Your WorkGrid account has been successfully created. A Super Admin will review your profile, assign your organizational role, and activate your access.
               </p>
             </div>
           </div>
@@ -88,7 +88,7 @@ export default function PendingApprovalPage() {
                   Full Name
                 </span>
                 <span className="font-semibold text-on-surface truncate block">
-                  {user.name || 'New Employee'}
+                  {user.name || 'New Personnel'}
                 </span>
               </div>
 
@@ -106,7 +106,7 @@ export default function PendingApprovalPage() {
                   Designation / Title
                 </span>
                 <span className="text-on-surface truncate block">
-                  {user.title || 'New Employee'}
+                  {user.title || 'New Personnel'}
                 </span>
               </div>
 
@@ -129,7 +129,7 @@ export default function PendingApprovalPage() {
                   Assigned Workspace Role
                 </span>
                 <span className="text-xs text-on-surface-variant">
-                  Role assignment will be performed by HR People Management
+                  Role assignment will be performed by People Management
                 </span>
               </div>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-semibold">
@@ -174,7 +174,7 @@ export default function PendingApprovalPage() {
 
         {/* Informational Help Footer */}
         <p className="text-[11px] text-center text-on-surface-variant">
-          Need immediate access? Contact your organizational HR representative or IT Administrator.
+          Need immediate access? Contact your Super Admin or IT Administrator.
         </p>
       </main>
     </div>

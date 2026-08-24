@@ -10,7 +10,6 @@ import { AccountStatus, UserRole } from '@prisma/client';
 const mockUsers: any[] = [
   { id: 'super-admin-1', email: 'elena@org1.corp', name: 'Elena Vance', role: UserRole.SUPER_ADMIN, accountStatus: AccountStatus.ACTIVE, organizationId: 'org-1', avatarUrl: null },
   { id: 'admin-1', email: 'marcus@org1.corp', name: 'Marcus Sterling', role: UserRole.ADMIN, accountStatus: AccountStatus.ACTIVE, organizationId: 'org-1', avatarUrl: null },
-  { id: 'hr-1', email: 'sarah@org1.corp', name: 'Sarah Jenkins', role: UserRole.HR, accountStatus: AccountStatus.ACTIVE, organizationId: 'org-1', avatarUrl: null },
   { id: 'member-1', email: 'alex@org1.corp', name: 'Alex Rivera', role: UserRole.MEMBER, accountStatus: AccountStatus.ACTIVE, organizationId: 'org-1', avatarUrl: null },
   { id: 'member-2', email: 'komal@org1.corp', name: 'Komal Mehta', role: UserRole.MEMBER, accountStatus: AccountStatus.ACTIVE, organizationId: 'org-1', avatarUrl: null },
   { id: 'server-1', email: 'preeti@org1.corp', name: 'Preeti Mishra', role: UserRole.SERVER, accountStatus: AccountStatus.ACTIVE, organizationId: 'org-1', avatarUrl: null },
@@ -243,15 +242,6 @@ describe('Organization Events — API, authorization, analytics & realtime event
 
       expect(res.status).toBe(201);
       expect(res.body.createdByName).toBe('Elena Vance');
-    });
-
-    it('HR cannot create an event (403)', async () => {
-      const res = await supertest(app.server)
-        .post('/api/v1/events')
-        .set('Authorization', `Bearer ${tokens['hr-1']}`)
-        .send(validPayload());
-
-      expect(res.status).toBe(403);
     });
 
     it('MEMBER cannot create an event (403)', async () => {
@@ -503,10 +493,10 @@ describe('Organization Events — API, authorization, analytics & realtime event
       expect(res.body.status).toBe('COMPLETED');
     });
 
-    it('MEMBER, HR, SERVER, and TEAM_LEAD cannot mark an event as done (403)', async () => {
+    it('MEMBER, SERVER, and TEAM_LEAD cannot mark an event as done (403)', async () => {
       const event = await createEvent();
       setEventWindow(event.id, -2 * 3600000, -1 * 3600000);
-      for (const userId of ['member-1', 'hr-1', 'server-1', 'teamlead-1']) {
+      for (const userId of ['member-1', 'server-1', 'teamlead-1']) {
         const res = await supertest(app.server)
           .post(`/api/v1/events/${event.id}/complete`)
           .set('Authorization', `Bearer ${tokens[userId]}`);
@@ -729,9 +719,9 @@ describe('Organization Events — API, authorization, analytics & realtime event
       expect(res.body.maybe).toBe(0);
       expect(res.body.notAttending).toBe(0);
       expect(res.body.attendanceRate).toBe(0);
-      // ACTIVE users in org-1: super-admin-1, admin-1, hr-1, member-1, member-2, server-1, teamlead-1 = 7
-      expect(res.body.totalEligible).toBe(7);
-      expect(res.body.noResponse).toBe(7);
+      // ACTIVE users in org-1: super-admin-1, admin-1, member-1, member-2, server-1, teamlead-1 = 6
+      expect(res.body.totalEligible).toBe(6);
+      expect(res.body.noResponse).toBe(6);
     });
 
     it('calculates attending/maybe/notAttending/noResponse and attendance rate from live responses', async () => {
@@ -746,12 +736,12 @@ describe('Organization Events — API, authorization, analytics & realtime event
         .get(`/api/v1/events/${event.id}/analytics`)
         .set('Authorization', `Bearer ${tokens['admin-1']}`);
 
-      expect(res.body.totalEligible).toBe(7);
+      expect(res.body.totalEligible).toBe(6);
       expect(res.body.attending).toBe(2);
       expect(res.body.maybe).toBe(1);
       expect(res.body.notAttending).toBe(1);
-      expect(res.body.noResponse).toBe(3); // super-admin-1, admin-1, hr-1
-      expect(res.body.attendanceRate).toBe(Math.round((2 / 7) * 100));
+      expect(res.body.noResponse).toBe(2); // super-admin-1, admin-1
+      expect(res.body.attendanceRate).toBe(Math.round((2 / 6) * 100));
     });
 
     it('eligible-user calculation excludes other organizations, PENDING and SUSPENDED accounts', async () => {
@@ -760,9 +750,9 @@ describe('Organization Events — API, authorization, analytics & realtime event
         .get(`/api/v1/events/${event.id}/analytics`)
         .set('Authorization', `Bearer ${tokens['admin-1']}`);
 
-      // org-1 has 9 total users but only 7 are ACTIVE (pending-1 and suspended-1 excluded);
+      // org-1 has 8 total users but only 6 are ACTIVE (pending-1 and suspended-1 excluded);
       // org-2 users must never be counted.
-      expect(res.body.totalEligible).toBe(7);
+      expect(res.body.totalEligible).toBe(6);
     });
 
     it('attendance updates live as responses change (ATTENDING -> MAYBE -> NOT_ATTENDING)', async () => {
@@ -794,7 +784,7 @@ describe('Organization Events — API, authorization, analytics & realtime event
 
       expect(res.status).toBe(200);
       expect(res.body.ATTENDING.map((u: any) => u.id)).toContain('member-1');
-      expect(res.body.NO_RESPONSE.map((u: any) => u.id)).toContain('hr-1');
+      expect(res.body.NO_RESPONSE.map((u: any) => u.id)).toContain('admin-1');
       // Never expose org-2 users
       const allListed = [...res.body.ATTENDING, ...res.body.MAYBE, ...res.body.NOT_ATTENDING, ...res.body.NO_RESPONSE];
       expect(allListed.some((u: any) => u.id === 'member-org2')).toBe(false);

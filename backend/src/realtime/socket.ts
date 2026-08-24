@@ -206,14 +206,9 @@ export function setupSocketIO(app: FastifyInstance): SocketIOServer {
 
     // Join Role-Restricted Rooms based strictly on server-verified identity
     const isSuperAdmin = user.role === UserRole.SUPER_ADMIN;
-    const isHR = user.role === UserRole.HR;
     const isAdmin = user.role === UserRole.ADMIN || isSuperAdmin;
     const isServer = user.role === UserRole.SERVER;
     const isTeamLead = user.role === UserRole.TEAM_LEAD;
-
-    if (isHR || isSuperAdmin) {
-      socket.join(`organization:${orgId}:hr`);
-    }
 
     if (isAdmin) {
       socket.join(`organization:${orgId}:admin`);
@@ -264,10 +259,10 @@ export function setupSocketIO(app: FastifyInstance): SocketIOServer {
     const orgId = event.organizationId;
     const eventType = event.type;
 
-    // A. HR & Governance Events -> organization:<orgId>:hr and organization:<orgId>:admin
+    // A. People-Governance Events -> organization:<orgId>:admin
     if (eventType === 'ROLE_AUDIT_CREATED' || eventType === 'EMPLOYEE_PENDING') {
-      ioServerInstance.to(`organization:${orgId}:hr`).to(`organization:${orgId}:admin`).emit(eventType, event);
-      ioServerInstance.to(`organization:${orgId}:hr`).to(`organization:${orgId}:admin`).emit('DOMAIN_EVENT', event);
+      ioServerInstance.to(`organization:${orgId}:admin`).emit(eventType, event);
+      ioServerInstance.to(`organization:${orgId}:admin`).emit('DOMAIN_EVENT', event);
       return;
     }
 
@@ -285,20 +280,20 @@ export function setupSocketIO(app: FastifyInstance): SocketIOServer {
         // Immediately disconnect user sockets from protected realtime stream
         ioServerInstance.in(`user:${event.targetUserId}`).disconnectSockets(true);
       }
-      // Also notify HR and Admin
-      ioServerInstance.to(`organization:${orgId}:hr`).to(`organization:${orgId}:admin`).emit(eventType, event);
-      ioServerInstance.to(`organization:${orgId}:hr`).to(`organization:${orgId}:admin`).emit('DOMAIN_EVENT', event);
+      // Also notify Admin
+      ioServerInstance.to(`organization:${orgId}:admin`).emit(eventType, event);
+      ioServerInstance.to(`organization:${orgId}:admin`).emit('DOMAIN_EVENT', event);
       return;
     }
 
-    // C. Role Changes & Employee Approval -> Target user + HR + Org
+    // C. Role Changes & Employee Approval -> Target user + Admin
     if (eventType === 'ROLE_CHANGED' || eventType === 'EMPLOYEE_APPROVED' || eventType === 'ACCOUNT_STATUS_CHANGED') {
       if (event.targetUserId) {
         ioServerInstance.to(`user:${event.targetUserId}`).emit(eventType, event);
         ioServerInstance.to(`user:${event.targetUserId}`).emit('DOMAIN_EVENT', event);
       }
-      ioServerInstance.to(`organization:${orgId}:hr`).to(`organization:${orgId}:admin`).emit(eventType, event);
-      ioServerInstance.to(`organization:${orgId}:hr`).to(`organization:${orgId}:admin`).emit('DOMAIN_EVENT', event);
+      ioServerInstance.to(`organization:${orgId}:admin`).emit(eventType, event);
+      ioServerInstance.to(`organization:${orgId}:admin`).emit('DOMAIN_EVENT', event);
       return;
     }
 

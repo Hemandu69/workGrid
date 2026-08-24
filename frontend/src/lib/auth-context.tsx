@@ -40,8 +40,6 @@ export function getRoleLandingPath(role?: UserRole | null, status?: AccountStatu
       return '/super-admin';
     case 'ADMIN':
       return '/admin';
-    case 'HR':
-      return '/hr';
     case 'SERVER':
       return '/server';
     case 'TEAM_LEAD':

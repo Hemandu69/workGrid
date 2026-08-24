@@ -3,7 +3,7 @@ import { AccountStatus, TaskStatus, TaskType, UserRole } from '@prisma/client';
 /**
  * Roles that may receive task assignments. Deliberately mirrors the
  * "operational" role set already used for provisioning/room-assignment
- * elsewhere in the codebase (HR, ADMIN and SUPER_ADMIN are managers, not
+ * elsewhere in the codebase (ADMIN and SUPER_ADMIN are managers, not
  * task recipients).
  */
 export const TASK_ELIGIBLE_ASSIGNEE_ROLES: UserRole[] = [

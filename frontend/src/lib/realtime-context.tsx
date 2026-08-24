@@ -15,7 +15,7 @@ export type DomainEventType =
   | 'ROLE_CHANGED'
   | 'USER_SESSION_INVALIDATED'
   | 'SESSION_REVOKED'
-  // People & HR
+  // People Management
   | 'EMPLOYEE_REGISTERED'
   | 'EMPLOYEE_PENDING'
   | 'EMPLOYEE_APPROVED'

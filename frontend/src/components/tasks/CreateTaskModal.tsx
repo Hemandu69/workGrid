@@ -101,7 +101,7 @@ export function CreateTaskModal({ isOpen, onClose, onTaskCreated }: CreateTaskMo
 
   // Mirrors the backend's authoritative checks — these only prevent an
   // obviously-doomed selection, they are not themselves the source of truth.
-  // Only operational roles may receive task assignments (never HR/ADMIN/SUPER_ADMIN).
+  // Only operational roles may receive task assignments (never ADMIN/SUPER_ADMIN).
   const taskEligibleUsers = users.filter((m) => m.role === 'MEMBER' || m.role === 'TEAM_LEAD' || m.role === 'SERVER');
   // Team Lead constraint: scoped to active members in their own room.
   const availableAssignees = role === 'TEAM_LEAD' && user.room ? taskEligibleUsers.filter((m) => m.room === user.room) : taskEligibleUsers;

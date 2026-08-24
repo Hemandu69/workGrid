@@ -42,7 +42,6 @@ const USERS: Record<string, any> = {
   'member-b4': { id: 'member-b4', name: 'Kabir Nair', email: 'kabir@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' }, presenceState: 'IN', status: 'BUSY' },
   'member-a1': { id: 'member-a1', name: 'External Person', email: 'ext@workgrid.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: 'room-a', room: { letter: 'A' }, presenceState: 'IN', status: 'ONLINE' },
   'member-pending': { id: 'member-pending', name: 'Pending Person', email: 'pending@workgrid.corp', role: 'MEMBER', accountStatus: 'PENDING', organizationId: 'org-1', roomId: 'room-b', room: { letter: 'B' } },
-  'hr-1': { id: 'hr-1', name: 'Priya HR', email: 'hr@workgrid.corp', role: 'HR', accountStatus: 'ACTIVE', organizationId: 'org-1', roomId: null },
   'org2-admin': { id: 'org2-admin', name: 'Org2 Admin', email: 'admin2@other.corp', role: 'ADMIN', accountStatus: 'ACTIVE', organizationId: 'org-2', roomId: null },
   'org2-member': { id: 'org2-member', name: 'Org2 Member', email: 'member2@other.corp', role: 'MEMBER', accountStatus: 'ACTIVE', organizationId: 'org-2', roomId: null },
 };
@@ -264,11 +263,6 @@ describe('Task Endpoints (/api/v1/tasks)', () => {
   it('1. rejects unauthenticated list requests', async () => {
     const res = await supertest(app.server).get('/api/v1/tasks');
     expect(res.status).toBe(401);
-  });
-
-  it('2. rejects HR from listing tasks — HR is not an operational task role', async () => {
-    const res = await supertest(app.server).get('/api/v1/tasks').set('Authorization', `Bearer ${tokens['hr-1']}`);
-    expect(res.status).toBe(403);
   });
 
   it('3. rejects MEMBER task creation with 403', async () => {

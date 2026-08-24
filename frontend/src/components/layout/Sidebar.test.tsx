@@ -1,17 +1,17 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
 
-let mockPathname = '/hr';
+let mockPathname = '/admin/people';
 vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
 }));
 
-let mockRole = 'HR';
+let mockRole = 'SUPER_ADMIN';
 vi.mock('../../lib/auth-context', () => ({
   useAuth: () => ({
-    user: { id: 'hr-1', name: 'Priya Shah', avatarUrl: undefined, status: 'ONLINE', title: 'HR Lead', room: null, subroom: null, email: 'priya@workgrid.corp' },
+    user: { id: 'super-1', name: 'Priya Shah', avatarUrl: undefined, status: 'ONLINE', title: 'Global Operations Director', room: null, subroom: null, email: 'priya@workgrid.corp' },
     role: mockRole,
   }),
 }));
@@ -31,9 +31,9 @@ vi.mock('../../lib/api-client', () => ({
   },
 }));
 
-describe('Sidebar — consolidated People Management nav entry', () => {
+describe('Sidebar — People Management is SUPER_ADMIN-only, at /admin/people', () => {
   it('shows a single "People Management" entry, not two separate People Directory / Role Audit Trail items', () => {
-    mockPathname = '/hr';
+    mockPathname = '/admin/people';
     render(<Sidebar />);
 
     expect(screen.getByText('People Management')).toBeInTheDocument();
@@ -41,24 +41,24 @@ describe('Sidebar — consolidated People Management nav entry', () => {
     expect(screen.queryByText('Role Audit Trail')).not.toBeInTheDocument();
   });
 
-  it('stays active while on the /hr/audit child route, not just the exact /hr path', () => {
-    mockPathname = '/hr/audit';
+  it('stays active while on the /admin/people/audit child route, not just the exact /admin/people path', () => {
+    mockPathname = '/admin/people/audit';
     render(<Sidebar />);
 
     const link = screen.getByText('People Management').closest('a');
     expect(link).toHaveClass('text-primary');
   });
 
-  it('is active on the exact /hr path too', () => {
-    mockPathname = '/hr';
+  it('is active on the exact /admin/people path too', () => {
+    mockPathname = '/admin/people';
     render(<Sidebar />);
 
     const link = screen.getByText('People Management').closest('a');
     expect(link).toHaveClass('text-primary');
   });
 
-  it('does not falsely activate on an unrelated route that merely shares the /hr prefix textually', () => {
-    mockPathname = '/hro-something-unrelated';
+  it('does not falsely activate on an unrelated route that merely shares the /admin/people prefix textually', () => {
+    mockPathname = '/admin/people-something-unrelated';
     render(<Sidebar />);
 
     const link = screen.getByText('People Management').closest('a');
@@ -66,17 +66,26 @@ describe('Sidebar — consolidated People Management nav entry', () => {
   });
 });
 
-describe('Sidebar — Global Overview / Operations Grid consolidation (Room Overview & Reports & Analytics removed)', () => {
+describe('Sidebar — HR role removed entirely', () => {
+  it('People Management is not visible to any non-SUPER_ADMIN role', () => {
+    for (const role of ['ADMIN', 'SERVER', 'TEAM_LEAD', 'MEMBER']) {
+      mockRole = role;
+      mockPathname = '/admin/people';
+      const { unmount } = render(<Sidebar />);
+      expect(screen.queryByText('People Management')).not.toBeInTheDocument();
+      unmount();
+    }
+    mockRole = 'SUPER_ADMIN';
+  });
+});
+
+describe('Sidebar — Global Overview / Operations Grid consolidation (Room Overview, Reports & Analytics, and Teams & Directory removed)', () => {
   beforeEach(() => {
     mockRole = 'SUPER_ADMIN';
     mockPathname = '/super-admin';
   });
 
-  afterEach(() => {
-    mockRole = 'HR';
-  });
-
-  it('shows exactly the consolidated 9-item navigation for SUPER_ADMIN', () => {
+  it('shows exactly the consolidated 8-item navigation for SUPER_ADMIN', () => {
     render(<Sidebar />);
 
     for (const label of [
@@ -84,7 +93,6 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
       'Announcements',
       'People Management',
       'Task Management',
-      'Teams & Directory',
       'Operations Grid',
       'People Availability',
       'Weekly Availability',
@@ -94,11 +102,12 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
     }
   });
 
-  it('no longer shows Room Overview or Reports & Analytics', () => {
+  it('no longer shows Room Overview, Reports & Analytics, or Teams & Directory', () => {
     render(<Sidebar />);
 
     expect(screen.queryByText('Room Overview')).not.toBeInTheDocument();
     expect(screen.queryByText('Reports & Analytics')).not.toBeInTheDocument();
+    expect(screen.queryByText('Teams & Directory')).not.toBeInTheDocument();
   });
 
   it('Global Overview is the only active item on /super-admin', () => {
@@ -114,5 +123,16 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
 
     expect(screen.getByText('Operations Grid').closest('a')).toHaveClass('text-primary');
     expect(screen.getByText('Global Overview').closest('a')).not.toHaveClass('text-primary');
+  });
+});
+
+describe('Sidebar — event-oriented product identity', () => {
+  it('shows the "Event Operations & Tracking" tagline, not the old office tagline', () => {
+    mockRole = 'SUPER_ADMIN';
+    mockPathname = '/super-admin';
+    render(<Sidebar />);
+
+    expect(screen.getByText('Event Operations & Tracking')).toBeInTheDocument();
+    expect(screen.queryByText('Office Task Tracker')).not.toBeInTheDocument();
   });
 });

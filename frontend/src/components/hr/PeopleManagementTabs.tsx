@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const TABS: Array<{ label: string; href: string }> = [
-  { label: 'People Directory', href: '/hr' },
-  { label: 'Role Audit', href: '/hr/audit' },
+  { label: 'People Directory', href: '/admin/people' },
+  { label: 'Role Audit', href: '/admin/people/audit' },
 ];
 
 /**

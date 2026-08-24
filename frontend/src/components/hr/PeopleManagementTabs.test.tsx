@@ -3,14 +3,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PeopleManagementTabs } from './PeopleManagementTabs';
 
-let mockPathname = '/hr';
+let mockPathname = '/admin/people';
 vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
 }));
 
 describe('PeopleManagementTabs — People Directory / Role Audit grouped as one feature', () => {
-  it('marks "People Directory" active on /hr', () => {
-    mockPathname = '/hr';
+  it('marks "People Directory" active on /admin/people', () => {
+    mockPathname = '/admin/people';
     render(<PeopleManagementTabs />);
 
     const directoryTab = screen.getByRole('link', { name: 'People Directory' });
@@ -20,8 +20,8 @@ describe('PeopleManagementTabs — People Directory / Role Audit grouped as one 
     expect(auditTab).not.toHaveClass('text-primary');
   });
 
-  it('marks "Role Audit" active on /hr/audit', () => {
-    mockPathname = '/hr/audit';
+  it('marks "Role Audit" active on /admin/people/audit', () => {
+    mockPathname = '/admin/people/audit';
     render(<PeopleManagementTabs />);
 
     const directoryTab = screen.getByRole('link', { name: 'People Directory' });
@@ -32,10 +32,10 @@ describe('PeopleManagementTabs — People Directory / Role Audit grouped as one 
   });
 
   it('both tabs link to their canonical, unbroken routes', () => {
-    mockPathname = '/hr';
+    mockPathname = '/admin/people';
     render(<PeopleManagementTabs />);
 
-    expect(screen.getByRole('link', { name: 'People Directory' })).toHaveAttribute('href', '/hr');
-    expect(screen.getByRole('link', { name: 'Role Audit' })).toHaveAttribute('href', '/hr/audit');
+    expect(screen.getByRole('link', { name: 'People Directory' })).toHaveAttribute('href', '/admin/people');
+    expect(screen.getByRole('link', { name: 'Role Audit' })).toHaveAttribute('href', '/admin/people/audit');
   });
 });

@@ -13,8 +13,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'WorkGrid — Hierarchical Office Task Tracker',
-  description: 'Scalable multi-tenant office task tracker for 2,000+ members',
+  title: 'WorkGrid — Event Operations & Tracking System',
+  description: 'Event operations, personnel, and live section tracking for large-scale events',
 };
 
 export default function RootLayout({

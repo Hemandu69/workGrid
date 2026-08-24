@@ -13,7 +13,7 @@ export interface AttendanceSession {
 export interface AttendanceMeResponse {
   state: AttendanceState;
   presenceState: 'IN' | 'OUT' | 'UNKNOWN';
-  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE' | 'MEAL';
+  availabilityState: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
   availabilityLabel: string;
   currentSession: {
     id: string;

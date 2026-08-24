@@ -21,9 +21,9 @@ function sendError(reply: FastifyReply, err: unknown, fallbackMessage: string) {
   return reply.status(statusCode).send({ statusCode, error, message });
 }
 
-// Roles authorized to interact with the task domain at all. HR is
-// deliberately excluded — HR remains a people-management role and must not
-// gain operational task visibility through this route.
+// Roles authorized to interact with the task domain at all — every
+// operational role. People-management (SUPER_ADMIN's People Management area)
+// is a separate concern and has no bearing on task visibility here.
 const TASK_DOMAIN_ROLES = [
   UserRole.SUPER_ADMIN,
   UserRole.ADMIN,

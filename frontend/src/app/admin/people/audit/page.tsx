@@ -1,16 +1,16 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { AppShell } from '../../../components/layout/AppShell';
-import { RoleAuditLog } from '../../../types/auth';
-import { apiClient } from '../../../lib/api-client';
-import { useHREvents, HREvent } from '../../../lib/useHREvents';
-import { Avatar } from '../../../components/ui/Avatar';
-import { Badge } from '../../../components/ui/Badge';
-import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
-import { PeopleManagementTabs } from '../../../components/hr/PeopleManagementTabs';
+import { AppShell } from '../../../../components/layout/AppShell';
+import { RoleAuditLog } from '../../../../types/auth';
+import { apiClient } from '../../../../lib/api-client';
+import { useHREvents, HREvent } from '../../../../lib/useHREvents';
+import { Avatar } from '../../../../components/ui/Avatar';
+import { Badge } from '../../../../components/ui/Badge';
+import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../../components/ui/Table';
+import { PeopleManagementTabs } from '../../../../components/hr/PeopleManagementTabs';
 
-export default function HRAuditPage() {
+export default function PeopleManagementAuditPage() {
   const [search, setSearch] = useState('');
   const [logs, setLogs] = useState<RoleAuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,7 +71,8 @@ export default function HRAuditPage() {
     <AppShell
       breadcrumbs={[
         { label: 'WorkGrid', href: '/' },
-        { label: 'People Management', href: '/hr' },
+        { label: 'Admin Operations', href: '/admin' },
+        { label: 'People Management', href: '/admin/people' },
         { label: 'Role Audit' },
       ]}
     >
@@ -88,7 +89,7 @@ export default function HRAuditPage() {
               <Badge role="Compliance & Security" variant="role" />
             </div>
             <p className="text-xs text-on-surface-variant mt-1">
-              Complete chronological audit history of all employee role promotions, demotions, and assignments.
+              Complete chronological audit history of all personnel role promotions, demotions, and assignments.
             </p>
           </div>
         </div>
@@ -101,7 +102,7 @@ export default function HRAuditPage() {
             </span>
             <input
               type="text"
-              placeholder="Search audit trail by employee, actor, or reason..."
+              placeholder="Search audit trail by personnel, actor, or reason..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 bg-surface-container-low border border-surface-outline rounded text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
@@ -118,7 +119,7 @@ export default function HRAuditPage() {
           <TableHeader>
             <TableRow isHeader>
               <TableHead>Timestamp</TableHead>
-              <TableHead>Target Employee</TableHead>
+              <TableHead>Target Personnel</TableHead>
               <TableHead>Role Transition</TableHead>
               <TableHead>Authorized By</TableHead>
               <TableHead>Reason / Notes</TableHead>

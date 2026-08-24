@@ -116,16 +116,6 @@ export class HRService {
   ) {
     const initialRole = input.initialRole || UserRole.MEMBER;
 
-    // HR Role Assignment Allowlist Check for Provisioning
-    if (actor.role === UserRole.HR) {
-      const allowedRoles: UserRole[] = [UserRole.MEMBER, UserRole.TEAM_LEAD, UserRole.SERVER];
-      if (!allowedRoles.includes(initialRole)) {
-        const error = new Error(`HR users cannot provision accounts with privileged role ${initialRole}.`);
-        (error as any).statusCode = 403;
-        throw error;
-      }
-    }
-
     const existingUser = await prisma.user.findUnique({
       where: { email: input.email.toLowerCase() },
     });
@@ -229,29 +219,7 @@ export class HRService {
     }
 
     // 3. Role Authority Rules & Allowlist Enforcement
-    if (actor.role === UserRole.HR) {
-      const hrAllowedRoles: UserRole[] = [UserRole.MEMBER, UserRole.TEAM_LEAD, UserRole.SERVER];
-      if (!hrAllowedRoles.includes(newRole)) {
-        const error = new Error(
-          `HR users are not authorized to assign role ${newRole}. Allowed roles: ${hrAllowedRoles.join(', ')}.`
-        );
-        (error as any).statusCode = 403;
-        throw error;
-      }
-
-      // HR cannot alter roles of existing SUPER_ADMIN, ADMIN, or HR
-      if (
-        targetUser.role === UserRole.SUPER_ADMIN ||
-        targetUser.role === UserRole.ADMIN ||
-        targetUser.role === UserRole.HR
-      ) {
-        const error = new Error(
-          `HR users cannot modify roles of privileged accounts (${targetUser.role}).`
-        );
-        (error as any).statusCode = 403;
-        throw error;
-      }
-    } else if (actor.role === UserRole.SUPER_ADMIN) {
+    if (actor.role === UserRole.SUPER_ADMIN) {
       // Last Super Admin Safeguard
       if (targetUser.role === UserRole.SUPER_ADMIN && newRole !== UserRole.SUPER_ADMIN) {
         const superAdminCount = await prisma.user.count({
@@ -333,7 +301,7 @@ export class HRService {
         targetUserEmail: result.user.email,
         changedById: result.audit.changedById,
         changedByName: actor.name,
-        changedByRole: actor.role || 'HR',
+        changedByRole: actor.role || 'SUPER_ADMIN',
         previousRole: result.audit.previousRole,
         newRole: result.audit.newRole,
         reason: result.audit.reason,
