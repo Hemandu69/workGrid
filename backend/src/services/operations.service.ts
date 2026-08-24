@@ -193,16 +193,16 @@ export class OperationsService {
     const eventWhere: any = {};
     if (filters.organizationId) eventWhere.organizationId = filters.organizationId;
 
-    const availableOrgEvents =
+    const allOrgEvents =
       typeof prisma.organizationEvent?.findMany === 'function'
         ? await prisma.organizationEvent.findMany({
             where: eventWhere,
-            orderBy: { scheduledAt: 'desc' },
-            take: 50,
+            orderBy: { scheduledAt: 'asc' },
+            take: 100,
           })
         : [];
 
-    const availableEvents: AvailableEventSummary[] = availableOrgEvents.map((e) => ({
+    const mappedEvents: AvailableEventSummary[] = allOrgEvents.map((e) => ({
       id: e.id,
       title: e.title,
       dateIST: formatToISTDate(e.scheduledAt),
@@ -211,13 +211,18 @@ export class OperationsService {
       status: deriveEventStatus(e.scheduledAt, e.scheduledEndAt, e.completedAt, e.status, now),
     }));
 
+    // Operations Grid selector must ONLY contain LIVE / ongoing or UPCOMING events (never COMPLETED or CANCELLED)
+    const availableEvents: AvailableEventSummary[] = mappedEvents.filter(
+      (e) => e.status !== 'COMPLETED' && e.status !== 'CANCELLED'
+    );
+
     // 2. Resolve selected event context if eventId is provided (explicitly, never silently defaulted)
     let selectedEvent: SelectedEventContext | null = null;
     const responseMap = new Map<string, 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING'>();
 
     if (filters.eventId) {
       const targetEvent =
-        availableOrgEvents.find((e) => e.id === filters.eventId) ||
+        allOrgEvents.find((e) => e.id === filters.eventId) ||
         (typeof prisma.organizationEvent?.findUnique === 'function'
           ? await prisma.organizationEvent.findUnique({
               where: { id: filters.eventId },
@@ -230,48 +235,53 @@ export class OperationsService {
         throw error;
       }
 
-      const responses =
-        typeof prisma.organizationEventResponse?.findMany === 'function'
-          ? await prisma.organizationEventResponse.findMany({
-              where: { eventId: targetEvent.id },
-              select: { userId: true, response: true },
-            })
-          : [];
+      const eventStatus = deriveEventStatus(
+        targetEvent.scheduledAt,
+        targetEvent.scheduledEndAt,
+        targetEvent.completedAt,
+        targetEvent.status,
+        now
+      );
 
-      for (const r of responses) {
-        responseMap.set(r.userId, r.response as 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING');
+      // If the event is COMPLETED or CANCELLED, it is no longer an active operational event
+      if (eventStatus !== 'COMPLETED' && eventStatus !== 'CANCELLED') {
+        const responses =
+          typeof prisma.organizationEventResponse?.findMany === 'function'
+            ? await prisma.organizationEventResponse.findMany({
+                where: { eventId: targetEvent.id },
+                select: { userId: true, response: true },
+              })
+            : [];
+
+        for (const r of responses) {
+          responseMap.set(r.userId, r.response as 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING');
+        }
+
+        const attendingCount = responses.filter((r) => r.response === 'ATTENDING').length;
+        const maybeCount = responses.filter((r) => r.response === 'MAYBE').length;
+        const notAttendingCount = responses.filter((r) => r.response === 'NOT_ATTENDING').length;
+
+        const userCountWhere: any = { accountStatus: 'ACTIVE' };
+        if (filters.organizationId) userCountWhere.organizationId = filters.organizationId;
+        const eligibleCount =
+          typeof prisma.user?.count === 'function' ? await prisma.user.count({ where: userCountWhere }) : 0;
+        const noResponseCount = Math.max(0, eligibleCount - responses.length);
+
+        selectedEvent = {
+          id: targetEvent.id,
+          title: targetEvent.title,
+          description: targetEvent.description || undefined,
+          dateIST: formatToISTDate(targetEvent.scheduledAt),
+          timeIST: formatToISTTime(targetEvent.scheduledAt),
+          endTimeIST: formatToISTTime(targetEvent.scheduledEndAt),
+          status: eventStatus,
+          totalEligible: eligibleCount,
+          attendingCount,
+          maybeCount,
+          notAttendingCount,
+          noResponseCount,
+        };
       }
-
-      const attendingCount = responses.filter((r) => r.response === 'ATTENDING').length;
-      const maybeCount = responses.filter((r) => r.response === 'MAYBE').length;
-      const notAttendingCount = responses.filter((r) => r.response === 'NOT_ATTENDING').length;
-
-      const userCountWhere: any = { accountStatus: 'ACTIVE' };
-      if (filters.organizationId) userCountWhere.organizationId = filters.organizationId;
-      const eligibleCount =
-        typeof prisma.user?.count === 'function' ? await prisma.user.count({ where: userCountWhere }) : 0;
-      const noResponseCount = Math.max(0, eligibleCount - responses.length);
-
-      selectedEvent = {
-        id: targetEvent.id,
-        title: targetEvent.title,
-        description: targetEvent.description || undefined,
-        dateIST: formatToISTDate(targetEvent.scheduledAt),
-        timeIST: formatToISTTime(targetEvent.scheduledAt),
-        endTimeIST: formatToISTTime(targetEvent.scheduledEndAt),
-        status: deriveEventStatus(
-          targetEvent.scheduledAt,
-          targetEvent.scheduledEndAt,
-          targetEvent.completedAt,
-          targetEvent.status,
-          now
-        ),
-        totalEligible: eligibleCount,
-        attendingCount,
-        maybeCount,
-        notAttendingCount,
-        noResponseCount,
-      };
     }
 
     const roomWhere: any = {};

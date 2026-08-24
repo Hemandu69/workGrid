@@ -238,37 +238,83 @@ const { mockPrisma } = vi.hoisted(() => ({
       count: vi.fn().mockResolvedValue(20),
     },
     organizationEvent: {
-      findMany: vi.fn().mockResolvedValue([
-        {
-          id: 'event-a-id',
-          organizationId: 'org-1',
-          title: 'Annual Technology Conference',
-          description: 'Company-wide technical presentations and workshops',
-          scheduledAt: new Date('2026-09-15T04:30:00.000Z'),
-          scheduledEndAt: new Date('2026-09-15T12:30:00.000Z'),
-          completedAt: null,
-          status: 'UPCOMING',
-        },
-        {
-          id: 'event-b-id',
-          organizationId: 'org-1',
-          title: 'Developer Summit',
-          description: 'Developer focus group and hackathon',
-          scheduledAt: new Date('2026-09-22T04:30:00.000Z'),
-          scheduledEndAt: new Date('2026-09-22T12:30:00.000Z'),
-          completedAt: null,
-          status: 'UPCOMING',
-        },
-      ]),
+      findMany: vi.fn().mockImplementation(() => {
+        const now = Date.now();
+        return Promise.resolve([
+          {
+            id: 'event-live-id',
+            organizationId: 'org-1',
+            title: 'Live Workshop',
+            description: 'Ongoing technical workshop',
+            scheduledAt: new Date(now - 30 * 60 * 1000),
+            scheduledEndAt: new Date(now + 60 * 60 * 1000),
+            completedAt: null,
+            status: 'UPCOMING',
+          },
+          {
+            id: 'event-a-id',
+            organizationId: 'org-1',
+            title: 'Annual Technology Conference',
+            description: 'Company-wide technical presentations and workshops',
+            scheduledAt: new Date(now + 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now + 30 * 60 * 60 * 1000),
+            completedAt: null,
+            status: 'UPCOMING',
+          },
+          {
+            id: 'event-b-id',
+            organizationId: 'org-1',
+            title: 'Developer Summit',
+            description: 'Developer focus group and hackathon',
+            scheduledAt: new Date(now + 7 * 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now + 8 * 24 * 60 * 60 * 1000),
+            completedAt: null,
+            status: 'UPCOMING',
+          },
+          {
+            id: 'event-completed-id',
+            organizationId: 'org-1',
+            title: 'Past Product Launch',
+            description: 'Completed launch event',
+            scheduledAt: new Date(now - 7 * 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now - 6 * 24 * 60 * 60 * 1000),
+            completedAt: new Date(now - 6 * 24 * 60 * 60 * 1000),
+            status: 'UPCOMING',
+          },
+          {
+            id: 'event-cancelled-id',
+            organizationId: 'org-1',
+            title: 'Cancelled Offsite',
+            description: 'Cancelled executive offsite',
+            scheduledAt: new Date(now + 14 * 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now + 15 * 24 * 60 * 60 * 1000),
+            completedAt: null,
+            status: 'CANCELLED',
+          },
+        ]);
+      }),
       findUnique: vi.fn().mockImplementation(({ where }) => {
+        const now = Date.now();
+        if (where.id === 'event-live-id') {
+          return Promise.resolve({
+            id: 'event-live-id',
+            organizationId: 'org-1',
+            title: 'Live Workshop',
+            description: 'Ongoing technical workshop',
+            scheduledAt: new Date(now - 30 * 60 * 1000),
+            scheduledEndAt: new Date(now + 60 * 60 * 1000),
+            completedAt: null,
+            status: 'UPCOMING',
+          });
+        }
         if (where.id === 'event-a-id') {
           return Promise.resolve({
             id: 'event-a-id',
             organizationId: 'org-1',
             title: 'Annual Technology Conference',
             description: 'Company-wide technical presentations and workshops',
-            scheduledAt: new Date('2026-09-15T04:30:00.000Z'),
-            scheduledEndAt: new Date('2026-09-15T12:30:00.000Z'),
+            scheduledAt: new Date(now + 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now + 30 * 60 * 60 * 1000),
             completedAt: null,
             status: 'UPCOMING',
           });
@@ -279,10 +325,34 @@ const { mockPrisma } = vi.hoisted(() => ({
             organizationId: 'org-1',
             title: 'Developer Summit',
             description: 'Developer focus group and hackathon',
-            scheduledAt: new Date('2026-09-22T04:30:00.000Z'),
-            scheduledEndAt: new Date('2026-09-22T12:30:00.000Z'),
+            scheduledAt: new Date(now + 7 * 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now + 8 * 24 * 60 * 60 * 1000),
             completedAt: null,
             status: 'UPCOMING',
+          });
+        }
+        if (where.id === 'event-completed-id') {
+          return Promise.resolve({
+            id: 'event-completed-id',
+            organizationId: 'org-1',
+            title: 'Past Product Launch',
+            description: 'Completed launch event',
+            scheduledAt: new Date(now - 7 * 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now - 6 * 24 * 60 * 60 * 1000),
+            completedAt: new Date(now - 6 * 24 * 60 * 60 * 1000),
+            status: 'UPCOMING',
+          });
+        }
+        if (where.id === 'event-cancelled-id') {
+          return Promise.resolve({
+            id: 'event-cancelled-id',
+            organizationId: 'org-1',
+            title: 'Cancelled Offsite',
+            description: 'Cancelled executive offsite',
+            scheduledAt: new Date(now + 14 * 24 * 60 * 60 * 1000),
+            scheduledEndAt: new Date(now + 15 * 24 * 60 * 60 * 1000),
+            completedAt: null,
+            status: 'CANCELLED',
           });
         }
         return Promise.resolve(null);
@@ -290,6 +360,11 @@ const { mockPrisma } = vi.hoisted(() => ({
     },
     organizationEventResponse: {
       findMany: vi.fn().mockImplementation(({ where }) => {
+        if (where.eventId === 'event-live-id') {
+          return Promise.resolve([
+            { userId: 'member-1-id', response: 'ATTENDING' },
+          ]);
+        }
         if (where.eventId === 'event-a-id') {
           return Promise.resolve([
             { userId: 'member-1-id', response: 'ATTENDING' },
@@ -497,7 +572,7 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
   });
 
   describe('Event-Aware Operations Grid', () => {
-    it('GET /grid without eventId returns availableEvents and selectedEvent: null (no silent defaulting)', async () => {
+    it('GET /grid without eventId returns availableEvents containing ONLY LIVE and UPCOMING events (excludes COMPLETED & CANCELLED)', async () => {
       const res = await supertest(app.server)
         .get('/api/v1/operations/grid')
         .set('Authorization', `Bearer ${adminToken}`);
@@ -505,9 +580,33 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
       expect(res.status).toBe(200);
       expect(res.body.selectedEvent).toBeNull();
       expect(Array.isArray(res.body.availableEvents)).toBe(true);
-      expect(res.body.availableEvents.length).toBeGreaterThan(0);
-      expect(res.body.availableEvents[0]).toHaveProperty('id');
-      expect(res.body.availableEvents[0]).toHaveProperty('title');
+
+      const eventIds = res.body.availableEvents.map((e: any) => e.id);
+      expect(eventIds).toContain('event-live-id');
+      expect(eventIds).toContain('event-a-id');
+      expect(eventIds).toContain('event-b-id');
+
+      // Crucial: Exclude completed and cancelled events from Operations Grid selector
+      expect(eventIds).not.toContain('event-completed-id');
+      expect(eventIds).not.toContain('event-cancelled-id');
+
+      // Verify statuses
+      const liveEvt = res.body.availableEvents.find((e: any) => e.id === 'event-live-id');
+      expect(liveEvt.status).toBe('LIVE');
+      const upcomingEvt = res.body.availableEvents.find((e: any) => e.id === 'event-a-id');
+      expect(upcomingEvt.status).toBe('UPCOMING');
+    });
+
+    it('GET /grid with eventId=event-live-id returns LIVE event context', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid?eventId=event-live-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.selectedEvent).not.toBeNull();
+      expect(res.body.selectedEvent.id).toBe('event-live-id');
+      expect(res.body.selectedEvent.status).toBe('LIVE');
+      expect(res.body.selectedEvent.attendingCount).toBe(1);
     });
 
     it('GET /grid with eventId=event-a-id returns Event A context and Sarah Connor as ATTENDING', async () => {
@@ -519,6 +618,7 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
       expect(res.body.selectedEvent).not.toBeNull();
       expect(res.body.selectedEvent.id).toBe('event-a-id');
       expect(res.body.selectedEvent.title).toBe('Annual Technology Conference');
+      expect(res.body.selectedEvent.status).toBe('UPCOMING');
       expect(res.body.selectedEvent.attendingCount).toBe(2);
       expect(res.body.selectedEvent.maybeCount).toBe(0);
       expect(res.body.selectedEvent.notAttendingCount).toBe(0);
@@ -544,6 +644,7 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
       expect(res.body.selectedEvent).not.toBeNull();
       expect(res.body.selectedEvent.id).toBe('event-b-id');
       expect(res.body.selectedEvent.title).toBe('Developer Summit');
+      expect(res.body.selectedEvent.status).toBe('UPCOMING');
       expect(res.body.selectedEvent.attendingCount).toBe(0);
       expect(res.body.selectedEvent.maybeCount).toBe(1);
       expect(res.body.selectedEvent.notAttendingCount).toBe(1);
@@ -559,6 +660,24 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
       const david = sectionB.assignedServers.find((s: any) => s.name === 'David Chen');
       expect(david).toBeDefined();
       expect(david.eventResponse).toBe('NOT_ATTENDING');
+    });
+
+    it('GET /grid with a COMPLETED eventId returns selectedEvent: null (safely deactivates non-operational selection)', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid?eventId=event-completed-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.selectedEvent).toBeNull();
+    });
+
+    it('GET /grid with a CANCELLED eventId returns selectedEvent: null (safely deactivates non-operational selection)', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid?eventId=event-cancelled-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.selectedEvent).toBeNull();
     });
 
     it('GET /grid with non-existent eventId returns 404', async () => {

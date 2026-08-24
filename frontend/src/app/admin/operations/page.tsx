@@ -78,10 +78,17 @@ export default function AdminOperationsPage() {
         .then((res) => {
           if (seq !== fetchSeq.current) return;
           setGridData(res);
+          // If the previously selected event is no longer operational (COMPLETED/CANCELLED), clear selection safely
+          if (targetEventId && !res.selectedEvent) {
+            setSelectedEventId(null);
+          }
           setIsLoading(false);
         })
         .catch(() => {
           if (seq !== fetchSeq.current) return;
+          if (targetEventId) {
+            setSelectedEventId(null);
+          }
           setIsLoading(false);
         });
     },
@@ -215,7 +222,11 @@ export default function AdminOperationsPage() {
                   Operating Event Context
                 </span>
                 <span className="text-xs text-on-surface font-medium">
-                  {selectedEvent ? selectedEvent.title : 'No event selected (Showing physical matrix)'}
+                  {selectedEvent
+                    ? selectedEvent.title
+                    : availableEvents.length > 0
+                    ? 'No event selected (Showing physical matrix)'
+                    : 'No active or upcoming events'}
                 </span>
               </div>
             </div>
@@ -224,19 +235,29 @@ export default function AdminOperationsPage() {
               <label htmlFor="event-selector" className="text-xs font-medium text-on-surface-variant">
                 Select Event:
               </label>
-              <select
-                id="event-selector"
-                value={selectedEventId || ''}
-                onChange={(e) => handleEventChange(e.target.value)}
-                className="text-xs bg-surface border border-surface-outline rounded px-3 py-1.5 font-medium text-on-surface focus:outline-none focus:ring-1 focus:ring-primary min-w-[200px]"
-              >
-                <option value="">— Select an Event —</option>
-                {availableEvents.map((evt) => (
-                  <option key={evt.id} value={evt.id}>
-                    {evt.title} ({evt.dateIST} • {evt.status})
-                  </option>
-                ))}
-              </select>
+              {availableEvents.length > 0 ? (
+                <select
+                  id="event-selector"
+                  value={selectedEventId || ''}
+                  onChange={(e) => handleEventChange(e.target.value)}
+                  className="text-xs bg-surface border border-surface-outline rounded px-3 py-1.5 font-medium text-on-surface focus:outline-none focus:ring-1 focus:ring-primary min-w-[220px]"
+                >
+                  <option value="">— Select an Event —</option>
+                  {availableEvents.map((evt) => (
+                    <option key={evt.id} value={evt.id}>
+                      {evt.title} ({evt.dateIST} • {evt.status})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  id="event-selector"
+                  disabled
+                  className="text-xs bg-surface-container-low border border-surface-outline rounded px-3 py-1.5 font-medium text-on-surface-variant focus:outline-none min-w-[220px] cursor-not-allowed"
+                >
+                  <option value="">No active or upcoming events</option>
+                </select>
+              )}
               {selectedEventId && (
                 <button
                   onClick={() => handleEventChange('')}
@@ -249,7 +270,7 @@ export default function AdminOperationsPage() {
           </div>
 
           {/* Selected Event Details Banner */}
-          {selectedEvent && (
+          {selectedEvent ? (
             <div className="pt-2 border-t border-surface-outline/60 flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2">
                 <span
@@ -276,6 +297,16 @@ export default function AdminOperationsPage() {
                   {selectedEvent.description}
                 </p>
               )}
+            </div>
+          ) : availableEvents.length === 0 ? (
+            <div className="pt-2 border-t border-surface-outline/60 text-xs text-on-surface-variant flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-on-surface-variant">info</span>
+              <span>No active or upcoming events. Create or schedule an event to begin operational monitoring.</span>
+            </div>
+          ) : (
+            <div className="pt-2 border-t border-surface-outline/60 text-xs text-on-surface-variant flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-primary">touch_app</span>
+              <span>Select an active or upcoming event from the dropdown above to view event-specific attendance and operational data.</span>
             </div>
           )}
         </div>
