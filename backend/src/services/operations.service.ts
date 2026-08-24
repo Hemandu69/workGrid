@@ -13,6 +13,7 @@ import {
 } from '../utils/availability-projection.js';
 import { AvailabilityService } from './availability.service.js';
 import { publishDomainEvent } from '../events/domain-events.js';
+import { deriveEventStatus } from './org-event.service.js';
 
 export type SupervisionState =
   | 'PRESENT_IN_EVENT'
@@ -41,6 +42,8 @@ export interface GridMemberItem {
   lastSeenIST: string;
   activeTaskId?: string;
   activeTaskTitle?: string;
+  /** Event-specific attendance response when an event context is active. */
+  eventResponse?: 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'NO_RESPONSE';
 }
 
 export interface GridServerItem {
@@ -57,6 +60,8 @@ export interface GridServerItem {
   supervisoryPosition?: SupervisoryPosition;
   arrivedAtIST?: string;
   lastSeenIST: string;
+  /** Event-specific attendance response when an event context is active. */
+  eventResponse?: 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'NO_RESPONSE';
 }
 
 export interface GridSubroomCell {
@@ -91,6 +96,7 @@ export interface GridRoomColumn {
     currentLocation: string;
     preferredPosition?: SupervisoryPosition;
     assignedPosition?: SupervisoryPosition;
+    eventResponse?: 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING' | 'NO_RESPONSE';
   }>;
   serverPresenceCount: number;
   serverTotalCount: number;
@@ -98,8 +104,34 @@ export interface GridRoomColumn {
   subrooms: GridSubroomCell[];
 }
 
+export interface SelectedEventContext {
+  id: string;
+  title: string;
+  description?: string;
+  dateIST: string;
+  timeIST: string;
+  endTimeIST: string;
+  status: string;
+  totalEligible: number;
+  attendingCount: number;
+  maybeCount: number;
+  notAttendingCount: number;
+  noResponseCount: number;
+}
+
+export interface AvailableEventSummary {
+  id: string;
+  title: string;
+  dateIST: string;
+  timeIST: string;
+  endTimeIST: string;
+  status: string;
+}
+
 export interface OperationalGridResponse {
   currentTimeIST: string;
+  selectedEvent: SelectedEventContext | null;
+  availableEvents: AvailableEventSummary[];
   activeCompanyEvent?: {
     id: string;
     title: string;
@@ -153,8 +185,94 @@ export class OperationsService {
     room?: string;
     organizationId?: string;
     search?: string;
+    eventId?: string;
   }): Promise<OperationalGridResponse> {
     const now = new Date();
+
+    // 1. Fetch available Organization Events for the event selector dropdown
+    const eventWhere: any = {};
+    if (filters.organizationId) eventWhere.organizationId = filters.organizationId;
+
+    const availableOrgEvents =
+      typeof prisma.organizationEvent?.findMany === 'function'
+        ? await prisma.organizationEvent.findMany({
+            where: eventWhere,
+            orderBy: { scheduledAt: 'desc' },
+            take: 50,
+          })
+        : [];
+
+    const availableEvents: AvailableEventSummary[] = availableOrgEvents.map((e) => ({
+      id: e.id,
+      title: e.title,
+      dateIST: formatToISTDate(e.scheduledAt),
+      timeIST: formatToISTTime(e.scheduledAt),
+      endTimeIST: formatToISTTime(e.scheduledEndAt),
+      status: deriveEventStatus(e.scheduledAt, e.scheduledEndAt, e.completedAt, e.status, now),
+    }));
+
+    // 2. Resolve selected event context if eventId is provided (explicitly, never silently defaulted)
+    let selectedEvent: SelectedEventContext | null = null;
+    const responseMap = new Map<string, 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING'>();
+
+    if (filters.eventId) {
+      const targetEvent =
+        availableOrgEvents.find((e) => e.id === filters.eventId) ||
+        (typeof prisma.organizationEvent?.findUnique === 'function'
+          ? await prisma.organizationEvent.findUnique({
+              where: { id: filters.eventId },
+            })
+          : null);
+
+      if (!targetEvent || (filters.organizationId && targetEvent.organizationId !== filters.organizationId)) {
+        const error = new Error(`Event with ID ${filters.eventId} not found`);
+        (error as any).statusCode = 404;
+        throw error;
+      }
+
+      const responses =
+        typeof prisma.organizationEventResponse?.findMany === 'function'
+          ? await prisma.organizationEventResponse.findMany({
+              where: { eventId: targetEvent.id },
+              select: { userId: true, response: true },
+            })
+          : [];
+
+      for (const r of responses) {
+        responseMap.set(r.userId, r.response as 'ATTENDING' | 'MAYBE' | 'NOT_ATTENDING');
+      }
+
+      const attendingCount = responses.filter((r) => r.response === 'ATTENDING').length;
+      const maybeCount = responses.filter((r) => r.response === 'MAYBE').length;
+      const notAttendingCount = responses.filter((r) => r.response === 'NOT_ATTENDING').length;
+
+      const userCountWhere: any = { accountStatus: 'ACTIVE' };
+      if (filters.organizationId) userCountWhere.organizationId = filters.organizationId;
+      const eligibleCount =
+        typeof prisma.user?.count === 'function' ? await prisma.user.count({ where: userCountWhere }) : 0;
+      const noResponseCount = Math.max(0, eligibleCount - responses.length);
+
+      selectedEvent = {
+        id: targetEvent.id,
+        title: targetEvent.title,
+        description: targetEvent.description || undefined,
+        dateIST: formatToISTDate(targetEvent.scheduledAt),
+        timeIST: formatToISTTime(targetEvent.scheduledAt),
+        endTimeIST: formatToISTTime(targetEvent.scheduledEndAt),
+        status: deriveEventStatus(
+          targetEvent.scheduledAt,
+          targetEvent.scheduledEndAt,
+          targetEvent.completedAt,
+          targetEvent.status,
+          now
+        ),
+        totalEligible: eligibleCount,
+        attendingCount,
+        maybeCount,
+        notAttendingCount,
+        noResponseCount,
+      };
+    }
 
     const roomWhere: any = {};
     if (filters.organizationId) roomWhere.organizationId = filters.organizationId;
@@ -234,6 +352,8 @@ export class OperationsService {
           storedState: availabilityFromUserStatus(srv.status),
           locationLabel: srv.currentLocationName,
         });
+        const serverEventResponse = filters.eventId ? responseMap.get(srv.id) || 'NO_RESPONSE' : undefined;
+
         return {
           id: srv.id,
           name: srv.name,
@@ -248,6 +368,7 @@ export class OperationsService {
           isCurrentlyInSubroom: false,
           arrivedAtIST: srv.arrivedAt ? formatToISTTime(srv.arrivedAt) : undefined,
           lastSeenIST: srv.lastSeenAt ? formatToISTTime(srv.lastSeenAt) : formatToISTTime(now),
+          eventResponse: serverEventResponse,
         };
       });
 
@@ -323,6 +444,8 @@ export class OperationsService {
             locationLabel: subroom.code,
           });
 
+          const memberEventResponse = filters.eventId ? responseMap.get(m.id) || 'NO_RESPONSE' : undefined;
+
           return {
             id: m.id,
             name: m.name,
@@ -342,6 +465,7 @@ export class OperationsService {
             lastSeenIST: m.lastSeenAt ? formatToISTTime(m.lastSeenAt) : formatToISTTime(now),
             activeTaskId: m.assignedTasks[0]?.taskIdDisplay || m.assignedTasks[0]?.id,
             activeTaskTitle: m.assignedTasks[0]?.title,
+            eventResponse: memberEventResponse,
           };
         });
 
@@ -412,6 +536,7 @@ export class OperationsService {
             preferredPosition: preferredByServerId.get(s.id),
             // Only IN servers receive an assigned supervisory position
             assignedPosition: presenceState === 'IN' ? serverPositionMap.get(s.id) : undefined,
+            eventResponse: s.eventResponse,
           };
         }),
         serverPresenceCount,
@@ -453,6 +578,8 @@ export class OperationsService {
 
     return {
       currentTimeIST: formatToISTTime(now),
+      selectedEvent,
+      availableEvents,
       activeCompanyEvent: formattedCompanyEvent,
       totalRooms: roomColumns.length,
       totalSubrooms,

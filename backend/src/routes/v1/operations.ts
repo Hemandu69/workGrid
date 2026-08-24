@@ -26,6 +26,7 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
       const query = request.query as {
         room?: string;
         search?: string;
+        eventId?: string;
       };
 
       let targetRoomFilter = query.room;
@@ -93,14 +94,17 @@ export const operationsRoutes: FastifyPluginAsync = async (fastify) => {
         const grid = await OperationsService.getOperationalGrid({
           room: targetRoomFilter,
           search: query.search,
+          organizationId: request.user.organizationId,
+          eventId: query.eventId,
         });
 
         return reply.send(grid);
       } catch (err: unknown) {
+        const statusCode = (err as any)?.statusCode || ((err as Error)?.message?.includes('not found') ? 404 : 500);
         const message = err instanceof Error ? err.message : 'Failed to fetch operational grid';
-        return reply.status(500).send({
-          statusCode: 500,
-          error: 'Internal Server Error',
+        return reply.status(statusCode).send({
+          statusCode,
+          error: statusCode === 404 ? 'Not Found' : 'Internal Server Error',
           message,
         });
       }

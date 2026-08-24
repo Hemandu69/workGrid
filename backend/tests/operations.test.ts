@@ -235,6 +235,75 @@ const { mockPrisma } = vi.hoisted(() => ({
         arrivedAt: new Date(),
         lastSeenAt: new Date(),
       }),
+      count: vi.fn().mockResolvedValue(20),
+    },
+    organizationEvent: {
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: 'event-a-id',
+          organizationId: 'org-1',
+          title: 'Annual Technology Conference',
+          description: 'Company-wide technical presentations and workshops',
+          scheduledAt: new Date('2026-09-15T04:30:00.000Z'),
+          scheduledEndAt: new Date('2026-09-15T12:30:00.000Z'),
+          completedAt: null,
+          status: 'UPCOMING',
+        },
+        {
+          id: 'event-b-id',
+          organizationId: 'org-1',
+          title: 'Developer Summit',
+          description: 'Developer focus group and hackathon',
+          scheduledAt: new Date('2026-09-22T04:30:00.000Z'),
+          scheduledEndAt: new Date('2026-09-22T12:30:00.000Z'),
+          completedAt: null,
+          status: 'UPCOMING',
+        },
+      ]),
+      findUnique: vi.fn().mockImplementation(({ where }) => {
+        if (where.id === 'event-a-id') {
+          return Promise.resolve({
+            id: 'event-a-id',
+            organizationId: 'org-1',
+            title: 'Annual Technology Conference',
+            description: 'Company-wide technical presentations and workshops',
+            scheduledAt: new Date('2026-09-15T04:30:00.000Z'),
+            scheduledEndAt: new Date('2026-09-15T12:30:00.000Z'),
+            completedAt: null,
+            status: 'UPCOMING',
+          });
+        }
+        if (where.id === 'event-b-id') {
+          return Promise.resolve({
+            id: 'event-b-id',
+            organizationId: 'org-1',
+            title: 'Developer Summit',
+            description: 'Developer focus group and hackathon',
+            scheduledAt: new Date('2026-09-22T04:30:00.000Z'),
+            scheduledEndAt: new Date('2026-09-22T12:30:00.000Z'),
+            completedAt: null,
+            status: 'UPCOMING',
+          });
+        }
+        return Promise.resolve(null);
+      }),
+    },
+    organizationEventResponse: {
+      findMany: vi.fn().mockImplementation(({ where }) => {
+        if (where.eventId === 'event-a-id') {
+          return Promise.resolve([
+            { userId: 'member-1-id', response: 'ATTENDING' },
+            { userId: 'server-1-id', response: 'ATTENDING' },
+          ]);
+        }
+        if (where.eventId === 'event-b-id') {
+          return Promise.resolve([
+            { userId: 'member-1-id', response: 'MAYBE' },
+            { userId: 'server-1-id', response: 'NOT_ATTENDING' },
+          ]);
+        }
+        return Promise.resolve([]);
+      }),
     },
   },
 }));
@@ -425,5 +494,80 @@ describe('Operational Room Grid & Server Supervision Endpoints', () => {
     expect(res.body.serverCoverage).toHaveProperty('present');
     expect(res.body.serverCoverage).toHaveProperty('inDifferentSubroom');
     expect(res.body.serverCoverage).toHaveProperty('notRequired');
+  });
+
+  describe('Event-Aware Operations Grid', () => {
+    it('GET /grid without eventId returns availableEvents and selectedEvent: null (no silent defaulting)', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.selectedEvent).toBeNull();
+      expect(Array.isArray(res.body.availableEvents)).toBe(true);
+      expect(res.body.availableEvents.length).toBeGreaterThan(0);
+      expect(res.body.availableEvents[0]).toHaveProperty('id');
+      expect(res.body.availableEvents[0]).toHaveProperty('title');
+    });
+
+    it('GET /grid with eventId=event-a-id returns Event A context and Sarah Connor as ATTENDING', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid?eventId=event-a-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.selectedEvent).not.toBeNull();
+      expect(res.body.selectedEvent.id).toBe('event-a-id');
+      expect(res.body.selectedEvent.title).toBe('Annual Technology Conference');
+      expect(res.body.selectedEvent.attendingCount).toBe(2);
+      expect(res.body.selectedEvent.maybeCount).toBe(0);
+      expect(res.body.selectedEvent.notAttendingCount).toBe(0);
+
+      // Verify member eventResponse is ATTENDING
+      const sectionB = res.body.rooms.find((r: any) => r.letter === 'B');
+      expect(sectionB).toBeDefined();
+      const subroomB3 = sectionB.subrooms.find((s: any) => s.code === 'B3');
+      expect(subroomB3).toBeDefined();
+      const sarah = subroomB3.members.find((m: any) => m.name === 'Sarah Connor');
+      expect(sarah).toBeDefined();
+      expect(sarah.eventResponse).toBe('ATTENDING');
+      // Presence remains physical (IN)
+      expect(sarah.presenceState).toBe('IN');
+    });
+
+    it('GET /grid with eventId=event-b-id returns Event B context and Sarah Connor as MAYBE (Cross-Event Isolation)', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid?eventId=event-b-id')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.selectedEvent).not.toBeNull();
+      expect(res.body.selectedEvent.id).toBe('event-b-id');
+      expect(res.body.selectedEvent.title).toBe('Developer Summit');
+      expect(res.body.selectedEvent.attendingCount).toBe(0);
+      expect(res.body.selectedEvent.maybeCount).toBe(1);
+      expect(res.body.selectedEvent.notAttendingCount).toBe(1);
+
+      // Verify member eventResponse is MAYBE for Event B
+      const sectionB = res.body.rooms.find((r: any) => r.letter === 'B');
+      const subroomB3 = sectionB.subrooms.find((s: any) => s.code === 'B3');
+      const sarah = subroomB3.members.find((m: any) => m.name === 'Sarah Connor');
+      expect(sarah).toBeDefined();
+      expect(sarah.eventResponse).toBe('MAYBE');
+
+      // Server David Chen has NOT_ATTENDING for Event B
+      const david = sectionB.assignedServers.find((s: any) => s.name === 'David Chen');
+      expect(david).toBeDefined();
+      expect(david.eventResponse).toBe('NOT_ATTENDING');
+    });
+
+    it('GET /grid with non-existent eventId returns 404', async () => {
+      const res = await supertest(app.server)
+        .get('/api/v1/operations/grid?eventId=non-existent-event')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Not Found');
+    });
   });
 });
