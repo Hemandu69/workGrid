@@ -17,7 +17,7 @@ interface AuthContextType {
   refreshUser: () => Promise<User | null>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const INITIAL_USER: User = {
   id: '',
@@ -164,7 +164,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    return {
+      user: INITIAL_USER,
+      role: null,
+      accountStatus: 'PENDING' as AccountStatus,
+      isAuthenticated: false,
+      isLoading: false,
+      error: null,
+      login: async () => INITIAL_USER,
+      logout: async () => {},
+      refreshUser: async () => null,
+    };
   }
   return context;
 }

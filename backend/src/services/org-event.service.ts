@@ -295,6 +295,10 @@ export class OrgEventService {
    * preserve the final historical record.
    */
   static async upsertResponse(eventId: string, response: EventResponseChoice, user: AuthUserPayload) {
+    if (user.role === 'SUPER_ADMIN' || user.role === 'ADMIN') {
+      throw new OrgEventForbiddenError('Organizers (SUPER_ADMIN/ADMIN) do not submit participant attendance responses.');
+    }
+
     const event = await prisma.organizationEvent.findUnique({ where: { id: eventId } });
     if (!event || event.organizationId !== user.organizationId) {
       throw new OrgEventNotFoundError();

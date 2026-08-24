@@ -154,10 +154,10 @@ export const eventRoutes: FastifyPluginAsync = async (fastify) => {
     }
   );
 
-  // PUT /api/v1/events/:id/response — every authenticated organization user
+  // PUT /api/v1/events/:id/response — participant roles only (MEMBER, SERVER, TEAM_LEAD)
   fastify.put(
     '/:id/response',
-    { preHandler: [fastify.authenticate] },
+    { preHandler: [requireRole([UserRole.MEMBER, UserRole.SERVER, UserRole.TEAM_LEAD])] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const parseResult = updateOrgEventResponseSchema.safeParse(request.body);

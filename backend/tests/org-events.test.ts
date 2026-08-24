@@ -694,6 +694,38 @@ describe('Organization Events — API, authorization, analytics & realtime event
       expect(analytics.body.attending).toBe(1);
       expect(analytics.body.maybe).toBe(1);
     });
+
+    it('SUPER_ADMIN and ADMIN are forbidden (403) from submitting event attendance responses', async () => {
+      const event = await createEvent();
+      const superAdminRes = await supertest(app.server)
+        .put(`/api/v1/events/${event.id}/response`)
+        .set('Authorization', `Bearer ${tokens['super-admin-1']}`)
+        .send({ response: 'ATTENDING' });
+      expect(superAdminRes.status).toBe(403);
+
+      const adminRes = await supertest(app.server)
+        .put(`/api/v1/events/${event.id}/response`)
+        .set('Authorization', `Bearer ${tokens['admin-1']}`)
+        .send({ response: 'ATTENDING' });
+      expect(adminRes.status).toBe(403);
+    });
+
+    it('SERVER and TEAM_LEAD participant roles can submit event attendance responses', async () => {
+      const event = await createEvent();
+      const serverRes = await supertest(app.server)
+        .put(`/api/v1/events/${event.id}/response`)
+        .set('Authorization', `Bearer ${tokens['server-1']}`)
+        .send({ response: 'ATTENDING' });
+      expect(serverRes.status).toBe(200);
+      expect(serverRes.body.response).toBe('ATTENDING');
+
+      const teamLeadRes = await supertest(app.server)
+        .put(`/api/v1/events/${event.id}/response`)
+        .set('Authorization', `Bearer ${tokens['teamlead-1']}`)
+        .send({ response: 'MAYBE' });
+      expect(teamLeadRes.status).toBe(200);
+      expect(teamLeadRes.body.response).toBe('MAYBE');
+    });
   });
 
   // ---------------------------------------------------------------------------
