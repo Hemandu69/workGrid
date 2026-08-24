@@ -14,6 +14,28 @@ import { EventDetailDrawer } from '../../../components/operations/EventDetailDra
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 
+const OPERATIONS_EVENT_STORAGE_KEY = 'workgrid:operations-grid:selected-event';
+
+function getInitialPersistedEventId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(OPERATIONS_EVENT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistEventId(eventId: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (eventId) {
+      localStorage.setItem(OPERATIONS_EVENT_STORAGE_KEY, eventId);
+    } else {
+      localStorage.removeItem(OPERATIONS_EVENT_STORAGE_KEY);
+    }
+  } catch {}
+}
+
 export default function AdminOperationsPage() {
   const { user, role } = useAuth();
   const [gridData, setGridData] = useState<OperationalGridResponse | null>(null);
@@ -29,8 +51,8 @@ export default function AdminOperationsPage() {
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [selectedEventDrawerId, setSelectedEventDrawerId] = useState<string | null>(null);
 
-  // Selected Event Context for the Operations Grid
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  // Selected Event Context for the Operations Grid (persisted in client storage across navigation)
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(getInitialPersistedEventId);
 
   // Real-Time IST Clock
   const [currentClock, setCurrentClock] = useState<string>('');
@@ -78,16 +100,27 @@ export default function AdminOperationsPage() {
         .then((res) => {
           if (seq !== fetchSeq.current) return;
           setGridData(res);
-          // If the previously selected event is no longer operational (COMPLETED/CANCELLED), clear selection safely
-          if (targetEventId && !res.selectedEvent) {
-            setSelectedEventId(null);
+          // If a targetEventId was supplied, verify it is still a valid active operational event (LIVE/UPCOMING)
+          if (targetEventId) {
+            const isStillValid = res.availableEvents?.some(
+              (e) => e.id === targetEventId && (e.status === 'LIVE' || e.status === 'UPCOMING')
+            );
+            if (res.selectedEvent && isStillValid) {
+              persistEventId(targetEventId);
+            } else {
+              persistEventId(null);
+              setSelectedEventId(null);
+            }
           }
           setIsLoading(false);
         })
         .catch(() => {
           if (seq !== fetchSeq.current) return;
           if (targetEventId) {
+            persistEventId(null);
             setSelectedEventId(null);
+            // Gracefully recover to default unselected grid if event no longer exists
+            fetchGrid(false, null);
           }
           setIsLoading(false);
         });
@@ -108,6 +141,7 @@ export default function AdminOperationsPage() {
   const handleEventChange = (newEventId: string) => {
     const nextId = newEventId === 'ALL' || !newEventId ? null : newEventId;
     setSelectedEventId(nextId);
+    persistEventId(nextId);
     fetchGrid(true, nextId);
   };
 
