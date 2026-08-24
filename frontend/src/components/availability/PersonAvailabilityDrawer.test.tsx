@@ -42,30 +42,11 @@ function buildDetail(): PersonAvailabilityDetailResponse {
       currentAllocatedHours: 10,
     },
     currentStatus: { state: 'FREE', reason: 'Available for assignment' },
-    nextFree: { isCurrentlyFree: true, statusText: 'Available now' },
-    weeklyTimeline: [
-      {
-        date: '2026-08-23',
-        dayName: 'Sun 23',
-        dayOfWeek: 'SUNDAY',
-        isToday: true,
-        status: 'FREE',
-        windows: [{ startHour: 0, endHour: 24, startFormatted: '12:00 AM', endFormatted: '12:00 AM', label: 'Free' }],
-      },
-      {
-        date: '2026-08-24',
-        dayName: 'Mon 24',
-        dayOfWeek: 'MONDAY',
-        isToday: false,
-        status: 'BUSY',
-        windows: [{ startHour: 0, endHour: 24, startFormatted: '12:00 AM', endFormatted: '12:00 AM', label: 'Busy' }],
-      },
-    ],
     upcomingCommitments: [],
   } as unknown as PersonAvailabilityDetailResponse;
 }
 
-describe('PersonAvailabilityDrawer — read-only + collapsible days', () => {
+describe('PersonAvailabilityDrawer — read-only live status, no schedule/timeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRole = 'MEMBER';
@@ -94,23 +75,13 @@ describe('PersonAvailabilityDrawer — read-only + collapsible days', () => {
     expect(screen.queryByTitle(/Set availability to/i)).not.toBeInTheDocument();
   });
 
-  it('defaults to today expanded, other days collapsed', async () => {
+  it('shows the live operations status, with no "Next Free Window" or weekly schedule anywhere', async () => {
     render(<PersonAvailabilityDrawer userId="user-2" onClose={vi.fn()} />);
 
-    await waitFor(() => expect(screen.getByText('Sun 23')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Live Operations Status')).toBeInTheDocument());
 
-    // Today's window chip is visible; Monday's is not (collapsed).
-    const windowChips = screen.getAllByText('12:00 AM – 12:00 AM');
-    expect(windowChips).toHaveLength(1);
-  });
-
-  it('clicking a collapsed day expands it and reveals its merged windows', async () => {
-    render(<PersonAvailabilityDrawer userId="user-2" onClose={vi.fn()} />);
-
-    await waitFor(() => expect(screen.getByText('Mon 24')).toBeInTheDocument());
-    fireEvent.click(screen.getByText('Mon 24'));
-
-    await waitFor(() => expect(screen.getAllByText('12:00 AM – 12:00 AM')).toHaveLength(1));
+    expect(screen.queryByText('Next Free Window')).not.toBeInTheDocument();
+    expect(screen.queryByText(/7-Day Availability Schedule/i)).not.toBeInTheDocument();
   });
 });
 

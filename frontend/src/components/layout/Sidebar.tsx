@@ -112,9 +112,9 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['MEMBER', 'SERVER', 'TEAM_LEAD'],
   },
   {
-    label: 'Weekly Availability',
-    href: '/member/availability',
-    icon: 'calendar_month',
+    label: 'Event Attendance',
+    href: '/member/events',
+    icon: 'how_to_reg',
     roles: ['MEMBER', 'SERVER', 'TEAM_LEAD', 'ADMIN', 'SUPER_ADMIN'],
   },
   {
@@ -231,10 +231,10 @@ export function Sidebar({ onQuickAction, isOpenMobile = false, onCloseMobile }: 
               className="w-full bg-primary text-on-primary py-2 px-3 rounded text-xs font-medium hover:bg-primary-container transition-colors flex items-center justify-center gap-2 shadow-xs"
             >
               <span className="material-symbols-outlined text-[16px]">
-                {role === 'MEMBER' ? 'edit_calendar' : 'add'}
+                {role === 'MEMBER' ? 'how_to_reg' : 'add'}
               </span>
               <span>
-                {role === 'MEMBER' ? 'Edit Availability' : 'Create Task'}
+                {role === 'MEMBER' ? 'Event Attendance' : 'Create Task'}
               </span>
             </button>
           </div>

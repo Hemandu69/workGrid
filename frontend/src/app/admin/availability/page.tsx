@@ -11,20 +11,10 @@ import { Avatar } from '../../../components/ui/Avatar';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Table, TableHeader, TableRow, TableHead, TableCell } from '../../../components/ui/Table';
-import {
-  getCurrentISTDateString,
-  getCurrentISTHour,
-  formatToISTTime,
-  formatSlotHourLabel,
-} from '../../../lib/time-utils';
+import { formatToISTTime } from '../../../lib/time-utils';
 
 export default function PeopleAvailabilityPage() {
   const { user, role } = useAuth();
-
-  // Time slot selector state (default to today in IST)
-  const [selectedDate, setSelectedDate] = useState<string>(() => getCurrentISTDateString());
-  const [startHour, setStartHour] = useState<number>(() => getCurrentISTHour());
-  const [endHour, setEndHour] = useState<number>(() => Math.min(24, getCurrentISTHour() + 1));
 
   // Live dynamic clock state
   const [currentClock, setCurrentClock] = useState<string>('');
@@ -62,9 +52,6 @@ export default function PeopleAvailabilityPage() {
     apiClient
       .getPeopleAvailability(
         {
-          date: selectedDate,
-          startHour,
-          endHour,
           status: statusFilter !== 'ALL' ? statusFilter : undefined,
           role: roleFilter !== 'ALL' ? roleFilter : undefined,
           room: roomFilter !== 'ALL' ? roomFilter : undefined,
@@ -80,7 +67,7 @@ export default function PeopleAvailabilityPage() {
         setError(err instanceof Error ? err.message : 'Failed to fetch availability');
         setIsLoading(false);
       });
-  }, [selectedDate, startHour, endHour, statusFilter, roleFilter, roomFilter, searchQuery]);
+  }, [statusFilter, roleFilter, roomFilter, searchQuery]);
 
   // Keep a stable ref to the latest fetchAvailability for real-time event handlers
   const fetchAvailabilityRef = useRef(fetchAvailability);
@@ -109,13 +96,6 @@ export default function PeopleAvailabilityPage() {
     }
   );
 
-  const handleSetNow = () => {
-    setSelectedDate(getCurrentISTDateString());
-    const curHour = getCurrentISTHour();
-    setStartHour(curHour);
-    setEndHour(Math.min(24, curHour + 1));
-  };
-
   const isAuthorized = role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'SERVER';
   const isServer = role === 'SERVER';
   const serverRoomLetter = isServer
@@ -141,25 +121,6 @@ export default function PeopleAvailabilityPage() {
       </AppShell>
     );
   }
-
-  // Naive local-hour formatting — no Date/UTC conversion — since these hours
-  // are already the person's local wall-clock hours (matches the backend's
-  // formatSlotHourLabel fix; a UTC-mislabeling round-trip through Date here
-  // is exactly what previously produced ":30"-shifted option labels).
-  const hourOptions = Array.from({ length: 24 }, (_, i) => ({
-    value: i,
-    label: formatSlotHourLabel(i),
-  }));
-
-  const endHourOptions = Array.from({ length: 24 }, (_, i) => {
-    const hour = i + 1;
-    return {
-      value: hour,
-      label: formatSlotHourLabel(hour),
-    };
-  });
-
-  const activeWindowFormatted = `${formatSlotHourLabel(startHour)} – ${formatSlotHourLabel(endHour)}`;
 
   return (
     <AppShell
@@ -187,7 +148,7 @@ export default function PeopleAvailabilityPage() {
             <p className="text-xs text-on-surface-variant">
               {isServer
                 ? `Overseeing personnel availability across all 8 subrooms in Section ${serverRoomLetter}. All times in IST (Asia/Kolkata).`
-                : 'Live and scheduled personnel availability across all 8 sections in IST (Asia/Kolkata, UTC+05:30).'}
+                : 'Live personnel availability across all 8 sections in IST (Asia/Kolkata, UTC+05:30).'}
             </p>
           </div>
 
@@ -199,14 +160,6 @@ export default function PeopleAvailabilityPage() {
               </div>
             )}
             <Button
-              variant="outline"
-              size="sm"
-              onClick={handleSetNow}
-              leftIcon={<span className="material-symbols-outlined text-[16px]">schedule</span>}
-            >
-              Current Time (Now)
-            </Button>
-            <Button
               variant="primary"
               size="sm"
               onClick={() => fetchAvailability(true)}
@@ -215,68 +168,6 @@ export default function PeopleAvailabilityPage() {
             >
               Refresh
             </Button>
-          </div>
-        </div>
-
-        {/* Time-Slot Selector Bar */}
-        <div className="p-4 bg-surface-bright border border-surface-outline rounded grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end shadow-2xs">
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block">
-              Evaluation Date (IST)
-            </label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="w-full bg-surface-container-low border border-surface-outline rounded px-3 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary font-mono"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block">
-              Start Time (IST)
-            </label>
-            <select
-              value={startHour}
-              onChange={(e) => {
-                const newStart = parseInt(e.target.value, 10);
-                setStartHour(newStart);
-                if (endHour <= newStart) setEndHour(Math.min(24, newStart + 1));
-              }}
-              className="w-full bg-surface-container-low border border-surface-outline rounded px-3 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary font-mono"
-            >
-              {hourOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-on-surface-variant block">
-              End Time (IST)
-            </label>
-            <select
-              value={endHour}
-              onChange={(e) => setEndHour(parseInt(e.target.value, 10))}
-              className="w-full bg-surface-container-low border border-surface-outline rounded px-3 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary font-mono"
-            >
-              {endHourOptions
-                .filter((opt) => opt.value > startHour)
-                .map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          <div className="bg-surface-container-low p-2.5 rounded border border-surface-outline text-xs text-on-surface-variant flex items-center justify-between font-mono">
-            <span className="text-[11px]">Active Window:</span>
-            <span className="font-semibold text-primary">
-              {activeWindowFormatted}
-            </span>
           </div>
         </div>
 
@@ -426,14 +317,13 @@ export default function PeopleAvailabilityPage() {
                 <TableHead>Availability</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Context / Task</TableHead>
-                <TableHead>Window</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <tbody>
               {isLoading && !data ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-xs text-on-surface-variant">
+                  <TableCell colSpan={7} className="text-center py-12 text-xs text-on-surface-variant">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <span className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                       <span>Evaluating live personnel availability & attendance matrix...</span>
@@ -442,7 +332,7 @@ export default function PeopleAvailabilityPage() {
                 </TableRow>
               ) : data?.people.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-xs text-on-surface-variant">
+                  <TableCell colSpan={7} className="text-center py-12 text-xs text-on-surface-variant">
                     No people match the selected time slot, room, or search filter.
                   </TableCell>
                 </TableRow>
@@ -550,11 +440,6 @@ export default function PeopleAvailabilityPage() {
                           </span>
                         )}
                       </div>
-                    </TableCell>
-
-                    {/* Until / Window */}
-                    <TableCell className="font-mono text-xs tabular-nums text-on-surface-variant font-medium">
-                      {person.freeWindow || person.until || '—'}
                     </TableCell>
 
                     {/* Action */}

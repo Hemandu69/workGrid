@@ -28,6 +28,14 @@ const nextConfig: NextConfig = {
         destination: '/admin/people/audit',
         permanent: false,
       },
+      // The recurring hourly "Weekly Availability" grid was removed entirely
+      // in favor of event-scoped attendance (OrganizationEvent responses) —
+      // there is no generic per-day availability concept any more.
+      {
+        source: '/member/availability',
+        destination: '/member/events',
+        permanent: false,
+      },
     ];
   },
   images: {

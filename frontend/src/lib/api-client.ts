@@ -3,7 +3,6 @@ import { Room } from '../types/room';
 import { Task, TaskCampaign, TaskComment, TaskPriority, TaskHistoryEntry, TaskAnalytics } from '../types/task';
 import { User } from '../types/auth';
 import { Announcement } from '../types/announcement';
-import { WeeklyAvailabilitySchedule, DayOfWeek, HourlySlot, WeekAvailabilityResponse } from '../types/availability';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
 import { NotificationReadState } from '../types/notification';
 import { PaginatedResult, CursorResult } from '../types/pagination';
@@ -33,19 +32,6 @@ function buildQueryParams(filters: Record<string, string | number | undefined>):
     if (value !== undefined && value !== '') params.set(key, String(value));
   }
   return params;
-}
-
-/** The backend serializes `days` as an array of {day, slots} — not the Record<DayOfWeek, HourlySlot[]> the rest of the frontend expects. */
-interface RawWeeklyAvailabilitySchedule extends Omit<WeeklyAvailabilitySchedule, 'days'> {
-  days: Array<{ day: DayOfWeek; slots: HourlySlot[] }>;
-}
-
-function normalizeWeeklySchedule(raw: RawWeeklyAvailabilitySchedule): WeeklyAvailabilitySchedule {
-  const days = {} as Record<DayOfWeek, HourlySlot[]>;
-  for (const entry of raw.days) {
-    days[entry.day] = entry.slots;
-  }
-  return { ...raw, days };
 }
 
 async function request<T>(
@@ -359,62 +345,12 @@ export const apiClient = {
     );
   },
 
-  // Availability
-  getUserAvailability: async (userId: string): Promise<WeeklyAvailabilitySchedule> => {
-    const raw = await request<RawWeeklyAvailabilitySchedule>(`/api/v1/users/${userId}/availability`);
-    return normalizeWeeklySchedule(raw);
-  },
-  updateUserAvailability: async (
-    userId: string,
-    schedule: { slots: { day: string; hour: number; state: string; taskId?: string }[]; timezone?: string },
-    token?: string
-  ): Promise<WeeklyAvailabilitySchedule> => {
-    const raw = await request<RawWeeklyAvailabilitySchedule>(
-      `/api/v1/users/${userId}/availability`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(schedule),
-      },
-      token
-    );
-    return normalizeWeeklySchedule(raw);
-  },
-  getWeekAvailability: async (
-    userId: string,
-    params: { weekStart: string; month?: number; year?: number },
-    token?: string
-  ): Promise<WeekAvailabilityResponse> => {
-    const query = buildQueryParams({ weekStart: params.weekStart, month: params.month, year: params.year });
-    return request<WeekAvailabilityResponse>(
-      `/api/v1/users/${userId}/availability/calendar?${query.toString()}`,
-      {},
-      token
-    );
-  },
-  updateWeekAvailability: async (
-    userId: string,
-    input: {
-      weekStart: string;
-      month?: number;
-      year?: number;
-      days: { date: string; slots: { hour: number; state: string; taskId?: string }[] }[];
-    },
-    token?: string
-  ): Promise<WeekAvailabilityResponse> => {
-    return request<WeekAvailabilityResponse>(
-      `/api/v1/users/${userId}/availability/calendar`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(input),
-      },
-      token
-    );
-  },
+  // Availability — live operational status only (FREE/BUSY/PARTIALLY_AVAILABLE/
+  // UNAVAILABLE). There is no recurring/hourly schedule any more; a person's
+  // future plans are expressed as event attendance (see Organization Events
+  // below), never as a generic time slot.
   getPeopleAvailability: async (
     params: {
-      date?: string;
-      startHour?: number;
-      endHour?: number;
       status?: string;
       role?: string;
       room?: string;
@@ -423,9 +359,6 @@ export const apiClient = {
     token?: string
   ): Promise<PeopleAvailabilityResponse> => {
     const searchParams = new URLSearchParams();
-    if (params.date) searchParams.append('date', params.date);
-    if (params.startHour !== undefined) searchParams.append('startHour', params.startHour.toString());
-    if (params.endHour !== undefined) searchParams.append('endHour', params.endHour.toString());
     if (params.status && params.status !== 'ALL') searchParams.append('status', params.status);
     if (params.role && params.role !== 'ALL') searchParams.append('role', params.role);
     if (params.room && params.room !== 'ALL') searchParams.append('room', params.room);
@@ -435,11 +368,9 @@ export const apiClient = {
   },
   getPersonAvailabilityDetail: async (
     userId: string,
-    startDate?: string,
     token?: string
   ): Promise<PersonAvailabilityDetailResponse> => {
-    const query = startDate ? `?startDate=${startDate}` : '';
-    return request<PersonAvailabilityDetailResponse>(`/api/v1/availability/people/${userId}${query}`, {}, token);
+    return request<PersonAvailabilityDetailResponse>(`/api/v1/availability/people/${userId}`, {}, token);
   },
 
   // Operations Grid & Server Tracking
@@ -731,14 +662,6 @@ export const apiClient = {
 };
 
 export interface PeopleAvailabilityResponse {
-  timeSlot: {
-    date: string;
-    startHour: number;
-    endHour: number;
-    startFormatted: string;
-    endFormatted: string;
-    timezone: string;
-  };
   summary: {
     totalPeople: number;
     freeCount: number;
@@ -768,8 +691,6 @@ export interface PeopleAvailabilityResponse {
     status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
     statusLabel: string;
     reason: string;
-    until?: string;
-    freeWindow?: string;
     activeTask?: {
       id: string;
       title: string;
@@ -826,31 +747,7 @@ export interface PersonAvailabilityDetailResponse {
     reason: string;
     room?: string;
     subroom?: string;
-    until?: string;
   };
-  nextFree: {
-    isCurrentlyFree: boolean;
-    statusText: string;
-    nextFreeDate?: string;
-    nextFreeTime?: string;
-    durationFormatted?: string;
-  };
-  weeklyTimeline: Array<{
-    date: string;
-    dayName: string;
-    dayOfWeek: string;
-    isToday: boolean;
-    status: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
-    windows: Array<{
-      startHour: number;
-      endHour: number;
-      startFormatted: string;
-      endFormatted: string;
-      state: 'FREE' | 'BUSY' | 'PARTIALLY_AVAILABLE' | 'UNAVAILABLE';
-      label: string;
-      reason?: string;
-    }>;
-  }>;
   upcomingCommitments: Array<{
     id: string;
     title: string;

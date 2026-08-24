@@ -95,7 +95,7 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
       'Task Management',
       'Operations Grid',
       'People Availability',
-      'Weekly Availability',
+      'Event Attendance',
       'Notifications',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();

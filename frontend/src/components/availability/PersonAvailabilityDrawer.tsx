@@ -25,9 +25,6 @@ export function PersonAvailabilityDrawer({
   const [error, setError] = useState<string | null>(null);
   const [liveDuration, setLiveDuration] = useState<string>('');
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  // null = default state (today expanded, others collapsed). Once the viewer
-  // clicks any day, that single day stays expanded until they click another.
-  const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const { role: viewerRole } = useAuth();
   const canManageAssignment = viewerRole === 'SUPER_ADMIN' || viewerRole === 'ADMIN';
 
@@ -339,126 +336,8 @@ export function PersonAvailabilityDrawer({
                       <span className="text-[11px] opacity-80">{data.currentStatus.reason}</span>
                     </div>
                   </div>
-
-                  {data.currentStatus.until && (
-                    <span className="text-[11px] font-mono font-semibold">
-                      Until {data.currentStatus.until}
-                    </span>
-                  )}
                 </div>
               </div>
-
-              {/* Next Free Indicator */}
-              <div className="p-3 bg-surface-container-low border border-surface-outline rounded text-xs flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-primary">schedule</span>
-                  <div>
-                    <span className="text-[10px] text-outline uppercase block">Next Free Window</span>
-                    <span className="font-bold text-primary">{data.nextFree.statusText}</span>
-                  </div>
-                </div>
-                <span className="text-[11px] font-mono text-on-surface-variant bg-surface-bright px-2 py-1 rounded border border-surface-outline">
-                  {data.nextFree.durationFormatted}
-                </span>
-              </div>
-
-              {/* 7-Day Weekly Availability Schedule */}
-              {data.weeklyTimeline && data.weeklyTimeline.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-on-surface-variant uppercase tracking-wider flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px] text-secondary">
-                        calendar_view_week
-                      </span>
-                      7-Day Availability Schedule (IST)
-                    </span>
-                    <span className="text-[10px] font-mono text-outline">Asia/Kolkata (IST)</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {data.weeklyTimeline.map((day) => {
-                      const isExpanded = expandedDate ? expandedDate === day.date : day.isToday;
-                      return (
-                      <div
-                        key={day.date}
-                        className={`p-2.5 rounded border text-xs transition-colors ${
-                          day.isToday
-                            ? 'bg-surface-bright border-primary/40 ring-1 ring-primary/20'
-                            : 'bg-surface-container-low/40 border-surface-outline/60'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setExpandedDate(isExpanded ? 'NONE' : day.date)}
-                          className="flex items-center justify-between w-full mb-1.5 text-left"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span
-                              className={`material-symbols-outlined text-[16px] text-on-surface-variant transition-transform ${
-                                isExpanded ? 'rotate-90' : ''
-                              }`}
-                            >
-                              chevron_right
-                            </span>
-                            <span className="font-bold text-primary text-xs">{day.dayName}</span>
-                            {day.isToday && (
-                              <span className="px-1.5 py-0.2 bg-primary text-on-primary text-[9px] font-mono font-semibold rounded uppercase">
-                                Today
-                              </span>
-                            )}
-                          </div>
-                          <span
-                            className={`text-[10px] font-mono font-semibold px-1.5 py-0.2 rounded ${
-                              day.status === 'FREE'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : day.status === 'BUSY'
-                                ? 'bg-amber-100 text-amber-800'
-                                : day.status === 'PARTIALLY_AVAILABLE'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {day.status}
-                          </span>
-                        </button>
-
-                        {/* Schedule Windows — merged ranges, shown when expanded */}
-                        {isExpanded && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {day.windows.map((win, idx) => (
-                            <div
-                              key={idx}
-                              className={`px-2 py-1 rounded text-[11px] font-mono flex items-center gap-1.5 border ${
-                                win.state === 'FREE'
-                                  ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
-                                  : win.state === 'BUSY'
-                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
-                                  : 'bg-slate-50 text-slate-600 border-slate-200'
-                              }`}
-                              title={win.reason || win.label}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  win.state === 'FREE'
-                                    ? 'bg-emerald-500'
-                                    : win.state === 'BUSY'
-                                    ? 'bg-amber-500'
-                                    : 'bg-slate-400'
-                                }`}
-                              />
-                              <span>
-                                {win.startFormatted} – {win.endFormatted}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        )}
-                      </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {/* Upcoming Tasks & Commitments */}
               <div className="space-y-3">

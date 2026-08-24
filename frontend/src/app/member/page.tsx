@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '../../components/layout/AppShell';
 import { useAuth } from '../../lib/auth-context';
@@ -12,7 +12,6 @@ import { Badge } from '../../components/ui/Badge';
 import { Avatar } from '../../components/ui/Avatar';
 import Link from 'next/link';
 import { Task } from '../../types/task';
-import { WeeklyAvailabilitySchedule } from '../../types/availability';
 import { AttendanceCard } from '../../components/attendance/AttendanceCard';
 import { apiClient } from '../../lib/api-client';
 import { useTasks } from '../../lib/useTasks';
@@ -23,7 +22,6 @@ export default function MemberDashboard() {
   const { user } = useAuth();
   const router = useRouter();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [schedule, setSchedule] = useState<WeeklyAvailabilitySchedule | null>(null);
 
   // Shared, cached, realtime-synced.
   const { data: tasksResult } = useTasks({ assigneeId: user?.id, limit: 200 });
@@ -35,11 +33,6 @@ export default function MemberDashboard() {
   const subroomPeers = (usersResult?.items ?? [])
     .filter((u) => u.id !== user.id && (!user.subroom || u.subroom === user.subroom))
     .slice(0, 3);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    apiClient.getUserAvailability(user.id).then(setSchedule).catch(() => null);
-  }, [user?.id]);
 
   const activeTask = tasks.find((t) => t.status === 'IN_PROGRESS') || tasks[0];
   const upcomingTasks = activeTask ? tasks.filter((t) => t.id !== activeTask.id) : tasks;
@@ -56,9 +49,9 @@ export default function MemberDashboard() {
     }
   };
 
-  const allocatedHours = schedule?.allocatedHours ?? user?.currentAllocatedHours ?? 0;
-  const capacityHours = schedule?.totalCapacityHours ?? user?.capacityLimitHours ?? 40;
-  const remainingHours = schedule?.remainingAvailableHours ?? Math.max(0, capacityHours - allocatedHours);
+  const allocatedHours = user?.currentAllocatedHours ?? 0;
+  const capacityHours = user?.capacityLimitHours ?? 40;
+  const remainingHours = Math.max(0, capacityHours - allocatedHours);
 
   return (
     <AppShell
@@ -68,7 +61,7 @@ export default function MemberDashboard() {
         { label: user.subroom ? `Subroom ${user.subroom}` : 'Unassigned Subroom', href: '#' },
         { label: 'Member Workspace' },
       ]}
-      onQuickAction={() => router.push('/member/availability')}
+      onQuickAction={() => router.push('/member/events')}
     >
       <div className="space-y-6">
         {/* Global Attendance IN / OUT Tracker */}
@@ -180,12 +173,12 @@ export default function MemberDashboard() {
               </div>
             </Card>
 
-            {/* Weekly Availability Summary Widget */}
+            {/* Task Capacity Summary Widget */}
             <Card>
               <CardHeader className="pb-2 mb-3">
-                <CardTitle>Availability & Workload</CardTitle>
-                <Link href="/member/availability" className="text-xs text-secondary hover:text-primary font-medium">
-                  Edit Grid →
+                <CardTitle>Task Capacity</CardTitle>
+                <Link href="/member/events" className="text-xs text-secondary hover:text-primary font-medium">
+                  My Events →
                 </Link>
               </CardHeader>
 
@@ -195,7 +188,7 @@ export default function MemberDashboard() {
                   <span className="font-bold text-primary font-mono">{allocatedHours} Hours</span>
                 </div>
                 <div className="flex justify-between items-center tabular-nums">
-                  <span className="text-on-surface-variant">Total Available:</span>
+                  <span className="text-on-surface-variant">Capacity Limit:</span>
                   <span className="font-semibold text-emerald-700 font-mono">{capacityHours} Hours</span>
                 </div>
                 <div className="flex justify-between items-center tabular-nums">
@@ -214,7 +207,7 @@ export default function MemberDashboard() {
                 </div>
 
                 <p className="text-[11px] text-on-surface-variant mt-2 leading-tight">
-                  Your weekly schedule repeats automatically. Tasks are placed into times that don&apos;t conflict with your existing work.
+                  Reflects your current assigned task hours against your capacity limit. Set your live availability from the Attendance card above.
                 </p>
               </div>
             </Card>

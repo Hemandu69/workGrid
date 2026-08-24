@@ -14,23 +14,8 @@ export function getCurrentDate(): Date {
 }
 
 /**
- * Returns current date string formatted as YYYY-MM-DD in Asia/Kolkata timezone
- */
-export function getCurrentISTDateString(): string {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: APP_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return formatter.format(now); // en-CA produces YYYY-MM-DD
-}
-
-/**
- * Returns the current wall-clock hour (0-23) in Asia/Kolkata — the correct
- * value to compare against or default an AvailabilitySlot.hour-style field,
- * which is a naive local hour, not a UTC hour.
+ * Returns the current wall-clock hour (0-23) in Asia/Kolkata — a naive local
+ * hour, never a UTC hour.
  */
 export function getCurrentISTHour(): number {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -42,10 +27,10 @@ export function getCurrentISTHour(): number {
 }
 
 /**
- * Formats a naive 0-24 slot hour (already the person's local wall-clock
- * hour — no timezone conversion) into a 12-hour clock label, e.g.
- * 9 -> "09:00 AM", 24 -> "12:00 AM". Mirrors the backend's
- * formatSlotHourLabel — the two must never mix in a Date/UTC conversion.
+ * Formats a naive 0-24 local wall-clock hour (no timezone conversion) into a
+ * 12-hour clock label, e.g. 9 -> "09:00 AM", 24 -> "12:00 AM". Used for
+ * genuinely naive-hour display (e.g. the "Active Window" clock on the
+ * Server dashboard) — never mix this with a Date/UTC conversion.
  */
 export function formatSlotHourLabel(hour: number): string {
   const h = hour % 24;
@@ -117,54 +102,3 @@ export function formatRelativeIST(date: Date | string | number): string {
   return formatToISTDateTime(d);
 }
 
-/**
- * Converts a UTC date + hour (0..24) to exact IST window label
- * e.g. date: "2026-08-20", startHour: 10, endHour: 11 -> "03:30 PM – 04:30 PM IST"
- */
-export function formatUtcWindowToIST(dateStr: string, startHourUtc: number, endHourUtc: number) {
-  const startDateUtc = new Date(`${dateStr}T00:00:00.000Z`);
-  startDateUtc.setUTCHours(startHourUtc, 0, 0, 0);
-
-  const endDateUtc = new Date(`${dateStr}T00:00:00.000Z`);
-  endDateUtc.setUTCHours(endHourUtc, 0, 0, 0);
-
-  const startFormatted = formatToISTTime(startDateUtc, false);
-  const endFormatted = formatToISTTime(endDateUtc, true);
-  const dateIST = formatToISTDate(startDateUtc);
-
-  return {
-    startIso: startDateUtc.toISOString(),
-    endIso: endDateUtc.toISOString(),
-    startIST: formatToISTTime(startDateUtc, true),
-    endIST: endFormatted,
-    dateIST,
-    activeWindowIST: `${startFormatted} – ${endFormatted}`,
-  };
-}
-
-/**
- * Generate 24 hourly slot options in IST with accurate UTC mapping
- */
-export function getISTTimeOptions(): Array<{
-  istHour: number;
-  istMinute: number;
-  label: string;
-  utcHourEquivalent: number;
-}> {
-  return Array.from({ length: 24 }, (_, i) => {
-    const period = i >= 12 ? 'PM' : 'AM';
-    const displayHour = i % 12 === 0 ? 12 : i % 12;
-    const label = `${displayHour.toString().padStart(2, '0')}:00 ${period} ${TIMEZONE_LABEL}`;
-    
-    // IST (UTC +05:30): UTC hour = (IST hour - 5.5 + 24) % 24
-    // We floor/round to whole hour for backend query
-    const utcHourEquivalent = (i - 5 + 24) % 24;
-
-    return {
-      istHour: i,
-      istMinute: 0,
-      label,
-      utcHourEquivalent,
-    };
-  });
-}

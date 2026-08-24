@@ -130,11 +130,11 @@ export function TopHeader({ breadcrumbs, onToggleMobileSidebar }: TopHeaderProps
                 <p className="text-[10px] text-on-surface-variant truncate">{user.email}</p>
               </div>
               <Link
-                href="/member/availability"
+                href="/member/events"
                 onClick={() => setShowUserMenu(false)}
                 className="block px-3 py-1.5 text-xs text-on-surface hover:bg-surface-container-low"
               >
-                My Schedule
+                Event Attendance
               </Link>
               <Link
                 href="/login"
