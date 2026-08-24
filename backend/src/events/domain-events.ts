@@ -36,6 +36,8 @@ export type DomainEventType =
   | 'SUBROOM_STATUS_CHANGED'
   | 'ROOM_ASSIGNMENT_CHANGED'
   | 'GRID_UPDATED'
+  // Teams & Event-Scoped Placement
+  | 'TEAM_EVENT_PLACEMENT_CHANGED'
   // Notifications & Announcements
   | 'NOTIFICATION_CREATED'
   | 'NOTIFICATION_READ'

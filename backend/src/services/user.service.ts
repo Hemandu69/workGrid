@@ -10,6 +10,7 @@ export class UserService {
       status?: UserStatus;
       roomId?: string;
       subroomId?: string;
+      teamId?: string;
       search?: string;
       organizationId?: string;
     },
@@ -23,6 +24,7 @@ export class UserService {
     if (filters.status) where.status = filters.status;
     if (filters.roomId) where.roomId = filters.roomId;
     if (filters.subroomId) where.subroomId = filters.subroomId;
+    if (filters.teamId) where.teamId = filters.teamId;
 
     if (filters.search) {
       where.OR = [

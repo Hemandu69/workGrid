@@ -6,6 +6,7 @@ import { Announcement } from '../types/announcement';
 import { OrgEvent, OrgEventAnalytics, OrgEventResponseBreakdown, EventResponseChoice } from '../types/org-event';
 import { NotificationReadState } from '../types/notification';
 import { PaginatedResult, CursorResult } from '../types/pagination';
+import { Team, TeamDetail, TeamPlacementPreview } from '../types/team';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -172,9 +173,72 @@ export const apiClient = {
     return request<RoomAssignmentResult>(`/api/v1/rooms/assignment/${personId}`, { method: 'DELETE' }, token);
   },
 
+  // Teams & Event-Scoped Bulk Placement — a Team's roster is entirely
+  // independent of Room/Subroom desk assignment above; placement here never
+  // touches assignRoom/clearRoomAssignment.
+  getTeams: async (token?: string): Promise<Team[]> => request<Team[]>('/api/v1/teams', {}, token),
+  createTeam: async (data: { name: string; leadId?: string }, token?: string): Promise<TeamDetail> =>
+    request<TeamDetail>('/api/v1/teams', { method: 'POST', body: JSON.stringify(data) }, token),
+  getTeam: async (teamId: string, token?: string): Promise<TeamDetail> =>
+    request<TeamDetail>(`/api/v1/teams/${teamId}`, {}, token),
+  updateTeam: async (
+    teamId: string,
+    data: { name?: string; leadId?: string | null },
+    token?: string
+  ): Promise<TeamDetail> =>
+    request<TeamDetail>(`/api/v1/teams/${teamId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  deleteTeam: async (teamId: string, token?: string): Promise<{ message: string }> =>
+    request(`/api/v1/teams/${teamId}`, { method: 'DELETE' }, token),
+  addTeamMember: async (teamId: string, userId: string, token?: string): Promise<TeamDetail> =>
+    request<TeamDetail>(
+      `/api/v1/teams/${teamId}/members`,
+      { method: 'POST', body: JSON.stringify({ userId }) },
+      token
+    ),
+  removeTeamMember: async (teamId: string, userId: string, token?: string): Promise<TeamDetail> =>
+    request<TeamDetail>(`/api/v1/teams/${teamId}/members/${userId}`, { method: 'DELETE' }, token),
+
+  getTeamPlacementPreview: async (
+    teamId: string,
+    params: { eventId: string; sectionLetter: string },
+    token?: string
+  ): Promise<TeamPlacementPreview> => {
+    const query = buildQueryParams(params);
+    return request<TeamPlacementPreview>(`/api/v1/teams/${teamId}/placement?${query.toString()}`, {}, token);
+  },
+  allocateTeam: async (
+    teamId: string,
+    data: { eventId: string; sectionLetter: string },
+    token?: string
+  ): Promise<TeamPlacementPreview> =>
+    request<TeamPlacementPreview>(
+      `/api/v1/teams/${teamId}/placement/allocate`,
+      { method: 'POST', body: JSON.stringify(data) },
+      token
+    ),
+  replaceTeamMember: async (
+    teamId: string,
+    data: { eventId: string; userId: string },
+    token?: string
+  ): Promise<{ removedUserId: string; replacedByUserId: string | null }> =>
+    request(`/api/v1/teams/${teamId}/placement/replace`, { method: 'POST', body: JSON.stringify(data) }, token),
+  overrideTeamPlacement: async (
+    teamId: string,
+    userId: string,
+    data: { eventId: string; subroomCode: string },
+    token?: string
+  ): Promise<TeamPlacementPreview> =>
+    request<TeamPlacementPreview>(
+      `/api/v1/teams/${teamId}/placement/${userId}`,
+      { method: 'PATCH', body: JSON.stringify(data) },
+      token
+    ),
+  clearTeamPlacement: async (teamId: string, eventId: string, token?: string): Promise<{ message: string }> =>
+    request(`/api/v1/teams/${teamId}/placement`, { method: 'DELETE', body: JSON.stringify({ eventId }) }, token),
+
   // Users Directory
   getUsers: async (
-    filters: { role?: string; status?: string; search?: string; limit?: number; offset?: number } = {}
+    filters: { role?: string; status?: string; search?: string; teamId?: string; limit?: number; offset?: number } = {}
   ): Promise<PaginatedResult<User>> => {
     const params = buildQueryParams(filters);
     return request<PaginatedResult<User>>(`/api/v1/users?${params.toString()}`);
@@ -827,6 +891,12 @@ export interface GridSubroomCell {
     startTimeIST: string;
     endTimeIST: string;
     serverCoverageSummary: string;
+  };
+  /** Team-based bulk allocation for the selected event — independent of `members`/`occupancyCount`. */
+  eventPlacement?: {
+    teamId: string;
+    teamName: string;
+    members: Array<{ id: string; name: string; avatarUrl?: string }>;
   };
 }
 

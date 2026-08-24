@@ -12,6 +12,7 @@ import { hrRoutes } from './hr.js';
 import { attendanceRoutes } from './attendance.js';
 import { eventRoutes } from './events.js';
 import { notificationRoutes } from './notifications.js';
+import { teamRoutes } from './teams.js';
 
 export const v1Routes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(authRoutes, { prefix: '/auth' });
@@ -27,4 +28,5 @@ export const v1Routes: FastifyPluginAsync = async (fastify) => {
   await fastify.register(attendanceRoutes, { prefix: '/attendance' });
   await fastify.register(eventRoutes, { prefix: '/events' });
   await fastify.register(notificationRoutes, { prefix: '/notifications' });
+  await fastify.register(teamRoutes, { prefix: '/teams' });
 };

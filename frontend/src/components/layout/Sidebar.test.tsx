@@ -85,7 +85,7 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
     mockPathname = '/super-admin';
   });
 
-  it('shows exactly the consolidated 7-item navigation for SUPER_ADMIN (no Event Attendance)', () => {
+  it('shows exactly the consolidated 8-item navigation for SUPER_ADMIN (no Event Attendance)', () => {
     render(<Sidebar />);
 
     for (const label of [
@@ -95,6 +95,7 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
       'Task Management',
       'Operations Grid',
       'People Availability',
+      'Teams',
       'Notifications',
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
@@ -140,6 +141,28 @@ describe('Sidebar — Global Overview / Operations Grid consolidation (Room Over
 
     expect(screen.getByText('Operations Grid').closest('a')).toHaveClass('text-primary');
     expect(screen.getByText('Global Overview').closest('a')).not.toHaveClass('text-primary');
+  });
+});
+
+describe('Sidebar — Teams nav item is ADMIN/SUPER_ADMIN-only', () => {
+  it('MEMBER, SERVER, and TEAM_LEAD do not see Teams', () => {
+    for (const role of ['MEMBER', 'SERVER', 'TEAM_LEAD']) {
+      mockRole = role;
+      mockPathname = '/admin/teams';
+      const { unmount } = render(<Sidebar />);
+      expect(screen.queryByText('Teams')).not.toBeInTheDocument();
+      unmount();
+    }
+    mockRole = 'SUPER_ADMIN';
+  });
+
+  it('stays active on a nested /admin/teams/:id route', () => {
+    mockRole = 'ADMIN';
+    mockPathname = '/admin/teams/team-1';
+    render(<Sidebar />);
+
+    const link = screen.getByText('Teams').closest('a');
+    expect(link).toHaveClass('text-primary');
   });
 });
 

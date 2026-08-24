@@ -111,17 +111,19 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users             User[]
-  rooms             Room[]
-  subrooms          Subroom[]
-  tasks             Task[]
-  campaigns         TaskCampaign[]
-  announcements     Announcement[]
-  events            Event[]
-  orgEvents         OrganizationEvent[]
-  auditEvents       AuditEvent[]
-  roleAuditLogs     RoleAuditLog[]
-  attendanceRecords AttendanceRecord[]
+  users               User[]
+  rooms               Room[]
+  subrooms            Subroom[]
+  tasks               Task[]
+  campaigns           TaskCampaign[]
+  announcements       Announcement[]
+  events              Event[]
+  orgEvents           OrganizationEvent[]
+  auditEvents         AuditEvent[]
+  roleAuditLogs       RoleAuditLog[]
+  attendanceRecords   AttendanceRecord[]
+  teams               Team[]
+  teamEventPlacements TeamEventPlacement[]
 
   @@map("organizations")
 }
@@ -141,6 +143,7 @@ model User {
   currentAllocatedHours Int           @default(0)
   roomId                String?
   subroomId             String?
+  teamId                String?
 
   // Real Presence & Current Location Tracking (Separate from Permanent Room Assignment)
   presenceState            PresenceState @default(UNKNOWN)
@@ -167,27 +170,32 @@ model User {
   room         Room?        @relation("RoomMembers", fields: [roomId], references: [id], onDelete: SetNull)
   subroom      Subroom?     @relation("SubroomMembers", fields: [subroomId], references: [id], onDelete: SetNull)
   ledRooms     Room[]       @relation("RoomLeadServer")
+  team         Team?        @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  ledTeams     Team[]       @relation("TeamLead")
 
-  assignedTasks        Task[]                      @relation("TaskAssignee")
-  createdTasks         Task[]                      @relation("TaskCreator")
-  createdCampaigns     TaskCampaign[]              @relation("CampaignCreator")
-  taskComments         TaskComment[]               @relation("CommentAuthor")
-  announcements        Announcement[]              @relation("AnnouncementAuthor")
-  eventsRequired       EventRequiredServer[]
-  eventParticipations  EventParticipant[]
-  createdOrgEvents     OrganizationEvent[]         @relation("OrgEventCreator")
-  orgEventResponses    OrganizationEventResponse[]
-  auditEvents          AuditEvent[]
-  roleAuditLogsTarget  RoleAuditLog[]              @relation("TargetUserAudit")
-  roleAuditLogsChanged RoleAuditLog[]              @relation("ActorAudit")
-  passwordResetTokens  PasswordResetToken[]
-  attendanceRecords    AttendanceRecord[]
-  notificationReads    NotificationRead[]
+  assignedTasks         Task[]                      @relation("TaskAssignee")
+  createdTasks          Task[]                      @relation("TaskCreator")
+  createdCampaigns      TaskCampaign[]              @relation("CampaignCreator")
+  taskComments          TaskComment[]               @relation("CommentAuthor")
+  announcements         Announcement[]              @relation("AnnouncementAuthor")
+  eventsRequired        EventRequiredServer[]
+  eventParticipations   EventParticipant[]
+  createdOrgEvents      OrganizationEvent[]         @relation("OrgEventCreator")
+  orgEventResponses     OrganizationEventResponse[]
+  auditEvents           AuditEvent[]
+  roleAuditLogsTarget   RoleAuditLog[]              @relation("TargetUserAudit")
+  roleAuditLogsChanged  RoleAuditLog[]              @relation("ActorAudit")
+  passwordResetTokens   PasswordResetToken[]
+  attendanceRecords     AttendanceRecord[]
+  notificationReads     NotificationRead[]
+  teamPlacements        TeamEventPlacement[]        @relation("TeamPlacementUser")
+  teamPlacementsActedBy TeamEventPlacement[]        @relation("TeamPlacementActor")
 
   @@index([organizationId, role])
   @@index([organizationId, accountStatus])
   @@index([roomId, subroomId])
   @@index([organizationId, presenceState])
+  @@index([organizationId, teamId])
   @@map("users")
 }
 
@@ -203,11 +211,12 @@ model Room {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  leadServer   User?        @relation("RoomLeadServer", fields: [leadServerId], references: [id], onDelete: SetNull)
-  subrooms     Subroom[]
-  members      User[]       @relation("RoomMembers")
-  events       Event[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leadServer          User?                @relation("RoomLeadServer", fields: [leadServerId], references: [id], onDelete: SetNull)
+  subrooms            Subroom[]
+  members             User[]               @relation("RoomMembers")
+  events              Event[]
+  teamEventPlacements TeamEventPlacement[]
 
   @@unique([organizationId, letter])
   @@map("rooms")
@@ -224,14 +233,77 @@ model Subroom {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  room         Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  members      User[]       @relation("SubroomMembers")
-  events       Event[]
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  room                Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  members             User[]               @relation("SubroomMembers")
+  events              Event[]
+  teamEventPlacements TeamEventPlacement[]
 
   @@unique([roomId, number])
   @@unique([organizationId, code])
   @@map("subrooms")
+}
+
+// -----------------------------------------------------------------------------
+// Teams & Event-Scoped Team Placement
+//
+// A Team is a standing roster of MEMBER users led by a Team Lead — entirely
+// independent of the Room/Subroom physical topology above. `TeamEventPlacement`
+// is where a team's members are positioned for one specific OrganizationEvent;
+// it deliberately does NOT reuse User.roomId/subroomId (the single, global,
+// non-event-scoped "permanent desk" field written by RoomService) because a
+// team must be positioned differently, independently, across multiple events
+// at once — a single scalar field on User cannot hold two different values
+// for two different events simultaneously. Capacity here is checked against
+// the same live Subroom.memberCapacity column RoomService already uses, but
+// counted only against TeamEventPlacement rows for the given event — a second,
+// independent accounting from the legacy permanent-assignment occupancy.
+// -----------------------------------------------------------------------------
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  leadId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         User?                @relation("TeamLead", fields: [leadId], references: [id], onDelete: SetNull)
+  members      User[]               @relation("TeamMembers")
+  placements   TeamEventPlacement[]
+
+  @@unique([organizationId, name])
+  @@map("teams")
+}
+
+model TeamEventPlacement {
+  id             String   @id @default(uuid())
+  organizationId String
+  eventId        String
+  teamId         String
+  userId         String
+  roomId         String
+  subroomId      String
+  positionedById String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  event        OrganizationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  team         Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user         User              @relation("TeamPlacementUser", fields: [userId], references: [id], onDelete: Cascade)
+  room         Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  subroom      Subroom           @relation(fields: [subroomId], references: [id], onDelete: Cascade)
+  positionedBy User?             @relation("TeamPlacementActor", fields: [positionedById], references: [id], onDelete: SetNull)
+
+  // One placement per person per event — the natural key that makes cross-
+  // event independence automatic (no row ever needs to know about another
+  // event's placement) and prevents double-booking a person into two
+  // subrooms for the same event.
+  @@unique([eventId, userId])
+  @@index([eventId, teamId])
+  @@index([eventId, subroomId])
+  @@map("team_event_placements")
 }
 
 // -----------------------------------------------------------------------------
@@ -329,8 +401,8 @@ model Task {
   status         TaskStatus   @default(DRAFT)
   priority       TaskPriority @default(MEDIUM)
   taskType       TaskType     @default(INDIVIDUAL)
-  teamSection    String?      // room letter, e.g. "B" — set only for TEAM tasks, including while unassigned
-  parentTaskId   String?      // set on an INDIVIDUAL task created by splitting a TEAM task
+  teamSection    String? // room letter, e.g. "B" — set only for TEAM tasks, including while unassigned
+  parentTaskId   String? // set on an INDIVIDUAL task created by splitting a TEAM task
   progress       Int          @default(0) // 0-100, authoritative
   estimatedHours Float        @default(8.0)
   allocatedHours Float        @default(0.0)
@@ -418,9 +490,10 @@ model OrganizationEvent {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
-  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  createdBy    User?                       @relation("OrgEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  responses    OrganizationEventResponse[]
+  organization   Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User?                       @relation("OrgEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  responses      OrganizationEventResponse[]
+  teamPlacements TeamEventPlacement[]
 
   @@index([organizationId, status, scheduledAt])
   @@map("organization_events")
@@ -458,13 +531,13 @@ model OrganizationEventResponse {
 // another's.
 // -----------------------------------------------------------------------------
 model NotificationRead {
-  id String @id @default(uuid())
-  userId String
+  id              String   @id @default(uuid())
+  userId          String
   // The feed-item id the client renders, e.g. "ann-<announcementId>" — stable
   // across reloads for announcement-derived items.
   notificationKey String
-  readAt DateTime @default(now())
-  createdAt DateTime @default(now())
+  readAt          DateTime @default(now())
+  createdAt       DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -82,6 +82,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: 'event_available',
     roles: ['ADMIN', 'SUPER_ADMIN', 'SERVER'],
   },
+  {
+    label: 'Teams',
+    href: '/admin/teams',
+    icon: 'groups',
+    roles: ['ADMIN', 'SUPER_ADMIN'],
+    matchPrefix: true,
+  },
   // Server Link (Room & Event Supervision)
   {
     label: 'Room Supervision',

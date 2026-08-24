@@ -476,6 +476,108 @@ async function main() {
 
   console.log(`✓ Created 2 organization events (same day, independent attendance) with 5 responses`);
 
+  // 10. Create two demo Teams — a standing MEMBER roster led by a Team Lead,
+  // entirely independent of the Room/Subroom desk hierarchy above. Each team
+  // has 24 members, more than a single Section can hold (16 = 8 subrooms x 2),
+  // so the bulk-allocation "positioned vs. available pool" split has
+  // something real to demonstrate and QA against.
+  const teamAlphaLead = await prisma.user.create({
+    data: {
+      organizationId: org.id,
+      email: 'priya.natarajan@workgrid.corp',
+      passwordHash: defaultPasswordHash,
+      name: 'Priya Natarajan',
+      role: UserRole.TEAM_LEAD,
+      accountStatus: AccountStatus.ACTIVE,
+      status: UserStatus.ONLINE,
+      presenceState: PresenceState.IN,
+      currentLocationName: 'Main Auditorium',
+      arrivedAt: arrivalTime,
+      lastSeenAt: now,
+      title: 'Team Alpha Lead',
+      avatarUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=150&auto=format&fit=crop&q=80',
+      capacityLimitHours: 40,
+      currentAllocatedHours: 10,
+    },
+  });
+
+  const teamBetaLead = await prisma.user.create({
+    data: {
+      organizationId: org.id,
+      email: 'marcus.obi@workgrid.corp',
+      passwordHash: defaultPasswordHash,
+      name: 'Marcus Obi',
+      role: UserRole.TEAM_LEAD,
+      accountStatus: AccountStatus.ACTIVE,
+      status: UserStatus.ONLINE,
+      presenceState: PresenceState.IN,
+      currentLocationName: 'Main Auditorium',
+      arrivedAt: arrivalTime,
+      lastSeenAt: now,
+      title: 'Team Beta Lead',
+      avatarUrl: 'https://images.unsplash.com/photo-1552058544-f2b08422138a?w=150&auto=format&fit=crop&q=80',
+      capacityLimitHours: 40,
+      currentAllocatedHours: 8,
+    },
+  });
+
+  const teamAlpha = await prisma.team.create({
+    data: { organizationId: org.id, name: 'Team Alpha', leadId: teamAlphaLead.id },
+  });
+  const teamBeta = await prisma.team.create({
+    data: { organizationId: org.id, name: 'Team Beta', leadId: teamBetaLead.id },
+  });
+
+  const rosterFirstNames = [
+    'Nora', 'Kai', 'Leah', 'Theo', 'Ruby', 'Finn', 'Zara', 'Owen', 'Iris', 'Milo',
+    'Nina', 'Jasper', 'Vera', 'Leon', 'Freya', 'Axel', 'Talia', 'Rhys', 'Wren', 'Dario',
+    'Ines', 'Sami', 'Coral', 'Ezra', 'Yara', 'Beckett', 'Maren', 'Idris', 'Selma', 'Cyrus',
+  ];
+  const rosterLastNames = [
+    'Whitfield', 'Osei', 'Kowalski', 'Marchetti', 'Delgado', 'Okafor', 'Lindgren', 'Petrov', 'Suzuki', 'Alvarado',
+    'Beaumont', 'Nakashima', 'Farouk', 'Castellano', 'Brennan', 'Yilmaz', 'Adeyemi', 'Solheim', 'Vasquez', 'Renner',
+  ];
+
+  function rosterName(globalIndex: number): string {
+    const first = rosterFirstNames[globalIndex % rosterFirstNames.length];
+    const last = rosterLastNames[(globalIndex * 7 + 3) % rosterLastNames.length];
+    return `${first} ${last}`;
+  }
+
+  async function seedTeamRoster(team: { id: string }, teamSlug: string, globalOffset: number, count: number) {
+    for (let i = 0; i < count; i++) {
+      const name = rosterName(globalOffset + i);
+      // Stagger presence/status so the eligible pool demonstrably contains a
+      // mix of live-available and currently-unavailable members.
+      const presenceState = i % 4 === 0 ? PresenceState.OUT : PresenceState.IN;
+      const status = i % 5 === 0 ? UserStatus.AWAY : i % 7 === 0 ? UserStatus.BUSY : UserStatus.ONLINE;
+      await prisma.user.create({
+        data: {
+          organizationId: org.id,
+          email: `${teamSlug}.roster${String(i + 1).padStart(2, '0')}@workgrid.corp`,
+          passwordHash: defaultPasswordHash,
+          name,
+          role: UserRole.MEMBER,
+          accountStatus: AccountStatus.ACTIVE,
+          status,
+          presenceState,
+          currentLocationName: presenceState === PresenceState.IN ? 'Main Auditorium' : 'Outside',
+          arrivedAt: presenceState === PresenceState.IN ? arrivalTime : undefined,
+          lastSeenAt: now,
+          title: 'Event Operations Associate',
+          capacityLimitHours: 40,
+          currentAllocatedHours: 0,
+          teamId: team.id,
+        },
+      });
+    }
+  }
+
+  await seedTeamRoster(teamAlpha, 'alpha', 0, 24);
+  await seedTeamRoster(teamBeta, 'beta', 24, 24);
+
+  console.log(`✓ Created 2 demo Teams (Team Alpha, Team Beta) with leads and 24 MEMBER rosters each`);
+
   console.log('✅ WorkGrid seed finished successfully (6 authentic users)!');
 }
 

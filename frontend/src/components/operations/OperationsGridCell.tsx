@@ -228,6 +228,19 @@ export function OperationsGridCell({
           {subroom.activeRoomEvent.title}
         </div>
       )}
+
+      {/* Team-based event placement — a distinct, independent fact from the
+          permanent-desk members list above; never merged into occupancyCount. */}
+      {subroom.eventPlacement && (
+        <div className="pt-1 mt-1 border-t border-purple-200/60 text-[9px]">
+          <div className="flex items-center gap-1 font-bold uppercase tracking-wider text-purple-800">
+            <span className="material-symbols-outlined text-[11px]">groups</span>
+            <span>
+              {subroom.eventPlacement.teamName}: {subroom.eventPlacement.members.length} positioned
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

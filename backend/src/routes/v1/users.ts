@@ -13,6 +13,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
       status?: string;
       roomId?: string;
       subroomId?: string;
+      teamId?: string;
       search?: string;
     };
 
@@ -34,6 +35,7 @@ export const userRoutes: FastifyPluginAsync = async (fastify) => {
           status: query.status ? (query.status.toUpperCase() as UserStatus) : undefined,
           roomId: query.roomId,
           subroomId: query.subroomId,
+          teamId: query.teamId,
           search: query.search,
         },
         paginationResult.data

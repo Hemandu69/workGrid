@@ -81,6 +81,18 @@ export interface GridSubroomCell {
     endTimeIST: string;
     serverCoverageSummary: string;
   };
+  /**
+   * Team-based bulk allocation for the selected event, if any — a distinct,
+   * independent fact from `members` above (the legacy permanent-desk
+   * occupancy). Never merged into `occupancyCount`; only populated when an
+   * event is selected. See TeamEventPlacement for why this is a separate
+   * accounting axis.
+   */
+  eventPlacement?: {
+    teamId: string;
+    teamName: string;
+    members: Array<{ id: string; name: string; avatarUrl?: string }>;
+  };
 }
 
 export interface GridRoomColumn {
@@ -281,6 +293,36 @@ export class OperationsService {
           notAttendingCount,
           noResponseCount,
         };
+      }
+    }
+
+    // Team-based bulk allocation overlay: when an event is selected, also
+    // surface which subrooms have a team positioned there for that event.
+    // Purely additive — never touches roomWhere/rooms query below, and never
+    // affects occupancyCount (the legacy permanent-desk figure).
+    const placementsBySubroom = new Map<
+      string,
+      { teamId: string; teamName: string; members: Array<{ id: string; name: string; avatarUrl?: string }> }
+    >();
+    if (filters.eventId && selectedEvent && typeof prisma.teamEventPlacement?.findMany === 'function') {
+      const teamPlacements = await prisma.teamEventPlacement.findMany({
+        where: {
+          eventId: filters.eventId,
+          ...(filters.organizationId ? { organizationId: filters.organizationId } : {}),
+        },
+        include: {
+          user: { select: { id: true, name: true, avatarUrl: true } },
+          team: { select: { id: true, name: true } },
+        },
+      });
+      for (const p of teamPlacements) {
+        const existing = placementsBySubroom.get(p.subroomId);
+        const member = { id: p.user.id, name: p.user.name, avatarUrl: p.user.avatarUrl || undefined };
+        if (existing) {
+          existing.members.push(member);
+        } else {
+          placementsBySubroom.set(p.subroomId, { teamId: p.team.id, teamName: p.team.name, members: [member] });
+        }
       }
     }
 
@@ -526,6 +568,7 @@ export class OperationsService {
                 serverCoverageSummary: `${activeSubroomEvent.requiredServers.filter((rs) => rs.server.presenceState === PresenceState.IN).length} / ${activeSubroomEvent.requiredServers.length || activeSubroomEvent.requiredServersCount || 1} Present`,
               }
             : undefined,
+          eventPlacement: placementsBySubroom.get(subroom.id),
         };
       });
 

@@ -10,6 +10,7 @@ export interface UserFilters {
   role?: string;
   status?: string;
   search?: string;
+  teamId?: string;
   limit?: number;
   offset?: number;
 }
@@ -39,6 +40,7 @@ const USER_EVENT_TYPES: DomainEventType[] = [
   'EMPLOYEE_CHECKED_IN',
   'EMPLOYEE_CHECKED_OUT',
   'ATTENDANCE_UPDATED',
+  'TEAM_EVENT_PLACEMENT_CHANGED',
 ];
 
 function useUserRealtimeSync() {
