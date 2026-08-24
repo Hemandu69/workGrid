@@ -5,16 +5,13 @@ import { AppShell } from '../../../components/layout/AppShell';
 import { TaskTable } from '../../../components/tasks/TaskTable';
 import { TaskDetailDrawer } from '../../../components/tasks/TaskDetailDrawer';
 import { CreateTaskModal } from '../../../components/tasks/CreateTaskModal';
-import { Task, TaskCampaign } from '../../../types/task';
+import { Task } from '../../../types/task';
 import { apiClient } from '../../../lib/api-client';
 import { useDomainEvent } from '../../../lib/realtime-context';
 import { Button } from '../../../components/ui/Button';
-import { Badge } from '../../../components/ui/Badge';
-import { Card } from '../../../components/ui/Card';
 
 export default function AdminTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [campaigns, setCampaigns] = useState<TaskCampaign[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,20 +20,14 @@ export default function AdminTasksPage() {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const [tasksResult, campaignsData] = await Promise.all([
-        apiClient.getTasks({
-          roomLetter: roomFilter !== 'ALL' ? roomFilter.replace('Room', '').trim() : undefined,
-          status: statusFilter !== 'ALL' ? statusFilter : undefined,
-          search: searchQuery.trim() || undefined,
-          limit: 200,
-        }),
-        apiClient.getCampaigns().catch(() => []),
-      ]);
+      const tasksResult = await apiClient.getTasks({
+        roomLetter: roomFilter !== 'ALL' ? roomFilter.replace('Room', '').trim() : undefined,
+        status: statusFilter !== 'ALL' ? statusFilter : undefined,
+        search: searchQuery.trim() || undefined,
+        limit: 200,
+      });
 
       setTasks(tasksResult.items);
-      if (Array.isArray(campaignsData)) {
-        setCampaigns(campaignsData);
-      }
     } catch {
       // Clean fallback
     }
@@ -105,30 +96,6 @@ export default function AdminTasksPage() {
             Create Task / Campaign
           </Button>
         </div>
-
-        {/* Active Campaigns Overview */}
-        {campaigns.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {campaigns.map((c) => (
-              <Card key={c.id}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <Badge priority={c.priority} />
-                    <h3 className="text-sm font-bold text-primary mt-1.5">{c.title}</h3>
-                    <p className="text-xs text-on-surface-variant mt-1">{c.description}</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-surface-outline flex items-center justify-between text-xs tabular-nums">
-                  <span className="text-on-surface-variant">Due {new Date(c.dueDate).toLocaleDateString()}</span>
-                  <span className="font-mono font-semibold text-primary">
-                    {c.completedCount} / {c.tasksCount} Subtasks Done
-                  </span>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
 
         {/* Filters */}
         <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-bright border border-surface-outline rounded">
