@@ -22,21 +22,31 @@ export const teamMemberSelect = {
 } as const;
 
 export class TeamService {
-  static async listTeams(organizationId: string) {
+  static async listTeams(organizationId: string, eventId?: string) {
     const teams = await prisma.team.findMany({
       where: { organizationId },
       orderBy: { name: 'asc' },
       include: {
         lead: { select: teamMemberSelect },
         _count: { select: { members: true } },
+        ...(eventId
+          ? {
+              placements: {
+                where: { eventId },
+                select: { room: { select: { letter: true } } },
+                take: 1,
+              },
+            }
+          : {}),
       },
     });
 
-    return teams.map((t) => ({
+    return teams.map((t: any) => ({
       id: t.id,
       name: t.name,
       lead: t.lead,
       memberCount: t._count.members,
+      allocatedSection: t.placements?.[0]?.room?.letter ?? null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
     }));

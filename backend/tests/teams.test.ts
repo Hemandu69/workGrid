@@ -74,14 +74,26 @@ const { mockPrisma, publishedEvents } = vi.hoisted(() => ({
 
 Object.assign(mockPrisma, {
   team: {
-    findMany: vi.fn(async ({ where }: any = {}) =>
+    findMany: vi.fn(async ({ where, include }: any = {}) =>
       mockTeams
         .filter((t) => !where?.organizationId || t.organizationId === where.organizationId)
-        .map((t) => ({
-          ...t,
-          lead: t.leadId ? findUser(t.leadId) : null,
-          _count: { members: mockUsers.filter((u) => u.teamId === t.id).length },
-        }))
+        .map((t) => {
+          let placements: any[] = [];
+          if (include?.placements?.where?.eventId) {
+            const eventId = include.placements.where.eventId;
+            placements = mockPlacements
+              .filter((p) => p.teamId === t.id && p.eventId === eventId)
+              .map((p) => ({
+                room: mockRoomsMeta.find((r) => r.id === p.roomId) || { letter: 'A' },
+              }));
+          }
+          return {
+            ...t,
+            lead: t.leadId ? findUser(t.leadId) : null,
+            _count: { members: mockUsers.filter((u) => u.teamId === t.id).length },
+            placements,
+          };
+        })
     ),
     findFirst: vi.fn(async ({ where }: any) => {
       let list = [...mockTeams];

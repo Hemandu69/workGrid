@@ -27,7 +27,8 @@ export const teamRoutes: FastifyPluginAsync = async (fastify) => {
   // GET /api/v1/teams
   fastify.get('/', { preHandler: [requireRole(ADMIN_ONLY)] }, async (request, reply) => {
     try {
-      const teams = await TeamService.listTeams(request.user.organizationId);
+      const query = request.query as { eventId?: string };
+      const teams = await TeamService.listTeams(request.user.organizationId, query.eventId);
       return reply.send(teams);
     } catch (err: unknown) {
       return sendTeamError(reply, err, 'Failed to list teams');

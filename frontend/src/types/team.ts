@@ -5,6 +5,7 @@ export interface Team {
   name: string;
   lead: User | null;
   memberCount: number;
+  allocatedSection?: string | null;
   createdAt: string;
   updatedAt: string;
 }

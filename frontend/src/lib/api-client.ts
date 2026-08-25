@@ -176,7 +176,17 @@ export const apiClient = {
   // Teams & Event-Scoped Bulk Placement — a Team's roster is entirely
   // independent of Room/Subroom desk assignment above; placement here never
   // touches assignRoom/clearRoomAssignment.
-  getTeams: async (token?: string): Promise<Team[]> => request<Team[]>('/api/v1/teams', {}, token),
+  getTeams: async (params?: { eventId?: string } | string, token?: string): Promise<Team[]> => {
+    let queryStr = '';
+    let authToken = token;
+    if (typeof params === 'string') {
+      authToken = params;
+    } else if (params?.eventId) {
+      const query = buildQueryParams({ eventId: params.eventId });
+      queryStr = `?${query.toString()}`;
+    }
+    return request<Team[]>(`/api/v1/teams${queryStr}`, {}, authToken);
+  },
   createTeam: async (data: { name: string; leadId?: string }, token?: string): Promise<TeamDetail> =>
     request<TeamDetail>('/api/v1/teams', { method: 'POST', body: JSON.stringify(data) }, token),
   getTeam: async (teamId: string, token?: string): Promise<TeamDetail> =>

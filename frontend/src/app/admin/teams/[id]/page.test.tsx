@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import TeamDetailPage from './page';
 import { apiClient } from '../../../../lib/api-client';
-import { TeamDetail, TeamPlacementPreview } from '../../../../types/team';
+import { TeamDetail } from '../../../../types/team';
 
 vi.mock('../../../../components/layout/AppShell', () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
@@ -13,20 +13,15 @@ vi.mock('../../../../lib/realtime-context', () => ({
   useDomainEvent: () => {},
 }));
 
+const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'team-alpha' }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 vi.mock('../../../../lib/api-client', () => ({
   apiClient: {
     getTeam: vi.fn(),
-    getEvents: vi.fn(),
-    getTeamPlacementPreview: vi.fn(),
-    allocateTeam: vi.fn(),
-    replaceTeamMember: vi.fn(),
-    overrideTeamPlacement: vi.fn(),
-    clearTeamPlacement: vi.fn(),
     addTeamMember: vi.fn(),
     removeTeamMember: vi.fn(),
     deleteTeam: vi.fn(),
@@ -52,60 +47,12 @@ function buildTeamDetail(overrides: Partial<TeamDetail> = {}): TeamDetail {
   };
 }
 
-function buildPreview(overrides: Partial<TeamPlacementPreview> = {}): TeamPlacementPreview {
-  return {
-    team: { id: 'team-alpha', name: 'Team Alpha', lead: null },
-    event: { id: 'evt-1', title: 'Cloud Infrastructure Summit' },
-    section: { letter: 'C', roomId: 'room-c' },
-    subrooms: [
-      {
-        subroomCode: 'C1',
-        capacity: 2,
-        placedCount: 1,
-        members: [{ id: 'm1', name: 'Nora Whitfield', email: 'n@x.com', needsReplacement: true }],
-      },
-      ...Array.from({ length: 7 }, (_, i) => ({
-        subroomCode: `C${i + 2}`,
-        capacity: 2,
-        placedCount: 0,
-        members: [],
-      })),
-    ],
-    totalPositioned: 1,
-    totalCapacity: 16,
-    totalTeamMembers: 24,
-    pool: [{ id: 'm2', name: 'Kai Osei', email: 'kai@workgrid.corp' }],
-    poolCount: 1,
-    currentSectionLetter: null,
-    ...overrides,
-  };
-}
-
-describe('Team detail page — roster and event section allocation', () => {
+describe('Team detail page — focused roster and member management', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedApi.getEvents.mockResolvedValue([
-      {
-        id: 'evt-1',
-        organizationId: 'org-1',
-        title: 'Cloud Infrastructure Summit',
-        description: '',
-        scheduledAt: '2026-08-24T04:30:00.000Z',
-        scheduledEndAt: '2026-08-24T12:30:00.000Z',
-        dateIST: '24 Aug 2026',
-        timeIST: '10:00 AM',
-        endTimeIST: '6:00 PM',
-        status: 'UPCOMING',
-        completedAt: null,
-        createdByName: 'Elena Vance',
-        createdAt: '2026-08-01T00:00:00.000Z',
-        updatedAt: '2026-08-01T00:00:00.000Z',
-        currentUserResponse: null,
-      },
-    ]);
   });
 
-  it('renders the roster and lead', async () => {
+  it('renders the roster, member count, and lead', async () => {
     mockedApi.getTeam.mockResolvedValue(buildTeamDetail());
 
     render(<TeamDetailPage />);
@@ -113,68 +60,46 @@ describe('Team detail page — roster and event section allocation', () => {
     await waitFor(() => expect(screen.getByText('Nora Whitfield')).toBeInTheDocument());
     expect(screen.getByText('Kai Osei')).toBeInTheDocument();
     expect(screen.getByText(/led by priya natarajan/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 members/i)).toBeInTheDocument();
   });
 
-  it('fetches and renders the positioned/pool preview once an event and section are chosen', async () => {
+  it('does NOT render the Event Section Allocation section on Team Detail', async () => {
     mockedApi.getTeam.mockResolvedValue(buildTeamDetail());
-    mockedApi.getTeamPlacementPreview.mockResolvedValue(buildPreview());
 
     render(<TeamDetailPage />);
+
     await waitFor(() => expect(screen.getByText('Nora Whitfield')).toBeInTheDocument());
-
-    fireEvent.change(screen.getByDisplayValue('— Select an Event —'), { target: { value: 'evt-1' } });
-    fireEvent.change(screen.getByDisplayValue('— Select a Section —'), { target: { value: 'C' } });
-
-    await waitFor(() =>
-      expect(mockedApi.getTeamPlacementPreview).toHaveBeenCalledWith('team-alpha', {
-        eventId: 'evt-1',
-        sectionLetter: 'C',
-      })
-    );
-    await waitFor(() => expect(screen.getByText('1 / 16')).toBeInTheDocument());
-    expect(screen.getByText(/available pool \(1\)/i)).toBeInTheDocument();
+    expect(screen.queryByText('Event Section Allocation')).not.toBeInTheDocument();
+    expect(screen.queryByText('— Select a Section —')).not.toBeInTheDocument();
   });
 
-  it('calls allocateTeam when Auto-Allocate is clicked', async () => {
-    const emptyPreview = buildPreview({
-      totalPositioned: 0,
-      subrooms: buildPreview().subrooms.map((s) => ({ ...s, placedCount: 0, members: [] })),
+  it('calls removeTeamMember when Remove is clicked', async () => {
+    mockedApi.getTeam.mockResolvedValue(buildTeamDetail());
+    mockedApi.removeTeamMember.mockResolvedValue(buildTeamDetail({ members: [] }));
+
+    render(<TeamDetailPage />);
+
+    await waitFor(() => expect(screen.getByText('Nora Whitfield')).toBeInTheDocument());
+    const removeButtons = screen.getAllByRole('button', { name: /remove/i });
+    fireEvent.click(removeButtons[0]);
+
+    await waitFor(() => {
+      expect(mockedApi.removeTeamMember).toHaveBeenCalledWith('team-alpha', 'm1');
     });
-    mockedApi.getTeam.mockResolvedValue(buildTeamDetail());
-    mockedApi.getTeamPlacementPreview.mockResolvedValue(emptyPreview);
-    mockedApi.allocateTeam.mockResolvedValue(buildPreview({ totalPositioned: 2 }));
-
-    render(<TeamDetailPage />);
-    await waitFor(() => expect(screen.getByText('Nora Whitfield')).toBeInTheDocument());
-
-    fireEvent.change(screen.getByDisplayValue('— Select an Event —'), { target: { value: 'evt-1' } });
-    fireEvent.change(screen.getByDisplayValue('— Select a Section —'), { target: { value: 'C' } });
-    await waitFor(() => expect(screen.getByText('0 / 16')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /^auto-allocate$/i }));
-
-    await waitFor(() =>
-      expect(mockedApi.allocateTeam).toHaveBeenCalledWith('team-alpha', { eventId: 'evt-1', sectionLetter: 'C' })
-    );
   });
 
-  it('flags an unavailable positioned member and calls replaceTeamMember on Replace', async () => {
+  it('deletes the team and navigates back to /admin/teams', async () => {
     mockedApi.getTeam.mockResolvedValue(buildTeamDetail());
-    mockedApi.getTeamPlacementPreview.mockResolvedValue(buildPreview());
-    mockedApi.replaceTeamMember.mockResolvedValue({ removedUserId: 'm1', replacedByUserId: 'm2' });
+    mockedApi.deleteTeam.mockResolvedValue({ message: 'Team deleted' });
 
     render(<TeamDetailPage />);
-    await waitFor(() => expect(screen.getByText('Nora Whitfield')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByDisplayValue('— Select an Event —'), { target: { value: 'evt-1' } });
-    fireEvent.change(screen.getByDisplayValue('— Select a Section —'), { target: { value: 'C' } });
-    await waitFor(() => expect(screen.getByText('1 / 16')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /delete team/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /delete team/i }));
 
-    const replaceButton = screen.getByRole('button', { name: /^replace$/i });
-    fireEvent.click(replaceButton);
-
-    await waitFor(() =>
-      expect(mockedApi.replaceTeamMember).toHaveBeenCalledWith('team-alpha', { eventId: 'evt-1', userId: 'm1' })
-    );
+    await waitFor(() => {
+      expect(mockedApi.deleteTeam).toHaveBeenCalledWith('team-alpha');
+      expect(mockPush).toHaveBeenCalledWith('/admin/teams');
+    });
   });
 });
